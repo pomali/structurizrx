@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="auto">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>{{DIAGRAM_KEY}} – {{WORKSPACE_NAME}}</title>
+    <link rel="icon" type="image/png" href="/static/img/favicon.png"/>
+    <link rel="stylesheet" href="/static/css/structurizr.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-embed.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-dark.css"/>
+    <style>
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+        #diagramContainer { width: 100%; height: 100%; }
+    </style>
+</head>
+<body>
+<div id="diagramContainer"></div>
+
+<script src="/static/js/jquery-3.7.1.min.js"></script>
+<script src="/static/js/jointjs-Core-4.1.3.js"></script>
+<script src="/static/js/dagre-1.1.8.js"></script>
+<script src="/static/js/graphlib-2.2.4.min.js"></script>
+<script src="/static/js/jointjs-DirectedGraph-4.1.3.min.js"></script>
+<script src="/static/js/structurizr.js"></script>
+<script src="/static/js/structurizr-util.js"></script>
+<script src="/static/js/structurizr-ui.js"></script>
+<script src="/static/js/structurizr-workspace.js"></script>
+<script src="/static/js/structurizr-diagram.js"></script>
+<script src="/static/js/structurizr-embed.js"></script>
+
+<script>
+(function() {
+    const WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
+    const DIAGRAM_KEY     = '{{DIAGRAM_KEY}}';
+
+    // ---- theme from query param or system preference ----
+    const params = new URLSearchParams(location.search);
+    const theme = params.get('theme') ||
+        localStorage.getItem('structurizrx-theme') ||
+        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-bs-theme', theme);
+
+    let diagram = null;
+
+    function loadAndRender() {
+        fetch('/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG))
+            .then(r => r.json())
+            .then(json => {
+                const wsObj = new structurizr.Workspace(json);
+                structurizr.workspace = wsObj;
+
+                const view = wsObj.getViewByKey(DIAGRAM_KEY);
+                if (!view) {
+                    document.body.innerHTML = '<p style="padding:1em;color:red">View not found: ' + DIAGRAM_KEY + '</p>';
+                    return;
+                }
+
+                if (diagram) {
+                    try { diagram.destroy(); } catch(_) {}
+                    document.getElementById('diagramContainer').innerHTML = '';
+                }
+
+                diagram = new structurizr.ui.Diagram('diagramContainer', false, function() {
+                    diagram.setDarkMode(theme === 'dark');
+                    diagram.setEmbedded(true);
+                    diagram.renderView(view, wsObj);
+
+                    // Send resize message so parent iframe can adjust
+                    const ar = diagram.getAspectRatio ? diagram.getAspectRatio() : 1.5;
+                    const toolbarHeight = 0;
+                    window.parent.postMessage({
+                        context: 'iframe.resize',
+                        src: window.location.href,
+                        aspectRatio: ar,
+                        toolbarHeight: toolbarHeight
+                    }, '*');
+                });
+            });
+    }
+
+    loadAndRender();
+
+    // ---- WebSocket live reload ----
+    function connectWs() {
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        const ws = new WebSocket(`${proto}://${location.host}/ws`);
+        ws.onmessage = e => {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'reload') loadAndRender();
+        };
+        ws.onclose = () => setTimeout(connectWs, 2000);
+    }
+    connectWs();
+})();
+</script>
+</body>
+</html>

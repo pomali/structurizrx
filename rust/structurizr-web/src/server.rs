@@ -1,0 +1,171 @@
+//! HTTP server and route handlers.
+
+use axum::{
+    extract::{Path, State, WebSocketUpgrade},
+    http::{header, StatusCode},
+    response::{Html, IntoResponse, Response},
+    routing::get,
+    Json, Router,
+};
+use axum::extract::ws::{Message, WebSocket};
+
+use crate::assets::Assets;
+use crate::state::{AppState, BroadcastMsg, WorkspaceSummary};
+
+// ---- Embedded templates ----
+const INDEX_HTML: &str = include_str!("templates/index.html");
+const WORKSPACE_HTML: &str = include_str!("templates/workspace.html");
+const DIAGRAM_HTML: &str = include_str!("templates/diagram.html");
+
+pub fn build_router(state: AppState) -> Router {
+    Router::new()
+        .route("/", get(index_handler))
+        .route("/workspace/{name}", get(workspace_handler))
+        .route("/workspace/{name}/diagram/{key}", get(diagram_handler))
+        .route("/api/workspaces", get(api_workspaces_handler))
+        .route("/api/workspace/{name}", get(api_workspace_handler))
+        .route("/static/{*path}", get(static_handler))
+        .route("/ws", get(ws_handler))
+        .with_state(state)
+}
+
+// ---- Page handlers ----
+
+async fn index_handler() -> Html<&'static str> {
+    Html(INDEX_HTML)
+}
+
+async fn workspace_handler(Path(name): Path<String>) -> Html<String> {
+    Html(
+        WORKSPACE_HTML
+            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
+    )
+}
+
+async fn diagram_handler(Path((name, key)): Path<(String, String)>) -> Html<String> {
+    Html(
+        DIAGRAM_HTML
+            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name))
+            .replace("{{DIAGRAM_KEY}}", &js_escape(&key)),
+    )
+}
+
+// ---- JSON API ----
+
+async fn api_workspaces_handler(State(state): State<AppState>) -> impl IntoResponse {
+    let workspaces = state.workspaces.lock().unwrap();
+    let summaries: Vec<WorkspaceSummary> = workspaces.iter().map(WorkspaceSummary::from).collect();
+    Json(summaries)
+}
+
+async fn api_workspace_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Response {
+    let workspaces = state.workspaces.lock().unwrap();
+    if let Some(entry) = workspaces.iter().find(|e| e.name == name) {
+        match serde_json::to_string(&entry.workspace) {
+            Ok(json) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/json")],
+                json,
+            )
+                .into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        }
+    } else {
+        (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response()
+    }
+}
+
+// ---- Static assets ----
+
+async fn static_handler(Path(path): Path<String>) -> Response {
+    match Assets::get(&path) {
+        Some(content) => {
+            let mime = mime_from_path(&path);
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, mime)],
+                content.data.as_ref().to_vec(),
+            )
+                .into_response()
+        }
+        None => (StatusCode::NOT_FOUND, format!("Asset not found: {}", path)).into_response(),
+    }
+}
+
+fn mime_from_path(path: &str) -> &'static str {
+    if path.ends_with(".js") {
+        "application/javascript; charset=utf-8"
+    } else if path.ends_with(".css") {
+        "text/css; charset=utf-8"
+    } else if path.ends_with(".png") {
+        "image/png"
+    } else if path.ends_with(".gif") {
+        "image/gif"
+    } else if path.ends_with(".svg") {
+        "image/svg+xml"
+    } else if path.ends_with(".woff") {
+        "font/woff"
+    } else if path.ends_with(".woff2") {
+        "font/woff2"
+    } else if path.ends_with(".ttf") {
+        "font/ttf"
+    } else if path.ends_with(".json") {
+        "application/json"
+    } else {
+        "application/octet-stream"
+    }
+}
+
+// ---- WebSocket live reload ----
+
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| ws_session(socket, state))
+}
+
+async fn ws_session(mut socket: WebSocket, state: AppState) {
+    let mut rx = state.tx.subscribe();
+    loop {
+        tokio::select! {
+            msg = rx.recv() => {
+                match msg {
+                    Ok(BroadcastMsg::Reload) => {
+                        let payload = r#"{"type":"reload"}"#;
+                        if socket.send(Message::Text(payload.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            msg = socket.recv() => {
+                match msg {
+                    Some(Ok(_)) => {} // ignore client messages
+                    _ => break,       // client closed
+                }
+            }
+        }
+    }
+}
+
+// ---- Helpers ----
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn js_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('"', "\\\"")
+}
