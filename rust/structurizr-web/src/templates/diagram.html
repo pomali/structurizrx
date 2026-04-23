@@ -49,7 +49,7 @@
                 const wsObj = new structurizr.Workspace(json);
                 structurizr.workspace = wsObj;
 
-                const view = wsObj.getViewByKey(DIAGRAM_KEY);
+                const view = wsObj.findViewByKey(DIAGRAM_KEY);
                 if (!view) {
                     document.body.innerHTML = '<p style="padding:1em;color:red">View not found: ' + DIAGRAM_KEY + '</p>';
                     return;

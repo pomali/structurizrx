@@ -119,7 +119,7 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
     var parentElement = $('#' + id);
     const viewportId = id + '-viewport';
     const canvasId = id + '-canvas';
-    parentElement.append('<div id="' + viewportId + '" class="structurizrDiagramViewport"><div id="' + canvasId + '" class=structurizrDiagramCanvas"></div></div>');
+    parentElement.append('<div id="' + viewportId + '" class="structurizrDiagramViewport"><div id="' + canvasId + '" class="structurizrDiagramCanvas"></div></div>');
 
     const viewport = $('#' + viewportId);
     const canvas = $('#' + canvasId);
@@ -988,7 +988,7 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
 
         if (view.automaticLayout) {
             if (view.automaticLayout) {
-                structurizr.diagram.applyAutomaticLayout(
+                self.applyAutomaticLayout(
                     view.automaticLayout.rankDirection,
                     view.automaticLayout.rankSeparation,
                     view.automaticLayout.nodeSeparation,
@@ -997,7 +997,7 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
                 );
             }
         } else if (forceApplyAutomaticLayout) {
-            structurizr.diagram.applyAutomaticLayout(
+            self.applyAutomaticLayout(
                 structurizr.ui.DEFAULT_AUTOLAYOUT_RANK_DIRECTION,
                 structurizr.ui.DEFAULT_AUTOLAYOUT_RANK_SEPARATION,
                 structurizr.ui.DEFAULT_AUTOLAYOUT_NODE_SEPARATION,

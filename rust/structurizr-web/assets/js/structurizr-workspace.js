@@ -747,7 +747,29 @@ structurizr.Workspace = class Workspace {
             this.#workspace.views.configuration.themes = [];
         }
 
+        this.#applyDefaultStylesIfMissing();
+
         this.#sortViews();
+    }
+
+    #applyDefaultStylesIfMissing() {
+        const hasThemes = this.#workspace.views.configuration.themes.length > 0;
+        const hasElementStyles = this.#workspace.views.configuration.styles.elements.length > 0;
+
+        // If a workspace has no explicit styles/themes, use sensible C4 defaults.
+        if (hasThemes || hasElementStyles) {
+            return;
+        }
+
+        this.#workspace.views.configuration.styles.elements = [
+            { tag: 'Element', background: '#dddddd', color: '#000000', shape: 'Box' },
+            { tag: 'Person', background: '#08427b', color: '#ffffff', shape: 'Person' },
+            { tag: 'Software System', background: '#1168bd', color: '#ffffff' },
+            { tag: 'Container', background: '#438dd5', color: '#ffffff' },
+            { tag: 'Component', background: '#85bbf0', color: '#000000' },
+            { tag: 'Deployment Node', background: '#ffffff', color: '#000000' },
+            { tag: 'Infrastructure Node', background: '#999999', color: '#ffffff' }
+        ];
     }
 
     #calculateLevel(view) {

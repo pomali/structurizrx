@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use structurizr_model::*;
@@ -143,6 +143,22 @@ impl Parser {
             }
             _ => None,
         }
+    }
+
+    fn resolve_identifier(&self, identifier: &str) -> String {
+        if let Some(id) = self.register.resolve_id(identifier) {
+            return id;
+        }
+
+        if self.register.mode == IdentifierMode::Hierarchical {
+            if let Some(last) = identifier.rsplit('.').next() {
+                if let Some(id) = self.register.resolve_id(last) {
+                    return id;
+                }
+            }
+        }
+
+        identifier.to_string()
     }
 
     fn substitute_vars(&self, s: &str) -> String {
@@ -538,7 +554,10 @@ impl Parser {
 
                 if self.peek_word("container") {
                     self.advance();
-                    let c = self.parse_container(if has_ident { &ident } else { "" }, &id)?;
+                    let c = self.parse_container(
+                        if has_ident { &ident } else { "" },
+                        identifier,
+                    )?;
                     containers.push(c);
                 } else if self.peek_word("group") {
                     self.advance();
@@ -556,7 +575,10 @@ impl Parser {
                             }
                             if self.peek_word("container") {
                                 self.advance();
-                                let c = self.parse_container(if has_gi { &gident } else { "" }, &id)?;
+                                let c = self.parse_container(
+                                    if has_gi { &gident } else { "" },
+                                    identifier,
+                                )?;
                                 containers.push(c);
                             } else {
                                 self.advance();
@@ -572,8 +594,8 @@ impl Parser {
                     let desc = self.consume_string();
                     let tech = self.consume_string();
                     let rel_id = self.next_id();
-                    let src_id = self.register.resolve_id(&src).unwrap_or(src);
-                    let dst_id = self.register.resolve_id(&dst).unwrap_or(dst);
+                    let src_id = self.resolve_identifier(&src);
+                    let dst_id = self.resolve_identifier(&dst);
                     rels.push(Relationship {
                         id: rel_id,
                         source_id: src_id,
@@ -603,7 +625,7 @@ impl Parser {
         Ok(ss)
     }
 
-    fn parse_container(&mut self, identifier: &str, _parent_id: &str) -> Result<Container, ParseError> {
+    fn parse_container(&mut self, identifier: &str, parent_identifier: &str) -> Result<Container, ParseError> {
         let id = self.next_id();
         let name = self.consume_string().unwrap_or_else(|| "Container".to_string());
         let description = self.consume_string_if_not_brace();
@@ -613,6 +635,14 @@ impl Parser {
         if !identifier.is_empty() {
             self.register
                 .register(identifier, id.clone(), ElementType::Container);
+
+            if self.register.mode == IdentifierMode::Hierarchical && !parent_identifier.is_empty() {
+                self.register.register(
+                    &format!("{}.{}", parent_identifier, identifier),
+                    id.clone(),
+                    ElementType::Container,
+                );
+            }
         }
 
         let mut container = Container {
@@ -650,8 +680,8 @@ impl Parser {
                     let desc = self.consume_string();
                     let tech = self.consume_string();
                     let rel_id = self.next_id();
-                    let src_id = self.register.resolve_id(&src).unwrap_or(src);
-                    let dst_id = self.register.resolve_id(&dst).unwrap_or(dst);
+                    let src_id = self.resolve_identifier(&src);
+                    let dst_id = self.resolve_identifier(&dst);
                     rels.push(Relationship {
                         id: rel_id,
                         source_id: src_id,
@@ -823,8 +853,8 @@ impl Parser {
                     let desc = self.consume_string();
                     let tech = self.consume_string();
                     let rel_id = self.next_id();
-                    let src_id = self.register.resolve_id(&src).unwrap_or(src);
-                    let dst_id = self.register.resolve_id(&dst).unwrap_or(dst);
+                    let src_id = self.resolve_identifier(&src);
+                    let dst_id = self.resolve_identifier(&dst);
                     rels.push(Relationship {
                         id: rel_id,
                         source_id: src_id,
@@ -963,8 +993,8 @@ impl Parser {
                 let desc = self.consume_string();
                 let tech = self.consume_string();
                 let rel_id = self.next_id();
-                let src_id = self.register.resolve_id(&src).unwrap_or(src);
-                let dst_id = self.register.resolve_id(&dst).unwrap_or(dst);
+                    let src_id = self.resolve_identifier(&src);
+                    let dst_id = self.resolve_identifier(&dst);
                 rels.push(Relationship {
                     id: rel_id,
                     source_id: src_id,
@@ -994,8 +1024,8 @@ impl Parser {
         let tags = self.consume_string_if_not_brace_or_kw();
 
         let rel_id = self.next_id();
-        let src_id = self.register.resolve_id(&src).unwrap_or(src.clone());
-        let dst_id = self.register.resolve_id(&dst).unwrap_or(dst.clone());
+        let src_id = self.resolve_identifier(&src);
+        let dst_id = self.resolve_identifier(&dst);
 
         let rel = Relationship {
             id: rel_id,
@@ -1053,7 +1083,7 @@ impl Parser {
 
     // ─── Views ──────────────────────────────────────────────────────────────────
 
-    fn parse_views(&mut self, views: &mut ViewSet, _model: &Model) -> Result<(), ParseError> {
+    fn parse_views(&mut self, views: &mut ViewSet, model: &Model) -> Result<(), ParseError> {
         while !self.peek_close_brace() && self.peek().is_some() {
             match self.peek() {
                 Some(Token::Word(w)) => {
@@ -1061,17 +1091,17 @@ impl Parser {
                     match w.as_str() {
                         "systemlandscape" => {
                             self.advance();
-                            let v = self.parse_system_landscape_view()?;
+                            let v = self.parse_system_landscape_view(model)?;
                             views.system_landscape_views.get_or_insert_with(Vec::new).push(v);
                         }
                         "systemcontext" => {
                             self.advance();
-                            let v = self.parse_system_context_view()?;
+                            let v = self.parse_system_context_view(model)?;
                             views.system_context_views.get_or_insert_with(Vec::new).push(v);
                         }
                         "container" => {
                             self.advance();
-                            let v = self.parse_container_view()?;
+                            let v = self.parse_container_view(model)?;
                             views.container_views.get_or_insert_with(Vec::new).push(v);
                         }
                         "component" => {
@@ -1147,54 +1177,76 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_system_landscape_view(&mut self) -> Result<SystemLandscapeView, ParseError> {
+    fn parse_system_landscape_view(&mut self, model: &Model) -> Result<SystemLandscapeView, ParseError> {
         let key = self.consume_string_if_not_brace_or_kw();
         let title = self.consume_string_if_not_brace_or_kw();
-        let auto_layout = self.parse_optional_view_block()?;
-        Ok(SystemLandscapeView {
+        let mut include_all = false;
+        let auto_layout = self.parse_optional_view_block(&mut include_all)?;
+        let mut view = SystemLandscapeView {
             key,
             title,
             automatic_layout: auto_layout,
             ..Default::default()
-        })
+        };
+
+        if include_all {
+            self.populate_system_landscape_view(model, &mut view);
+        }
+
+        Ok(view)
     }
 
-    fn parse_system_context_view(&mut self) -> Result<SystemContextView, ParseError> {
+    fn parse_system_context_view(&mut self, model: &Model) -> Result<SystemContextView, ParseError> {
         let ss_ref = self.consume_string().unwrap_or_default();
-        let ss_id = self.register.resolve_id(&ss_ref).unwrap_or(ss_ref);
+        let ss_id = self.resolve_identifier(&ss_ref);
         let key = self.consume_string_if_not_brace_or_kw();
         let title = self.consume_string_if_not_brace_or_kw();
-        let auto_layout = self.parse_optional_view_block()?;
-        Ok(SystemContextView {
+        let mut include_all = false;
+        let auto_layout = self.parse_optional_view_block(&mut include_all)?;
+        let mut view = SystemContextView {
             software_system_id: ss_id,
             key,
             title,
             automatic_layout: auto_layout,
             ..Default::default()
-        })
+        };
+
+        if include_all {
+            self.populate_system_context_view(model, &mut view);
+        }
+
+        Ok(view)
     }
 
-    fn parse_container_view(&mut self) -> Result<ContainerView, ParseError> {
+    fn parse_container_view(&mut self, model: &Model) -> Result<ContainerView, ParseError> {
         let ss_ref = self.consume_string().unwrap_or_default();
-        let ss_id = self.register.resolve_id(&ss_ref).unwrap_or(ss_ref);
+        let ss_id = self.resolve_identifier(&ss_ref);
         let key = self.consume_string_if_not_brace_or_kw();
         let title = self.consume_string_if_not_brace_or_kw();
-        let auto_layout = self.parse_optional_view_block()?;
-        Ok(ContainerView {
+        let mut include_all = false;
+        let auto_layout = self.parse_optional_view_block(&mut include_all)?;
+        let mut view = ContainerView {
             software_system_id: ss_id,
             key,
             title,
             automatic_layout: auto_layout,
             ..Default::default()
-        })
+        };
+
+        if include_all {
+            self.populate_container_view(model, &mut view);
+        }
+
+        Ok(view)
     }
 
     fn parse_component_view(&mut self) -> Result<ComponentView, ParseError> {
         let cont_ref = self.consume_string().unwrap_or_default();
-        let cont_id = self.register.resolve_id(&cont_ref).unwrap_or(cont_ref);
+        let cont_id = self.resolve_identifier(&cont_ref);
         let key = self.consume_string_if_not_brace_or_kw();
         let title = self.consume_string_if_not_brace_or_kw();
-        let auto_layout = self.parse_optional_view_block()?;
+        let mut include_all = false;
+        let auto_layout = self.parse_optional_view_block(&mut include_all)?;
         Ok(ComponentView {
             container_id: cont_id,
             key,
@@ -1209,11 +1261,12 @@ impl Parser {
         let elem_id = if elem_ref == "*" {
             None
         } else {
-            Some(self.register.resolve_id(&elem_ref).unwrap_or(elem_ref))
+            Some(self.resolve_identifier(&elem_ref))
         };
         let key = self.consume_string_if_not_brace_or_kw();
         let title = self.consume_string_if_not_brace_or_kw();
-        let _ = self.parse_optional_view_block()?;
+        let mut include_all = false;
+        let _ = self.parse_optional_view_block(&mut include_all)?;
         Ok(DynamicView {
             element_id: elem_id,
             key,
@@ -1227,12 +1280,13 @@ impl Parser {
         let scope_id = if scope_ref == "*" {
             None
         } else {
-            Some(self.register.resolve_id(&scope_ref).unwrap_or(scope_ref))
+            Some(self.resolve_identifier(&scope_ref))
         };
         let env = self.consume_string().unwrap_or_default();
         let key = self.consume_string_if_not_brace_or_kw();
         let title = self.consume_string_if_not_brace_or_kw();
-        let auto_layout = self.parse_optional_view_block()?;
+        let mut include_all = false;
+        let auto_layout = self.parse_optional_view_block(&mut include_all)?;
         Ok(DeploymentView {
             software_system_id: scope_id,
             environment: env,
@@ -1264,7 +1318,7 @@ impl Parser {
     }
 
     /// Parse a view block (inside `{ }`), return automatic layout if present.
-    fn parse_optional_view_block(&mut self) -> Result<Option<AutomaticLayout>, ParseError> {
+    fn parse_optional_view_block(&mut self, include_all: &mut bool) -> Result<Option<AutomaticLayout>, ParseError> {
         if !self.peek_open_brace() {
             return Ok(None);
         }
@@ -1302,12 +1356,147 @@ impl Parser {
                         ..Default::default()
                     });
                 }
+                Some(Token::Word(w)) if w.eq_ignore_ascii_case("include") => {
+                    self.advance();
+                    while matches!(self.peek(), Some(Token::Word(_)) | Some(Token::Quoted(_))) {
+                        if let Some(token) = self.consume_string() {
+                            if token == "*" {
+                                *include_all = true;
+                            }
+                        }
+                    }
+                }
                 _ => {
                     self.advance();
                 }
             }
         }
         Ok(auto_layout)
+    }
+
+    fn collect_system_landscape_ids(&self, model: &Model) -> HashSet<String> {
+        let mut ids = HashSet::new();
+
+        if let Some(people) = &model.people {
+            for p in people {
+                ids.insert(p.id.clone());
+            }
+        }
+
+        if let Some(systems) = &model.software_systems {
+            for ss in systems {
+                ids.insert(ss.id.clone());
+            }
+        }
+
+        ids
+    }
+
+    fn collect_container_view_ids(&self, model: &Model) -> HashSet<String> {
+        let mut ids = self.collect_system_landscape_ids(model);
+
+        if let Some(systems) = &model.software_systems {
+            for ss in systems {
+                if let Some(containers) = &ss.containers {
+                    for c in containers {
+                        ids.insert(c.id.clone());
+                    }
+                }
+            }
+        }
+
+        ids
+    }
+
+    fn collect_relationship_view_ids(&self, model: &Model, ids: &HashSet<String>) -> Vec<RelationshipView> {
+        let mut seen = HashSet::new();
+        let mut out = Vec::new();
+
+        fn collect_from_relationships(
+            relationships: &Option<Vec<Relationship>>,
+            ids: &HashSet<String>,
+            seen: &mut HashSet<String>,
+            out: &mut Vec<RelationshipView>,
+        ) {
+            if let Some(rels) = relationships {
+                for rel in rels {
+                    if ids.contains(&rel.source_id)
+                        && ids.contains(&rel.destination_id)
+                        && seen.insert(rel.id.clone())
+                    {
+                        out.push(RelationshipView {
+                            id: rel.id.clone(),
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+        }
+
+        if let Some(people) = &model.people {
+            for p in people {
+                collect_from_relationships(&p.relationships, ids, &mut seen, &mut out);
+            }
+        }
+
+        if let Some(systems) = &model.software_systems {
+            for ss in systems {
+                collect_from_relationships(&ss.relationships, ids, &mut seen, &mut out);
+
+                if let Some(containers) = &ss.containers {
+                    for c in containers {
+                        collect_from_relationships(&c.relationships, ids, &mut seen, &mut out);
+
+                        if let Some(components) = &c.components {
+                            for comp in components {
+                                collect_from_relationships(&comp.relationships, ids, &mut seen, &mut out);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        out
+    }
+
+    fn populate_system_landscape_view(&self, model: &Model, view: &mut SystemLandscapeView) {
+        let ids = self.collect_system_landscape_ids(model);
+        view.element_views = Some(
+            ids.iter()
+                .map(|id| ElementView {
+                    id: id.clone(),
+                    ..Default::default()
+                })
+                .collect(),
+        );
+        view.relationship_views = Some(self.collect_relationship_view_ids(model, &ids));
+    }
+
+    fn populate_system_context_view(&self, model: &Model, view: &mut SystemContextView) {
+        let ids = self.collect_system_landscape_ids(model);
+        view.element_views = Some(
+            ids.iter()
+                .map(|id| ElementView {
+                    id: id.clone(),
+                    ..Default::default()
+                })
+                .collect(),
+        );
+        view.relationship_views = Some(self.collect_relationship_view_ids(model, &ids));
+    }
+
+    fn populate_container_view(&self, model: &Model, view: &mut ContainerView) {
+        let ids = self.collect_container_view_ids(model);
+        view.element_views = Some(
+            ids.iter()
+                .map(|id| ElementView {
+                    id: id.clone(),
+                    ..Default::default()
+                })
+                .collect(),
+        );
+        view.relationship_views = Some(self.collect_relationship_view_ids(model, &ids));
     }
 
     // ─── Styles ─────────────────────────────────────────────────────────────────
@@ -1527,5 +1716,104 @@ workspace "Test" "A test workspace" {
         assert_eq!(people[0].name, "User");
         let systems = ws.model.software_systems.as_ref().expect("should have systems");
         assert_eq!(systems[0].name, "System");
+    }
+
+    #[test]
+    fn include_star_populates_system_context_and_container_views() {
+        let dsl = r#"
+workspace {
+    !identifiers hierarchical
+
+    model {
+        u = person "User"
+        ss = softwareSystem "Software System" {
+            wa = container "Web Application"
+            db = container "Database"
+        }
+
+        u -> ss "Uses"
+        u -> ss.wa "Uses"
+        ss.wa -> ss.db "Reads from and writes to"
+    }
+
+    views {
+        systemContext ss "Diagram1" {
+            include *
+        }
+
+        container ss "Diagram2" {
+            include *
+        }
+    }
+}
+"#;
+
+        let ws = parse_str(dsl).expect("should parse");
+
+        let context_view = ws
+            .views
+            .system_context_views
+            .as_ref()
+            .and_then(|v| v.first())
+            .expect("should have system context view");
+        let context_elements = context_view
+            .element_views
+            .as_ref()
+            .expect("context view should contain elements");
+        assert!(!context_elements.is_empty(), "system context view should have elements from include *");
+
+        let container_view = ws
+            .views
+            .container_views
+            .as_ref()
+            .and_then(|v| v.first())
+            .expect("should have container view");
+        let container_elements = container_view
+            .element_views
+            .as_ref()
+            .expect("container view should contain elements");
+        assert!(
+            container_elements.len() >= 4,
+            "container view should include person, software system, and containers"
+        );
+
+        let container_relationships = container_view
+            .relationship_views
+            .as_ref()
+            .expect("container view should contain relationships");
+        assert!(
+            container_relationships.len() >= 3,
+            "container view should include relationships from include *"
+        );
+    }
+
+    #[test]
+    fn hierarchical_identifiers_resolve_for_container_relationships() {
+        let dsl = r#"
+workspace {
+    !identifiers hierarchical
+
+    model {
+        ss = softwareSystem "Software System" {
+            a = container "A"
+            b = container "B"
+        }
+
+        ss.a -> ss.b "Calls"
+    }
+}
+"#;
+
+        let ws = parse_str(dsl).expect("should parse");
+        let systems = ws.model.software_systems.expect("should have software systems");
+        let ss = systems.first().expect("should have first software system");
+        let containers = ss.containers.as_ref().expect("should have containers");
+        let a = containers.iter().find(|c| c.name == "A").expect("should have A");
+        let b = containers.iter().find(|c| c.name == "B").expect("should have B");
+
+        let rels = a.relationships.as_ref().expect("A should have outgoing relationship");
+        assert_eq!(rels.len(), 1);
+        assert_eq!(rels[0].source_id, a.id);
+        assert_eq!(rels[0].destination_id, b.id);
     }
 }

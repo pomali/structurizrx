@@ -113,6 +113,8 @@
 
     // ---- theme ----
     const THEME_KEY = 'structurizrx-theme';
+    let diagram = null;
+    
     function applyTheme(t) {
         document.documentElement.setAttribute('data-bs-theme', t);
         localStorage.setItem(THEME_KEY, t);
@@ -129,8 +131,6 @@
     document.getElementById('sidebar-toggle-btn').addEventListener('click', () => {
         document.getElementById('sidebar').classList.toggle('open');
     });
-
-    let diagram = null;
     let workspaceObj = null;
     let currentViewKey = null;
 
@@ -159,21 +159,25 @@
             return;
         }
 
-        buildSidebar(workspaceObj);
+        // Ensure themes are loaded before the first render so icons/styles match Structurizr's viewer.
+        structurizr.ui.themes = [];
+        structurizr.ui.loadThemes(function() {
+            buildSidebar(workspaceObj);
 
-        const views = workspaceObj.views;
-        const allViews = collectAllViews(views);
+            const views = workspaceObj.views;
+            const allViews = collectAllViews(views);
 
-        if (allViews.length === 0) {
-            setStatus('No diagrams in this workspace.');
-            return;
-        }
+            if (allViews.length === 0) {
+                setStatus('No diagrams in this workspace.');
+                return;
+            }
 
-        // Pick initial view
-        let firstKey = jumpToKey || views.configuration?.defaultView || allViews[0].key;
-        if (!allViews.find(v => v.key === firstKey)) firstKey = allViews[0].key;
+            // Pick initial view
+            let firstKey = jumpToKey || views.configuration?.defaultView || allViews[0].key;
+            if (!allViews.find(v => v.key === firstKey)) firstKey = allViews[0].key;
 
-        showView(firstKey, json);
+            showView(firstKey, json);
+        });
     }
 
     function collectAllViews(views) {
@@ -207,7 +211,7 @@
         }
         document.getElementById('diagramContainer').innerHTML = '';
 
-        const view = workspaceObj.getViewByKey(key);
+        const view = workspaceObj.findViewByKey(key);
         if (!view) {
             setStatus('View not found: ' + key);
             return;
@@ -221,7 +225,8 @@
         // Create the diagram
         diagram = new structurizr.ui.Diagram('diagramContainer', false, function() {
             diagram.setDarkMode(document.documentElement.getAttribute('data-bs-theme') === 'dark');
-            diagram.renderView(view, workspaceObj);
+            diagram.setNavigationEnabled(true);
+            diagram.changeView(view.key);
         });
     }
 
