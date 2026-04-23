@@ -7,7 +7,7 @@ use structurizr_dsl::parse_file;
 use structurizr_model::{validation, Workspace};
 use structurizr_renderer::{
     dot::DotExporter, exporter::DiagramExporter, mermaid::MermaidExporter,
-    plantuml::PlantUmlExporter,
+    plantuml::PlantUmlExporter, svg::SvgExporter,
 };
 
 #[derive(Parser)]
@@ -97,6 +97,7 @@ async fn main() -> Result<()> {
             let diagrams: Vec<_> = match format.to_lowercase().as_str() {
                 "mermaid" => MermaidExporter.export_workspace(&workspace),
                 "dot" | "graphviz" => DotExporter.export_workspace(&workspace),
+                "svg" => SvgExporter.export_workspace(&workspace),
                 _ => PlantUmlExporter.export_workspace(&workspace),
             };
 

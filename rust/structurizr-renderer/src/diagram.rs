@@ -4,6 +4,7 @@ pub enum DiagramFormat {
     PlantUml,
     Mermaid,
     Dot,
+    Svg,
 }
 
 impl std::fmt::Display for DiagramFormat {
@@ -12,6 +13,7 @@ impl std::fmt::Display for DiagramFormat {
             DiagramFormat::PlantUml => write!(f, "plantuml"),
             DiagramFormat::Mermaid => write!(f, "mermaid"),
             DiagramFormat::Dot => write!(f, "dot"),
+            DiagramFormat::Svg => write!(f, "svg"),
         }
     }
 }
@@ -39,6 +41,7 @@ impl Diagram {
             DiagramFormat::PlantUml => "puml",
             DiagramFormat::Mermaid => "md",
             DiagramFormat::Dot => "dot",
+            DiagramFormat::Svg => "svg",
         }
     }
 }
