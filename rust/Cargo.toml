@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "structurizr-model",
+    "structurizr-dsl",
+    "structurizr-renderer",
+    "structurizr-cli",
+]
+resolver = "2"

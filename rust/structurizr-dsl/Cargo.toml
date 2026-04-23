@@ -1,0 +1,10 @@
+[package]
+name = "structurizr-dsl"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+structurizr-model = { path = "../structurizr-model" }
+thiserror = "1"
+anyhow = "1"
+serde_json = "1.0.149"

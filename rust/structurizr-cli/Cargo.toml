@@ -1,0 +1,16 @@
+[package]
+name = "structurizr-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "structurizrx"
+path = "src/main.rs"
+
+[dependencies]
+structurizr-model = { path = "../structurizr-model" }
+structurizr-dsl = { path = "../structurizr-dsl" }
+structurizr-renderer = { path = "../structurizr-renderer" }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+serde_json = "1"
