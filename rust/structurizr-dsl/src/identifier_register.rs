@@ -13,6 +13,7 @@ pub enum ElementType {
     InfrastructureNode,
     CustomElement,
     DeploymentEnvironment,
+    Group,
 }
 
 /// Registry of identifier → element id mappings.
@@ -47,5 +48,16 @@ impl IdentifierRegister {
         self.identifiers
             .get(&identifier.to_lowercase())
             .map(|(id, _)| id.clone())
+    }
+
+    /// Return all element IDs whose registered identifier has `prefix.` as a prefix.
+    /// Used to expand group identifiers to their children in hierarchical mode.
+    pub fn children_of(&self, prefix: &str) -> Vec<String> {
+        let lower_prefix = format!("{}.", prefix.to_lowercase());
+        self.identifiers
+            .iter()
+            .filter(|(k, _)| k.starts_with(&lower_prefix))
+            .map(|(_, (id, _))| id.clone())
+            .collect()
     }
 }

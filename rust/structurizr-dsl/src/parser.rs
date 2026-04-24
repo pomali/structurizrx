@@ -562,9 +562,36 @@ impl Parser {
                 } else if self.peek_word("group") {
                     self.advance();
                     let _gname = self.consume_string().unwrap_or_default();
+                    // Register the group identifier so neighborhood includes can expand it.
+                    // Groups are registered with a synthetic ID (not a real element ID) that
+                    // is never used directly — only as a prefix key for `children_of`.
+                    let group_ident = if has_ident { ident.as_str() } else { "" };
+                    // Compute the hierarchical path for this group, e.g. "softwareSystem.service1"
+                    let group_hier = if self.register.mode == IdentifierMode::Hierarchical
+                        && !identifier.is_empty()
+                        && !group_ident.is_empty()
+                    {
+                        format!("{}.{}", identifier, group_ident)
+                    } else {
+                        group_ident.to_string()
+                    };
+                    if !group_ident.is_empty() {
+                        let synthetic_id = format!("group:{}", group_hier);
+                        self.register.register(group_ident, synthetic_id.clone(), ElementType::Group);
+                        if !group_hier.is_empty() && group_hier != group_ident {
+                            self.register.register(&group_hier, synthetic_id, ElementType::Group);
+                        }
+                    }
                     if self.peek_open_brace() {
                         self.advance();
-                        // parse containers inside group
+                        // parse containers inside group; use the hierarchical group path as
+                        // parent so child containers get a full path like
+                        // `softwareSystem.service1.service1Api`.
+                        let effective_parent = if !group_hier.is_empty() {
+                            group_hier.as_str()
+                        } else {
+                            identifier
+                        };
                         while !self.peek_close_brace() && self.peek().is_some() {
                             let (gident, _) = self.peek_assignment();
                             let has_gi = gident.is_some();
@@ -577,7 +604,7 @@ impl Parser {
                                 self.advance();
                                 let c = self.parse_container(
                                     if has_gi { &gident } else { "" },
-                                    identifier,
+                                    effective_parent,
                                 )?;
                                 containers.push(c);
                             } else {
@@ -591,8 +618,8 @@ impl Parser {
                     let src = self.consume_string().unwrap_or_default();
                     self.advance(); // ->
                     let dst = self.consume_string().unwrap_or_default();
-                    let desc = self.consume_string();
-                    let tech = self.consume_string();
+                    let desc = self.consume_string_if_not_brace();
+                    let tech = self.consume_string_if_not_brace();
                     let rel_id = self.next_id();
                     let src_id = self.resolve_identifier(&src);
                     let dst_id = self.resolve_identifier(&dst);
@@ -609,8 +636,15 @@ impl Parser {
                     self.advance();
                     self.skip_optional_block_or_value();
                 } else {
+                    // Unknown property keyword (e.g. `tags`, `description`, `technology`).
+                    // Consume only one value to avoid eating the next element's identifier.
                     self.advance();
-                    self.skip_optional_block_or_value();
+                    if self.peek_open_brace() {
+                        self.advance();
+                        self.skip_block();
+                    } else {
+                        let _ = self.consume_string();
+                    }
                 }
             }
             self.expect_close_brace()?;
@@ -677,8 +711,8 @@ impl Parser {
                     let src = self.consume_string().unwrap_or_default();
                     self.advance(); // ->
                     let dst = self.consume_string().unwrap_or_default();
-                    let desc = self.consume_string();
-                    let tech = self.consume_string();
+                    let desc = self.consume_string_if_not_brace();
+                    let tech = self.consume_string_if_not_brace();
                     let rel_id = self.next_id();
                     let src_id = self.resolve_identifier(&src);
                     let dst_id = self.resolve_identifier(&dst);
@@ -695,8 +729,15 @@ impl Parser {
                     self.advance();
                     self.skip_optional_block_or_value();
                 } else {
+                    // Unknown property keyword (e.g. `tags`, `description`).
+                    // Consume only one value to avoid eating the next element's identifier.
                     self.advance();
-                    self.skip_optional_block_or_value();
+                    if self.peek_open_brace() {
+                        self.advance();
+                        self.skip_block();
+                    } else {
+                        let _ = self.consume_string();
+                    }
                 }
             }
             self.expect_close_brace()?;
@@ -774,8 +815,8 @@ impl Parser {
                     let src = self.consume_string().unwrap_or_default();
                     self.advance(); // ->
                     let dst = self.consume_string().unwrap_or_default();
-                    let desc = self.consume_string();
-                    let tech = self.consume_string();
+                    let desc = self.consume_string_if_not_brace();
+                    let tech = self.consume_string_if_not_brace();
                     let rel_id = self.next_id();
                     let src_id = self.resolve_identifier(&src);
                     let dst_id = self.resolve_identifier(&dst);
@@ -811,7 +852,7 @@ impl Parser {
     /// unresolved environment-level relationships to it.
     fn attach_deployment_rels(nodes: &mut Vec<DeploymentNode>, rels: &[Relationship]) {
         for node in nodes.iter_mut() {
-            // Attach any relationship whose source matches this node.
+            // Attach any relationship whose source matches this deployment node.
             let to_attach: Vec<Relationship> = rels
                 .iter()
                 .filter(|r| r.source_id == node.id)
@@ -820,6 +861,34 @@ impl Parser {
             if !to_attach.is_empty() {
                 let existing = node.relationships.get_or_insert_with(Vec::new);
                 existing.extend(to_attach);
+            }
+            // Also check infrastructure nodes within this deployment node.
+            if let Some(infra_nodes) = node.infrastructure_nodes.as_mut() {
+                for inf in infra_nodes.iter_mut() {
+                    let to_attach: Vec<Relationship> = rels
+                        .iter()
+                        .filter(|r| r.source_id == inf.id)
+                        .cloned()
+                        .collect();
+                    if !to_attach.is_empty() {
+                        let existing = inf.relationships.get_or_insert_with(Vec::new);
+                        existing.extend(to_attach);
+                    }
+                }
+            }
+            // Also check container instances within this deployment node.
+            if let Some(cis) = node.container_instances.as_mut() {
+                for ci in cis.iter_mut() {
+                    let to_attach: Vec<Relationship> = rels
+                        .iter()
+                        .filter(|r| r.source_id == ci.id)
+                        .cloned()
+                        .collect();
+                    if !to_attach.is_empty() {
+                        let existing = ci.relationships.get_or_insert_with(Vec::new);
+                        existing.extend(to_attach);
+                    }
+                }
             }
             // Recurse into children.
             if let Some(children) = node.children.as_mut() {
@@ -897,8 +966,8 @@ impl Parser {
                     let src = self.consume_string().unwrap_or_default();
                     self.advance(); // ->
                     let dst = self.consume_string().unwrap_or_default();
-                    let desc = self.consume_string();
-                    let tech = self.consume_string();
+                    let desc = self.consume_string_if_not_brace();
+                    let tech = self.consume_string_if_not_brace();
                     let rel_id = self.next_id();
                     let src_id = self.resolve_identifier(&src);
                     let dst_id = self.resolve_identifier(&dst);
@@ -915,8 +984,21 @@ impl Parser {
                     self.advance();
                     self.skip_optional_block_or_value();
                 } else {
-                    self.advance();
-                    self.skip_optional_block_or_value();
+                    // Unknown property keyword (e.g. `tags`, `description`, `technology`,
+                    // `url`, `properties`, `perspectives`).  Consume the keyword then
+                    // consume AT MOST ONE following value — using a block skip when the
+                    // next token is `{`, or consuming a single quoted/word value otherwise.
+                    // This prevents the greedy while-loop inside
+                    // `skip_optional_block_or_value` from eating the subsequent line's
+                    // identifier.
+                    self.advance(); // the keyword
+                    if self.peek_open_brace() {
+                        self.advance();
+                        self.skip_block();
+                    } else {
+                        // consume one optional value token
+                        let _ = self.consume_string();
+                    }
                 }
             }
             self.expect_close_brace()?;
@@ -1037,8 +1119,8 @@ impl Parser {
                 let src = self.consume_string().unwrap_or_default();
                 self.advance(); // ->
                 let dst = self.consume_string().unwrap_or_default();
-                let desc = self.consume_string();
-                let tech = self.consume_string();
+                let desc = self.consume_string_if_not_brace();
+                let tech = self.consume_string_if_not_brace();
                 let rel_id = self.next_id();
                     let src_id = self.resolve_identifier(&src);
                     let dst_id = self.resolve_identifier(&dst);
@@ -1066,7 +1148,7 @@ impl Parser {
         let src = self.consume_string().unwrap_or_default();
         self.advance(); // ->
         let dst = self.consume_string().unwrap_or_default();
-        let desc = self.consume_string();
+        let desc = self.consume_string_if_not_brace();
         let tech = self.consume_string_if_not_brace_or_kw();
         let tags = self.consume_string_if_not_brace_or_kw();
 
@@ -1158,7 +1240,7 @@ impl Parser {
                         }
                         "dynamic" => {
                             self.advance();
-                            let v = self.parse_dynamic_view()?;
+                            let v = self.parse_dynamic_view(model)?;
                             views.dynamic_views.get_or_insert_with(Vec::new).push(v);
                         }
                         "deployment" => {
@@ -1241,7 +1323,8 @@ impl Parser {
         let key = self.consume_string_if_not_brace_or_kw();
         let title = self.consume_string_if_not_brace_or_kw();
         let mut include_all = false;
-        let auto_layout = self.parse_optional_view_block(&mut include_all)?;
+        let mut explicit_includes: Vec<String> = Vec::new();
+        let auto_layout = self.parse_view_block(&mut include_all, &mut explicit_includes)?;
         let mut view = SystemLandscapeView {
             key,
             title,
@@ -1262,7 +1345,8 @@ impl Parser {
         let key = self.consume_string_if_not_brace_or_kw();
         let title = self.consume_string_if_not_brace_or_kw();
         let mut include_all = false;
-        let auto_layout = self.parse_optional_view_block(&mut include_all)?;
+        let mut explicit_includes: Vec<String> = Vec::new();
+        let auto_layout = self.parse_view_block(&mut include_all, &mut explicit_includes)?;
         let mut view = SystemContextView {
             software_system_id: ss_id,
             key,
@@ -1273,6 +1357,9 @@ impl Parser {
 
         if include_all {
             self.populate_system_context_view(model, &mut view);
+        } else if !explicit_includes.is_empty() {
+            self.populate_view_with_explicit_includes(model, &explicit_includes,
+                &mut view.element_views, &mut view.relationship_views);
         }
 
         Ok(view)
@@ -1284,7 +1371,8 @@ impl Parser {
         let key = self.consume_string_if_not_brace_or_kw();
         let title = self.consume_string_if_not_brace_or_kw();
         let mut include_all = false;
-        let auto_layout = self.parse_optional_view_block(&mut include_all)?;
+        let mut explicit_includes: Vec<String> = Vec::new();
+        let auto_layout = self.parse_view_block(&mut include_all, &mut explicit_includes)?;
         let mut view = ContainerView {
             software_system_id: ss_id,
             key,
@@ -1295,6 +1383,9 @@ impl Parser {
 
         if include_all {
             self.populate_container_view(model, &mut view);
+        } else if !explicit_includes.is_empty() {
+            self.populate_view_with_explicit_includes(model, &explicit_includes,
+                &mut view.element_views, &mut view.relationship_views);
         }
 
         Ok(view)
@@ -1306,7 +1397,8 @@ impl Parser {
         let key = self.consume_string_if_not_brace_or_kw();
         let title = self.consume_string_if_not_brace_or_kw();
         let mut include_all = false;
-        let auto_layout = self.parse_optional_view_block(&mut include_all)?;
+        let mut explicit_includes: Vec<String> = Vec::new();
+        let auto_layout = self.parse_view_block(&mut include_all, &mut explicit_includes)?;
         let mut view = ComponentView {
             container_id: cont_id,
             key,
@@ -1316,11 +1408,14 @@ impl Parser {
         };
         if include_all {
             self.populate_component_view(model, &mut view);
+        } else if !explicit_includes.is_empty() {
+            self.populate_view_with_explicit_includes(model, &explicit_includes,
+                &mut view.element_views, &mut view.relationship_views);
         }
         Ok(view)
     }
 
-    fn parse_dynamic_view(&mut self) -> Result<DynamicView, ParseError> {
+    fn parse_dynamic_view(&mut self, model: &Model) -> Result<DynamicView, ParseError> {
         let elem_ref = self.consume_string().unwrap_or_default();
         let elem_id = if elem_ref == "*" {
             None
@@ -1329,14 +1424,155 @@ impl Parser {
         };
         let key = self.consume_string_if_not_brace_or_kw();
         let title = self.consume_string_if_not_brace_or_kw();
-        let mut include_all = false;
-        let _ = self.parse_optional_view_block(&mut include_all)?;
+        let description = self.consume_string_if_not_brace_or_kw();
+
+        let (element_views, relationship_views, auto_layout) =
+            self.parse_dynamic_view_block(model);
+
         Ok(DynamicView {
             element_id: elem_id,
             key,
             title,
+            description,
+            element_views: if element_views.is_empty() { None } else { Some(element_views) },
+            relationship_views: if relationship_views.is_empty() { None } else { Some(relationship_views) },
+            automatic_layout: auto_layout,
             ..Default::default()
         })
+    }
+
+    /// Parse a dynamic view block, collecting `source -> dest "desc"` steps.
+    fn parse_dynamic_view_block(
+        &mut self,
+        model: &Model,
+    ) -> (Vec<ElementView>, Vec<RelationshipView>, Option<AutomaticLayout>) {
+        let mut element_set: HashSet<String> = HashSet::new();
+        let mut rel_views: Vec<RelationshipView> = Vec::new();
+        let mut auto_layout = None;
+        let mut order = 1u32;
+
+        if !self.peek_open_brace() {
+            return (Vec::new(), Vec::new(), None);
+        }
+        self.advance();
+
+        while self.peek().is_some() && !self.peek_close_brace() {
+            match self.peek() {
+                Some(Token::Word(w)) if w.eq_ignore_ascii_case("autolayout") || w.eq_ignore_ascii_case("autoLayout") => {
+                    self.advance();
+                    let direction = match self.peek() {
+                        Some(Token::Word(w)) if is_autolayout_direction(w) => self.consume_string(),
+                        _ => None,
+                    };
+                    let rank_sep = match self.peek() {
+                        Some(Token::Word(w)) if w.parse::<i32>().is_ok() => {
+                            self.consume_string().and_then(|s| s.parse::<i32>().ok())
+                        }
+                        _ => None,
+                    };
+                    let node_sep = match self.peek() {
+                        Some(Token::Word(w)) if w.parse::<i32>().is_ok() => {
+                            self.consume_string().and_then(|s| s.parse::<i32>().ok())
+                        }
+                        _ => None,
+                    };
+                    auto_layout = Some(AutomaticLayout {
+                        implementation: Some("Graphviz".to_string()),
+                        rank_direction: direction,
+                        rank_separation: rank_sep,
+                        node_separation: node_sep,
+                        ..Default::default()
+                    });
+                }
+                Some(Token::Word(w)) if w.eq_ignore_ascii_case("description") || w.eq_ignore_ascii_case("title") || w.eq_ignore_ascii_case("properties") => {
+                    self.advance();
+                    if self.peek_open_brace() {
+                        self.advance();
+                        self.skip_block();
+                    } else {
+                        let _ = self.consume_string();
+                    }
+                }
+                _ if self.peek_at_arrow_after_word() => {
+                    // `sourceId -> destId "desc" "tech"` step
+                    let src_ref = self.consume_string().unwrap_or_default();
+                    self.advance(); // ->
+                    let dst_ref = self.consume_string().unwrap_or_default();
+                    let step_desc = self.consume_string_if_not_brace();
+                    let _step_tech = self.consume_string_if_not_brace();
+
+                    let src_id = self.resolve_identifier(&src_ref);
+                    let dst_id = self.resolve_identifier(&dst_ref);
+
+                    element_set.insert(src_id.clone());
+                    element_set.insert(dst_id.clone());
+
+                    // Find relationship ID in the model between src and dst
+                    let rel_id = Self::find_relationship_id(model, &src_id, &dst_id);
+                    if let Some(id) = rel_id {
+                        rel_views.push(RelationshipView {
+                            id,
+                            order: Some(order.to_string()),
+                            description: step_desc,
+                            ..Default::default()
+                        });
+                    } else {
+                        // No existing relationship found; create a placeholder with a
+                        // synthetic ID so the view can still record the step.
+                        rel_views.push(RelationshipView {
+                            id: format!("dyn-{}-{}", src_id, dst_id),
+                            order: Some(order.to_string()),
+                            description: step_desc,
+                            ..Default::default()
+                        });
+                    }
+                    order += 1;
+                }
+                _ => {
+                    self.advance();
+                }
+            }
+        }
+        if self.peek_close_brace() {
+            self.advance();
+        }
+
+        let element_views = element_set
+            .into_iter()
+            .map(|id| ElementView { id, ..Default::default() })
+            .collect();
+
+        (element_views, rel_views, auto_layout)
+    }
+
+    /// Search the model for a relationship between `src_id` and `dst_id` and
+    /// return its ID, if found.
+    fn find_relationship_id(model: &Model, src_id: &str, dst_id: &str) -> Option<String> {
+        fn check_rels(rels: &Option<Vec<Relationship>>, src: &str, dst: &str) -> Option<String> {
+            rels.as_ref()?.iter().find(|r| r.source_id == src && r.destination_id == dst).map(|r| r.id.clone())
+        }
+
+        if let Some(people) = &model.people {
+            for p in people {
+                if let Some(id) = check_rels(&p.relationships, src_id, dst_id) { return Some(id); }
+            }
+        }
+        if let Some(systems) = &model.software_systems {
+            for ss in systems {
+                if let Some(id) = check_rels(&ss.relationships, src_id, dst_id) { return Some(id); }
+                if let Some(containers) = &ss.containers {
+                    for c in containers {
+                        if let Some(id) = check_rels(&c.relationships, src_id, dst_id) { return Some(id); }
+                        if let Some(components) = &c.components {
+                            for comp in components {
+                                if let Some(id) = check_rels(&comp.relationships, src_id, dst_id) { return Some(id); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 
     fn parse_deployment_view(&mut self, model: &Model) -> Result<DeploymentView, ParseError> {
@@ -1387,6 +1623,27 @@ impl Parser {
 
     /// Parse a view block (inside `{ }`), return automatic layout if present.
     fn parse_optional_view_block(&mut self, include_all: &mut bool) -> Result<Option<AutomaticLayout>, ParseError> {
+        let mut ignored = Vec::new();
+        self.parse_view_block_inner(include_all, &mut ignored)
+    }
+
+    /// Full view-block parser that also collects explicit include specs:
+    /// - `include *` sets `include_all = true`
+    /// - `include ident` adds `ident` to `explicit_includes`
+    /// - `include ->ident->` adds the neighborhood marker to `explicit_includes`
+    fn parse_view_block(
+        &mut self,
+        include_all: &mut bool,
+        explicit_includes: &mut Vec<String>,
+    ) -> Result<Option<AutomaticLayout>, ParseError> {
+        self.parse_view_block_inner(include_all, explicit_includes)
+    }
+
+    fn parse_view_block_inner(
+        &mut self,
+        include_all: &mut bool,
+        explicit_includes: &mut Vec<String>,
+    ) -> Result<Option<AutomaticLayout>, ParseError> {
         if !self.peek_open_brace() {
             return Ok(None);
         }
@@ -1409,15 +1666,12 @@ impl Parser {
                 }
                 Some(Token::Word(w)) if w.eq_ignore_ascii_case("autolayout") || w.eq_ignore_ascii_case("autoLayout") => {
                     self.advance();
-                    // Only consume direction if it is a known layout direction value.
                     let direction = match self.peek() {
                         Some(Token::Word(w)) if is_autolayout_direction(w) => {
                             self.consume_string()
                         }
                         _ => None,
                     };
-                    // Rank/node separations are optional integer literals.
-                    // Only consume if the next token looks like a number.
                     let rank_sep = match self.peek() {
                         Some(Token::Word(w)) if w.parse::<i32>().is_ok() => {
                             self.consume_string().and_then(|s| s.parse::<i32>().ok())
@@ -1440,19 +1694,37 @@ impl Parser {
                 }
                 Some(Token::Word(w)) if w.eq_ignore_ascii_case("include") => {
                     self.advance();
-                    // Consume element identifiers/wildcards after `include`.
-                    // Stop if we hit a view-level keyword so they are processed by
-                    // the outer match (e.g. `autoLayout`, `exclude`, `animation`).
-                    while matches!(self.peek(), Some(Token::Word(_)) | Some(Token::Quoted(_))) {
-                        let is_kw = matches!(
-                            self.peek(),
-                            Some(Token::Word(w)) if is_view_block_keyword(w)
-                        );
-                        if is_kw { break; }
-                        if let Some(token) = self.consume_string() {
-                            if token == "*" {
-                                *include_all = true;
+                    // Parse the include argument(s).
+                    // Handles: `include *`, `include ident`, `include ->ident->`
+                    loop {
+                        // Leading `->` means neighborhood syntax: `->ident->`
+                        if matches!(self.peek(), Some(Token::Arrow)) {
+                            self.advance(); // consume leading `->`
+                            // Collect the identifier (may be dotted like `ss.container`)
+                            if let Some(ident) = self.consume_string() {
+                                // Trailing `->` is optional but expected
+                                if matches!(self.peek(), Some(Token::Arrow)) {
+                                    self.advance();
+                                }
+                                // Mark as neighborhood with a `->` prefix so callers
+                                // can distinguish it from a plain element include.
+                                explicit_includes.push(format!("->{}", ident));
                             }
+                        } else if matches!(self.peek(), Some(Token::Word(_)) | Some(Token::Quoted(_))) {
+                            let is_kw = matches!(
+                                self.peek(),
+                                Some(Token::Word(w)) if is_view_block_keyword(w)
+                            );
+                            if is_kw { break; }
+                            if let Some(token) = self.consume_string() {
+                                if token == "*" {
+                                    *include_all = true;
+                                } else {
+                                    explicit_includes.push(token);
+                                }
+                            }
+                        } else {
+                            break;
                         }
                     }
                 }
@@ -1902,7 +2174,93 @@ impl Parser {
         view.relationship_views = Some(self.collect_relationship_view_ids(model, &ids));
     }
 
-    // ─── Styles ─────────────────────────────────────────────────────────────────
+    /// Populate element_views and relationship_views from a list of explicit include specs.
+    ///
+    /// Each spec is either:
+    /// - A plain identifier string (e.g. `"person_apple"`) meaning include that element directly.
+    /// - A string with a `->` prefix (e.g. `"->softwareSystem.service1"`) meaning include the
+    ///   element AND all elements directly related to it (neighborhood syntax).
+    fn populate_view_with_explicit_includes(
+        &self,
+        model: &Model,
+        specs: &[String],
+        element_views: &mut Option<Vec<ElementView>>,
+        relationship_views: &mut Option<Vec<RelationshipView>>,
+    ) {
+        let mut ids: HashSet<String> = HashSet::new();
+
+        for spec in specs {
+            if let Some(ident) = spec.strip_prefix("->") {
+                // Neighborhood: include the element itself + all directly related elements.
+                // If the identifier resolves to a group (synthetic ID), expand to all children
+                // of that group (all identifiers with the group as prefix) and include their
+                // neighborhoods instead.
+                let center_id = self.resolve_identifier(ident);
+                if center_id.starts_with("group:") {
+                    // Expand: include all children of this group + their neighborhoods
+                    let children = self.register.children_of(ident);
+                    for child_id in &children {
+                        if child_id.starts_with("group:") { continue; }
+                        ids.insert(child_id.clone());
+                        self.collect_neighborhood_ids(model, child_id, &mut ids);
+                    }
+                } else {
+                    ids.insert(center_id.clone());
+                    self.collect_neighborhood_ids(model, &center_id, &mut ids);
+                }
+            } else {
+                let resolved = self.resolve_identifier(spec);
+                ids.insert(resolved);
+            }
+        }
+
+        // Remove any group synthetic IDs (they're not real elements)
+        ids.retain(|id| !id.starts_with("group:"));
+
+        *element_views = Some(
+            ids.iter()
+                .map(|id| ElementView { id: id.clone(), ..Default::default() })
+                .collect(),
+        );
+        *relationship_views = Some(self.collect_relationship_view_ids(model, &ids));
+    }
+
+    /// Add all elements that have a direct relationship to/from `center_id` into `ids`.
+    fn collect_neighborhood_ids(&self, model: &Model, center_id: &str, ids: &mut HashSet<String>) {
+        fn check_rels(rels: &Option<Vec<Relationship>>, center: &str, ids: &mut HashSet<String>) {
+            if let Some(rels) = rels {
+                for rel in rels {
+                    if rel.source_id == center {
+                        ids.insert(rel.destination_id.clone());
+                    } else if rel.destination_id == center {
+                        ids.insert(rel.source_id.clone());
+                    }
+                }
+            }
+        }
+
+        if let Some(people) = &model.people {
+            for p in people {
+                check_rels(&p.relationships, center_id, ids);
+            }
+        }
+        if let Some(systems) = &model.software_systems {
+            for ss in systems {
+                check_rels(&ss.relationships, center_id, ids);
+                if let Some(containers) = &ss.containers {
+                    for c in containers {
+                        check_rels(&c.relationships, center_id, ids);
+                        if let Some(components) = &c.components {
+                            for comp in components {
+                                check_rels(&comp.relationships, center_id, ids);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 
     fn parse_styles(&mut self) -> Result<Styles, ParseError> {
         let mut elements = Vec::new();
