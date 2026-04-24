@@ -747,6 +747,8 @@ impl Parser {
     fn parse_deployment_environment(&mut self) -> Result<Vec<DeploymentNode>, ParseError> {
         let env_name = self.consume_string().unwrap_or_else(|| "Default".to_string());
         let mut nodes = Vec::new();
+        // Collect relationships defined at environment level (e.g. node -> node)
+        let mut env_rels: Vec<Relationship> = Vec::new();
 
         if self.peek_open_brace() {
             self.advance();
@@ -767,6 +769,25 @@ impl Parser {
                         &env_name,
                     )?;
                     nodes.push(node);
+                } else if !has_ident && self.peek_at_arrow_after_word() {
+                    // Relationship between deployment nodes at environment level.
+                    let src = self.consume_string().unwrap_or_default();
+                    self.advance(); // ->
+                    let dst = self.consume_string().unwrap_or_default();
+                    let desc = self.consume_string();
+                    let tech = self.consume_string();
+                    let rel_id = self.next_id();
+                    let src_id = self.resolve_identifier(&src);
+                    let dst_id = self.resolve_identifier(&dst);
+                    env_rels.push(Relationship {
+                        id: rel_id,
+                        source_id: src_id.clone(),
+                        destination_id: dst_id,
+                        description: desc,
+                        technology: tech,
+                        tags: Some("Relationship".to_string()),
+                        ..Default::default()
+                    });
                 } else if matches!(self.peek(), Some(Token::Directive(_))) {
                     self.advance();
                     self.skip_optional_block_or_value();
@@ -778,7 +799,33 @@ impl Parser {
             self.expect_close_brace()?;
         }
 
+        // Attach environment-level relationships to their source nodes.
+        if !env_rels.is_empty() {
+            Self::attach_deployment_rels(&mut nodes, &env_rels);
+        }
+
         Ok(nodes)
+    }
+
+    /// Recursively search deployment node trees for a source node and attach
+    /// unresolved environment-level relationships to it.
+    fn attach_deployment_rels(nodes: &mut Vec<DeploymentNode>, rels: &[Relationship]) {
+        for node in nodes.iter_mut() {
+            // Attach any relationship whose source matches this node.
+            let to_attach: Vec<Relationship> = rels
+                .iter()
+                .filter(|r| r.source_id == node.id)
+                .cloned()
+                .collect();
+            if !to_attach.is_empty() {
+                let existing = node.relationships.get_or_insert_with(Vec::new);
+                existing.extend(to_attach);
+            }
+            // Recurse into children.
+            if let Some(children) = node.children.as_mut() {
+                Self::attach_deployment_rels(children, rels);
+            }
+        }
     }
 
     fn parse_deployment_node(&mut self, identifier: &str, env: &str) -> Result<DeploymentNode, ParseError> {
@@ -1748,6 +1795,42 @@ impl Parser {
                         }
                     }
                 }
+            }
+        }
+
+        // Also scan deployment node hierarchies (container instances, infrastructure nodes).
+        fn scan_deployment_node(
+            node: &DeploymentNode,
+            ids: &HashSet<String>,
+            seen: &mut HashSet<String>,
+            out: &mut Vec<RelationshipView>,
+        ) {
+            collect_from_relationships(&node.relationships, ids, seen, out);
+            if let Some(cis) = &node.container_instances {
+                for ci in cis {
+                    collect_from_relationships(&ci.relationships, ids, seen, out);
+                }
+            }
+            if let Some(ssis) = &node.software_system_instances {
+                for ssi in ssis {
+                    collect_from_relationships(&ssi.relationships, ids, seen, out);
+                }
+            }
+            if let Some(infs) = &node.infrastructure_nodes {
+                for inf in infs {
+                    collect_from_relationships(&inf.relationships, ids, seen, out);
+                }
+            }
+            if let Some(children) = &node.children {
+                for child in children {
+                    scan_deployment_node(child, ids, seen, out);
+                }
+            }
+        }
+
+        if let Some(nodes) = &model.deployment_nodes {
+            for node in nodes {
+                scan_deployment_node(node, ids, &mut seen, &mut out);
             }
         }
 
