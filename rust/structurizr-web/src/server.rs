@@ -10,20 +10,27 @@ use axum::{
 use axum::extract::ws::{Message, WebSocket};
 
 use crate::assets::Assets;
+use crate::markdown::render_markdown;
 use crate::state::{AppState, BroadcastMsg, WorkspaceSummary};
 
 // ---- Embedded templates ----
 const INDEX_HTML: &str = include_str!("templates/index.html");
 const WORKSPACE_HTML: &str = include_str!("templates/workspace.html");
 const DIAGRAM_HTML: &str = include_str!("templates/diagram.html");
+const DECISIONS_HTML: &str = include_str!("templates/decisions.html");
+const DECISION_HTML: &str = include_str!("templates/decision.html");
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index_handler))
         .route("/workspace/{name}", get(workspace_handler))
         .route("/workspace/{name}/diagram/{key}", get(diagram_handler))
+        .route("/workspace/{name}/decisions", get(decisions_handler))
+        .route("/workspace/{name}/decisions/{id}", get(decision_handler))
         .route("/api/workspaces", get(api_workspaces_handler))
         .route("/api/workspace/{name}", get(api_workspace_handler))
+        .route("/api/workspace/{name}/decisions", get(api_decisions_handler))
+        .route("/api/workspace/{name}/decisions/{id}", get(api_decision_handler))
         .route("/static/{*path}", get(static_handler))
         .route("/ws", get(ws_handler))
         .with_state(state)
@@ -52,6 +59,23 @@ async fn diagram_handler(Path((name, key)): Path<(String, String)>) -> Html<Stri
     )
 }
 
+async fn decisions_handler(Path(name): Path<String>) -> Html<String> {
+    Html(
+        DECISIONS_HTML
+            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
+    )
+}
+
+async fn decision_handler(Path((name, id)): Path<(String, String)>) -> Html<String> {
+    Html(
+        DECISION_HTML
+            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name))
+            .replace("{{DECISION_ID}}", &js_escape(&id)),
+    )
+}
+
 // ---- JSON API ----
 
 async fn api_workspaces_handler(State(state): State<AppState>) -> impl IntoResponse {
@@ -74,6 +98,69 @@ async fn api_workspace_handler(
             )
                 .into_response(),
             Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        }
+    } else {
+        (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response()
+    }
+}
+
+async fn api_decisions_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Response {
+    let workspaces = state.workspaces.lock().unwrap();
+    if let Some(entry) = workspaces.iter().find(|e| e.name == name) {
+        let decisions = entry
+            .workspace
+            .documentation
+            .as_ref()
+            .and_then(|d| d.decisions.as_ref())
+            .cloned()
+            .unwrap_or_default();
+        match serde_json::to_string(&decisions) {
+            Ok(json) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/json")],
+                json,
+            )
+                .into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        }
+    } else {
+        (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response()
+    }
+}
+
+async fn api_decision_handler(
+    State(state): State<AppState>,
+    Path((name, id)): Path<(String, String)>,
+) -> Response {
+    let workspaces = state.workspaces.lock().unwrap();
+    if let Some(entry) = workspaces.iter().find(|e| e.name == name) {
+        let decision = entry
+            .workspace
+            .documentation
+            .as_ref()
+            .and_then(|d| d.decisions.as_ref())
+            .and_then(|ds| ds.iter().find(|d| d.id == id))
+            .cloned();
+        match decision {
+            Some(mut d) => {
+                if d.format.to_lowercase() != "asciidoc" {
+                    d.content = render_markdown(&d.content);
+                    d.format = "HTML".to_string();
+                }
+                match serde_json::to_string(&d) {
+                    Ok(json) => (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, "application/json")],
+                        json,
+                    )
+                        .into_response(),
+                    Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+                }
+            }
+            None => (StatusCode::NOT_FOUND, format!("Decision '{}' not found", id)).into_response(),
         }
     } else {
         (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response()

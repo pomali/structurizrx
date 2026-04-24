@@ -246,6 +246,22 @@
         var list = document.getElementById('view-list');
         list.innerHTML = '';
 
+        // ADR decisions link (shown only if workspace has decisions)
+        var hasDecisions = structurizr.workspace.hasDecisions &&
+                           structurizr.workspace.hasDecisions();
+        if (hasDecisions) {
+            var decisionsHdr = document.createElement('div');
+            decisionsHdr.className = 'view-group-header';
+            decisionsHdr.textContent = 'Documentation';
+            list.appendChild(decisionsHdr);
+
+            var decisionsLink = document.createElement('a');
+            decisionsLink.className = 'view-item';
+            decisionsLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/decisions';
+            decisionsLink.innerHTML = '<i class="bi bi-journal-text me-1"></i>Decisions';
+            list.appendChild(decisionsLink);
+        }
+
         // Group views by type
         var groups = [
             { label: 'Landscape',      type: structurizr.constants.SYSTEM_LANDSCAPE_VIEW_TYPE },

@@ -14,18 +14,28 @@ pub struct WorkspaceSummary {
     pub display_name: String,
     pub description: Option<String>,
     pub diagram_count: usize,
+    pub decision_count: usize,
 }
 
 impl From<&WorkspaceEntry> for WorkspaceSummary {
     fn from(e: &WorkspaceEntry) -> Self {
         let diagram_count = count_diagrams(&e.workspace);
+        let decision_count = count_decisions(&e.workspace);
         WorkspaceSummary {
             name: e.name.clone(),
             display_name: e.display_name.clone(),
             description: e.workspace.description.clone(),
             diagram_count,
+            decision_count,
         }
     }
+}
+
+fn count_decisions(ws: &structurizr_model::Workspace) -> usize {
+    ws.documentation
+        .as_ref()
+        .and_then(|d| d.decisions.as_ref())
+        .map_or(0, |d| d.len())
 }
 
 fn count_diagrams(ws: &structurizr_model::Workspace) -> usize {
