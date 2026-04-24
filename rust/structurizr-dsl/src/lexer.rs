@@ -59,9 +59,13 @@ pub fn tokenize(source: &str) -> Vec<Spanned> {
 
         let pos = Pos { line, col };
 
-        // Single-line comment: // or #
+        // Single-line comment: // or bare #
+        // A '#' is a comment only when it is NOT followed by a hex digit (colors like #1168bd)
+        // and NOT followed by '{' (variable interpolation #{...}).
         if (c == '/' && i + 1 < chars.len() && chars[i + 1] == '/')
-            || (c == '#' && !(i + 1 < chars.len() && chars[i + 1] == '{'))
+            || (c == '#'
+                && !(i + 1 < chars.len() && chars[i + 1] == '{')
+                && !(i + 1 < chars.len() && chars[i + 1].is_ascii_hexdigit()))
         {
             while i < chars.len() && chars[i] != '\n' {
                 i += 1;

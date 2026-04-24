@@ -1106,7 +1106,7 @@ impl Parser {
                         }
                         "component" => {
                             self.advance();
-                            let v = self.parse_component_view()?;
+                            let v = self.parse_component_view(model)?;
                             views.component_views.get_or_insert_with(Vec::new).push(v);
                         }
                         "dynamic" => {
@@ -1116,7 +1116,7 @@ impl Parser {
                         }
                         "deployment" => {
                             self.advance();
-                            let v = self.parse_deployment_view()?;
+                            let v = self.parse_deployment_view(model)?;
                             views.deployment_views.get_or_insert_with(Vec::new).push(v);
                         }
                         "filtered" => {
@@ -1160,7 +1160,20 @@ impl Parser {
                         }
                         _ => {
                             self.advance();
-                            self.skip_optional_block_or_value();
+                            // Consume any remaining word/quoted arguments, then skip
+                            // an optional block. This handles unknown view types like
+                            // `image`, `custom`, etc. that may have multiple positional
+                            // args followed by a `{ ... }` body.
+                            while matches!(
+                                self.peek(),
+                                Some(Token::Word(_)) | Some(Token::Quoted(_)) | Some(Token::TextBlock(_))
+                            ) {
+                                self.advance();
+                            }
+                            if self.peek_open_brace() {
+                                self.advance();
+                                self.skip_block();
+                            }
                         }
                     }
                 }
@@ -1240,20 +1253,24 @@ impl Parser {
         Ok(view)
     }
 
-    fn parse_component_view(&mut self) -> Result<ComponentView, ParseError> {
+    fn parse_component_view(&mut self, model: &Model) -> Result<ComponentView, ParseError> {
         let cont_ref = self.consume_string().unwrap_or_default();
         let cont_id = self.resolve_identifier(&cont_ref);
         let key = self.consume_string_if_not_brace_or_kw();
         let title = self.consume_string_if_not_brace_or_kw();
         let mut include_all = false;
         let auto_layout = self.parse_optional_view_block(&mut include_all)?;
-        Ok(ComponentView {
+        let mut view = ComponentView {
             container_id: cont_id,
             key,
             title,
             automatic_layout: auto_layout,
             ..Default::default()
-        })
+        };
+        if include_all {
+            self.populate_component_view(model, &mut view);
+        }
+        Ok(view)
     }
 
     fn parse_dynamic_view(&mut self) -> Result<DynamicView, ParseError> {
@@ -1275,7 +1292,7 @@ impl Parser {
         })
     }
 
-    fn parse_deployment_view(&mut self) -> Result<DeploymentView, ParseError> {
+    fn parse_deployment_view(&mut self, model: &Model) -> Result<DeploymentView, ParseError> {
         let scope_ref = self.consume_string().unwrap_or_default();
         let scope_id = if scope_ref == "*" {
             None
@@ -1287,14 +1304,18 @@ impl Parser {
         let title = self.consume_string_if_not_brace_or_kw();
         let mut include_all = false;
         let auto_layout = self.parse_optional_view_block(&mut include_all)?;
-        Ok(DeploymentView {
+        let mut view = DeploymentView {
             software_system_id: scope_id,
             environment: env,
             key,
             title,
             automatic_layout: auto_layout,
             ..Default::default()
-        })
+        };
+        if include_all {
+            self.populate_deployment_view(model, &mut view);
+        }
+        Ok(view)
     }
 
     fn parse_filtered_view(&mut self) -> Result<FilteredView, ParseError> {
@@ -1341,13 +1362,27 @@ impl Parser {
                 }
                 Some(Token::Word(w)) if w.eq_ignore_ascii_case("autolayout") || w.eq_ignore_ascii_case("autoLayout") => {
                     self.advance();
-                    let direction = self.consume_bare_word_or_string();
-                    let rank_sep = self
-                        .consume_bare_word_or_string()
-                        .and_then(|s| s.parse().ok());
-                    let node_sep = self
-                        .consume_bare_word_or_string()
-                        .and_then(|s| s.parse().ok());
+                    // Only consume direction if it is a known layout direction value.
+                    let direction = match self.peek() {
+                        Some(Token::Word(w)) if is_autolayout_direction(w) => {
+                            self.consume_string()
+                        }
+                        _ => None,
+                    };
+                    // Rank/node separations are optional integer literals.
+                    // Only consume if the next token looks like a number.
+                    let rank_sep = match self.peek() {
+                        Some(Token::Word(w)) if w.parse::<i32>().is_ok() => {
+                            self.consume_string().and_then(|s| s.parse::<i32>().ok())
+                        }
+                        _ => None,
+                    };
+                    let node_sep = match self.peek() {
+                        Some(Token::Word(w)) if w.parse::<i32>().is_ok() => {
+                            self.consume_string().and_then(|s| s.parse::<i32>().ok())
+                        }
+                        _ => None,
+                    };
                     auto_layout = Some(AutomaticLayout {
                         implementation: Some("Graphviz".to_string()),
                         rank_direction: direction,
@@ -1358,7 +1393,15 @@ impl Parser {
                 }
                 Some(Token::Word(w)) if w.eq_ignore_ascii_case("include") => {
                     self.advance();
+                    // Consume element identifiers/wildcards after `include`.
+                    // Stop if we hit a view-level keyword so they are processed by
+                    // the outer match (e.g. `autoLayout`, `exclude`, `animation`).
                     while matches!(self.peek(), Some(Token::Word(_)) | Some(Token::Quoted(_))) {
+                        let is_kw = matches!(
+                            self.peek(),
+                            Some(Token::Word(w)) if is_view_block_keyword(w)
+                        );
+                        if is_kw { break; }
                         if let Some(token) = self.consume_string() {
                             if token == "*" {
                                 *include_all = true;
@@ -1406,6 +1449,111 @@ impl Parser {
         }
 
         ids
+    }
+
+    /// Collect all element IDs for a component view scoped to `container_id`.
+    /// Includes: all components of that container, plus people/systems/containers
+    /// that have a direct relationship with any of those components.
+    fn collect_component_view_ids(&self, model: &Model, container_id: &str) -> HashSet<String> {
+        // First, collect all components of the target container.
+        let mut component_ids: HashSet<String> = HashSet::new();
+        if let Some(systems) = &model.software_systems {
+            for ss in systems {
+                if let Some(containers) = &ss.containers {
+                    for c in containers {
+                        if c.id == container_id {
+                            if let Some(components) = &c.components {
+                                for comp in components {
+                                    component_ids.insert(comp.id.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Include the components themselves plus any element directly related to them.
+        let mut ids = component_ids.clone();
+        ids.insert(container_id.to_string());
+
+        fn related_elements(
+            relationships: &Option<Vec<Relationship>>,
+            component_ids: &HashSet<String>,
+            ids: &mut HashSet<String>,
+        ) {
+            if let Some(rels) = relationships {
+                for rel in rels {
+                    if component_ids.contains(&rel.source_id) {
+                        ids.insert(rel.destination_id.clone());
+                    } else if component_ids.contains(&rel.destination_id) {
+                        ids.insert(rel.source_id.clone());
+                    }
+                }
+            }
+        }
+
+        if let Some(people) = &model.people {
+            for p in people {
+                related_elements(&p.relationships, &component_ids, &mut ids);
+            }
+        }
+        if let Some(systems) = &model.software_systems {
+            for ss in systems {
+                related_elements(&ss.relationships, &component_ids, &mut ids);
+                if let Some(containers) = &ss.containers {
+                    for c in containers {
+                        related_elements(&c.relationships, &component_ids, &mut ids);
+                        if let Some(components) = &c.components {
+                            for comp in components {
+                                related_elements(&comp.relationships, &component_ids, &mut ids);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        ids
+    }
+
+    /// Collect all deployment node IDs for a deployment view scoped to `environment`.
+    fn collect_deployment_view_ids(&self, model: &Model, environment: &str) -> HashSet<String> {
+        let mut ids = HashSet::new();
+        if let Some(nodes) = &model.deployment_nodes {
+            for node in nodes {
+                if node.environment.as_deref().unwrap_or("") == environment
+                    || environment.is_empty()
+                {
+                    self.collect_deployment_node_ids_recursive(node, &mut ids);
+                }
+            }
+        }
+        ids
+    }
+
+    fn collect_deployment_node_ids_recursive(&self, node: &DeploymentNode, ids: &mut HashSet<String>) {
+        ids.insert(node.id.clone());
+        if let Some(children) = &node.children {
+            for child in children {
+                self.collect_deployment_node_ids_recursive(child, ids);
+            }
+        }
+        if let Some(instances) = &node.container_instances {
+            for inst in instances {
+                ids.insert(inst.id.clone());
+            }
+        }
+        if let Some(instances) = &node.software_system_instances {
+            for inst in instances {
+                ids.insert(inst.id.clone());
+            }
+        }
+        if let Some(nodes) = &node.infrastructure_nodes {
+            for inf in nodes {
+                ids.insert(inf.id.clone());
+            }
+        }
     }
 
     fn collect_relationship_view_ids(&self, model: &Model, ids: &HashSet<String>) -> Vec<RelationshipView> {
@@ -1499,6 +1647,32 @@ impl Parser {
         view.relationship_views = Some(self.collect_relationship_view_ids(model, &ids));
     }
 
+    fn populate_component_view(&self, model: &Model, view: &mut ComponentView) {
+        let ids = self.collect_component_view_ids(model, &view.container_id);
+        view.element_views = Some(
+            ids.iter()
+                .map(|id| ElementView {
+                    id: id.clone(),
+                    ..Default::default()
+                })
+                .collect(),
+        );
+        view.relationship_views = Some(self.collect_relationship_view_ids(model, &ids));
+    }
+
+    fn populate_deployment_view(&self, model: &Model, view: &mut DeploymentView) {
+        let ids = self.collect_deployment_view_ids(model, &view.environment);
+        view.element_views = Some(
+            ids.iter()
+                .map(|id| ElementView {
+                    id: id.clone(),
+                    ..Default::default()
+                })
+                .collect(),
+        );
+        view.relationship_views = Some(self.collect_relationship_view_ids(model, &ids));
+    }
+
     // ─── Styles ─────────────────────────────────────────────────────────────────
 
     fn parse_styles(&mut self) -> Result<Styles, ParseError> {
@@ -1556,7 +1730,7 @@ impl Parser {
                 let key = self.consume_string().unwrap_or_default().to_lowercase();
                 let value = self.consume_string().unwrap_or_default();
                 match key.as_str() {
-                    "shape" => style.shape = Some(value),
+                    "shape" => style.shape = Some(canonicalize_shape(&value)),
                     "background" => style.background = Some(value),
                     "color" | "colour" => style.color = Some(value),
                     "stroke" => style.stroke = Some(value),
@@ -1650,6 +1824,57 @@ fn is_top_level_keyword(w: &str) -> bool {
         w.to_lowercase().as_str(),
         "workspace" | "model" | "views" | "configuration" | "documentation" | "docs"
     )
+}
+
+/// Returns true if `w` is a keyword that can appear at the top-level of a
+/// view body block (i.e. it is NOT a valid element-identifier argument to `include`).
+fn is_view_block_keyword(w: &str) -> bool {
+    matches!(
+        w.to_lowercase().as_str(),
+        "autolayout"
+            | "autolayout"
+            | "exclude"
+            | "animation"
+            | "title"
+            | "description"
+            | "properties"
+            | "include"
+    )
+}
+
+/// Returns true if `w` is a valid `autoLayout` direction argument.
+fn is_autolayout_direction(w: &str) -> bool {
+    matches!(
+        w.to_lowercase().as_str(),
+        "topbottom" | "bottomtop" | "leftright" | "rightleft"
+    )
+}
+
+/// Canonicalize a shape name to the PascalCase expected by structurizr-diagram.js.
+fn canonicalize_shape(shape: &str) -> String {
+    match shape.to_lowercase().as_str() {
+        "box"                   => "Box",
+        "bucket"                => "Bucket",
+        "circle"                => "Circle",
+        "component"             => "Component",
+        "cylinder"              => "Cylinder",
+        "diamond"               => "Diamond",
+        "ellipse"               => "Ellipse",
+        "folder"                => "Folder",
+        "hexagon"               => "Hexagon",
+        "mobiledevicelandscape" => "MobileDeviceLandscape",
+        "mobiledeviceportrait"  => "MobileDevicePortrait",
+        "person"                => "Person",
+        "pipe"                  => "Pipe",
+        "robot"                 => "Robot",
+        "roundedbox"            => "RoundedBox",
+        "shell"                 => "Shell",
+        "terminal"              => "Terminal",
+        "webbrowser"            => "WebBrowser",
+        "window"                => "Window",
+        _                       => return shape.to_string(),
+    }
+    .to_string()
 }
 
 #[allow(dead_code)]
