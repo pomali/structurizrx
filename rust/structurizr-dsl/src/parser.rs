@@ -502,7 +502,7 @@ impl Parser {
             id: id.clone(),
             name,
             description,
-            tags: tags.or_else(|| Some("Element,Person".to_string())),
+            tags: merge_tags("Element,Person", tags),
             ..Default::default()
         };
 
@@ -533,7 +533,7 @@ impl Parser {
             id: id.clone(),
             name,
             description,
-            tags: tags.or_else(|| Some("Element,Software System".to_string())),
+            tags: merge_tags("Element,Software System", tags),
             ..Default::default()
         };
 
@@ -650,7 +650,7 @@ impl Parser {
             name,
             description,
             technology,
-            tags: tags.or_else(|| Some("Element,Container".to_string())),
+            tags: merge_tags("Element,Container", tags),
             ..Default::default()
         };
 
@@ -728,7 +728,7 @@ impl Parser {
             name,
             description,
             technology,
-            tags: tags.or_else(|| Some("Element,Component".to_string())),
+            tags: merge_tags("Element,Component", tags),
             ..Default::default()
         };
 
@@ -803,7 +803,7 @@ impl Parser {
             name,
             description,
             technology,
-            tags: tags.or_else(|| Some("Element,Deployment Node".to_string())),
+            tags: merge_tags("Element,Deployment Node", tags),
             environment: Some(env.to_string()),
             instances,
             ..Default::default()
@@ -911,7 +911,7 @@ impl Parser {
             id,
             container_id,
             environment: Some(env.to_string()),
-            tags: tags.or_else(|| Some("Container Instance".to_string())),
+            tags: merge_tags("Container Instance", tags),
             ..Default::default()
         };
 
@@ -940,7 +940,7 @@ impl Parser {
             id,
             software_system_id: ss_id,
             environment: Some(env.to_string()),
-            tags: tags.or_else(|| Some("Software System Instance".to_string())),
+            tags: merge_tags("Software System Instance", tags),
             ..Default::default()
         };
 
@@ -969,7 +969,7 @@ impl Parser {
             name,
             description,
             technology,
-            tags: tags.or_else(|| Some("Infrastructure Node".to_string())),
+            tags: merge_tags("Infrastructure Node", tags),
             environment: Some(env.to_string()),
             ..Default::default()
         };
@@ -1435,27 +1435,166 @@ impl Parser {
         ids
     }
 
-    fn collect_container_view_ids(&self, model: &Model) -> HashSet<String> {
-        let mut ids = self.collect_system_landscape_ids(model);
-
+    /// Build a set of element IDs that are components (used to filter them out
+    /// from container/context views where they should not appear as standalone nodes).
+    fn collect_component_id_set(&self, model: &Model) -> HashSet<String> {
+        let mut ids = HashSet::new();
         if let Some(systems) = &model.software_systems {
             for ss in systems {
                 if let Some(containers) = &ss.containers {
                     for c in containers {
-                        ids.insert(c.id.clone());
+                        if let Some(components) = &c.components {
+                            for comp in components {
+                                ids.insert(comp.id.clone());
+                            }
+                        }
                     }
                 }
+            }
+        }
+        ids
+    }
+
+    /// Collect element IDs for a system context view.
+    /// Includes the target software system itself plus any person/system that
+    /// has a direct relationship to or from it.
+    fn collect_system_context_view_ids(&self, model: &Model, software_system_id: &str) -> HashSet<String> {
+        let mut ids = HashSet::new();
+        ids.insert(software_system_id.to_string());
+
+        fn add_if_related(
+            relationships: &Option<Vec<Relationship>>,
+            target_id: &str,
+            ids: &mut HashSet<String>,
+        ) {
+            if let Some(rels) = relationships {
+                for rel in rels {
+                    if rel.source_id == target_id {
+                        ids.insert(rel.destination_id.clone());
+                    } else if rel.destination_id == target_id {
+                        ids.insert(rel.source_id.clone());
+                    }
+                }
+            }
+        }
+
+        if let Some(people) = &model.people {
+            for p in people {
+                add_if_related(&p.relationships, software_system_id, &mut ids);
+            }
+        }
+        if let Some(systems) = &model.software_systems {
+            for ss in systems {
+                add_if_related(&ss.relationships, software_system_id, &mut ids);
             }
         }
 
         ids
     }
 
+    /// Collect element IDs for a container view.
+    ///
+    /// - All containers of the target software system are always included.
+    /// - External people, software systems, and containers of other systems that
+    ///   have a relationship with any element inside the target system (including
+    ///   component-level relationships) are included.
+    /// - Components are never included (they live in the component view).
+    /// - The target software system itself is NOT included (it renders as the
+    ///   boundary via `softwareSystemId`).
+    fn collect_container_view_ids(&self, model: &Model, software_system_id: &str) -> HashSet<String> {
+        // Build the set of all IDs that are INTERNAL to the target SS.
+        let mut internal_ids: HashSet<String> = HashSet::new();
+        internal_ids.insert(software_system_id.to_string());
+
+        let mut container_ids: HashSet<String> = HashSet::new();
+        if let Some(systems) = &model.software_systems {
+            for ss in systems {
+                if ss.id == software_system_id {
+                    if let Some(containers) = &ss.containers {
+                        for c in containers {
+                            container_ids.insert(c.id.clone());
+                            internal_ids.insert(c.id.clone());
+                            if let Some(components) = &c.components {
+                                for comp in components {
+                                    internal_ids.insert(comp.id.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Components must never appear as top-level elements in a container view.
+        let component_ids = self.collect_component_id_set(model);
+
+        let mut external_ids: HashSet<String> = HashSet::new();
+
+        // Helper: if rel crosses the boundary (one side internal, other external),
+        // add the external side (unless it's a component).
+        fn maybe_add(
+            rel_source: &str,
+            rel_dest: &str,
+            internal_ids: &HashSet<String>,
+            component_ids: &HashSet<String>,
+            external_ids: &mut HashSet<String>,
+        ) {
+            if internal_ids.contains(rel_source) && !internal_ids.contains(rel_dest) {
+                if !component_ids.contains(rel_dest) {
+                    external_ids.insert(rel_dest.to_string());
+                }
+            } else if internal_ids.contains(rel_dest) && !internal_ids.contains(rel_source) {
+                if !component_ids.contains(rel_source) {
+                    external_ids.insert(rel_source.to_string());
+                }
+            }
+        }
+
+        fn scan_rels(
+            relationships: &Option<Vec<Relationship>>,
+            internal_ids: &HashSet<String>,
+            component_ids: &HashSet<String>,
+            external_ids: &mut HashSet<String>,
+        ) {
+            if let Some(rels) = relationships {
+                for rel in rels {
+                    maybe_add(&rel.source_id, &rel.destination_id, internal_ids, component_ids, external_ids);
+                }
+            }
+        }
+
+        if let Some(people) = &model.people {
+            for p in people {
+                scan_rels(&p.relationships, &internal_ids, &component_ids, &mut external_ids);
+            }
+        }
+        if let Some(systems) = &model.software_systems {
+            for ss in systems {
+                scan_rels(&ss.relationships, &internal_ids, &component_ids, &mut external_ids);
+                if let Some(containers) = &ss.containers {
+                    for c in containers {
+                        scan_rels(&c.relationships, &internal_ids, &component_ids, &mut external_ids);
+                        if let Some(components) = &c.components {
+                            for comp in components {
+                                scan_rels(&comp.relationships, &internal_ids, &component_ids, &mut external_ids);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Result = containers of target SS + external elements
+        let mut ids = container_ids;
+        ids.extend(external_ids);
+        ids
+    }
+
     /// Collect all element IDs for a component view scoped to `container_id`.
-    /// Includes: all components of that container, plus people/systems/containers
+    /// Includes: all components of that container, plus external people/systems/containers
     /// that have a direct relationship with any of those components.
+    /// Does NOT include the container itself (rendered via `containerId` field).
     fn collect_component_view_ids(&self, model: &Model, container_id: &str) -> HashSet<String> {
-        // First, collect all components of the target container.
         let mut component_ids: HashSet<String> = HashSet::new();
         if let Some(systems) = &model.software_systems {
             for ss in systems {
@@ -1473,20 +1612,27 @@ impl Parser {
             }
         }
 
-        // Include the components themselves plus any element directly related to them.
         let mut ids = component_ids.clone();
-        ids.insert(container_id.to_string());
+        // component_ids is the "internal" set for filtering
+        let internal_ids = component_ids.clone();
 
         fn related_elements(
             relationships: &Option<Vec<Relationship>>,
-            component_ids: &HashSet<String>,
+            internal_ids: &HashSet<String>,
+            container_id: &str,
             ids: &mut HashSet<String>,
         ) {
             if let Some(rels) = relationships {
                 for rel in rels {
-                    if component_ids.contains(&rel.source_id) {
+                    if internal_ids.contains(&rel.source_id)
+                        && !internal_ids.contains(&rel.destination_id)
+                        && rel.destination_id != container_id
+                    {
                         ids.insert(rel.destination_id.clone());
-                    } else if component_ids.contains(&rel.destination_id) {
+                    } else if internal_ids.contains(&rel.destination_id)
+                        && !internal_ids.contains(&rel.source_id)
+                        && rel.source_id != container_id
+                    {
                         ids.insert(rel.source_id.clone());
                     }
                 }
@@ -1495,18 +1641,18 @@ impl Parser {
 
         if let Some(people) = &model.people {
             for p in people {
-                related_elements(&p.relationships, &component_ids, &mut ids);
+                related_elements(&p.relationships, &internal_ids, container_id, &mut ids);
             }
         }
         if let Some(systems) = &model.software_systems {
             for ss in systems {
-                related_elements(&ss.relationships, &component_ids, &mut ids);
+                related_elements(&ss.relationships, &internal_ids, container_id, &mut ids);
                 if let Some(containers) = &ss.containers {
                     for c in containers {
-                        related_elements(&c.relationships, &component_ids, &mut ids);
+                        related_elements(&c.relationships, &internal_ids, container_id, &mut ids);
                         if let Some(components) = &c.components {
                             for comp in components {
-                                related_elements(&comp.relationships, &component_ids, &mut ids);
+                                related_elements(&comp.relationships, &internal_ids, container_id, &mut ids);
                             }
                         }
                     }
@@ -1622,7 +1768,7 @@ impl Parser {
     }
 
     fn populate_system_context_view(&self, model: &Model, view: &mut SystemContextView) {
-        let ids = self.collect_system_landscape_ids(model);
+        let ids = self.collect_system_context_view_ids(model, &view.software_system_id);
         view.element_views = Some(
             ids.iter()
                 .map(|id| ElementView {
@@ -1635,7 +1781,7 @@ impl Parser {
     }
 
     fn populate_container_view(&self, model: &Model, view: &mut ContainerView) {
-        let ids = self.collect_container_view_ids(model);
+        let ids = self.collect_container_view_ids(model, &view.software_system_id);
         view.element_views = Some(
             ids.iter()
                 .map(|id| ElementView {
@@ -1877,6 +2023,17 @@ fn canonicalize_shape(shape: &str) -> String {
     .to_string()
 }
 
+/// Merge base tags with optional extra tags from the DSL.
+/// `base` is always included (e.g. "Element,Person").
+/// If `extra` is Some("Customer"), result is "Element,Person,Customer".
+fn merge_tags(base: &str, extra: Option<String>) -> Option<String> {
+    match extra {
+        None => Some(base.to_string()),
+        Some(e) if e.is_empty() => Some(base.to_string()),
+        Some(e) => Some(format!("{},{}", base, e)),
+    }
+}
+
 #[allow(dead_code)]
 fn is_element_keyword(w: &str) -> bool {
     matches!(
@@ -1998,8 +2155,8 @@ workspace {
             .as_ref()
             .expect("container view should contain elements");
         assert!(
-            container_elements.len() >= 4,
-            "container view should include person, software system, and containers"
+            container_elements.len() >= 3,
+            "container view should include person and containers (not the boundary software system itself)"
         );
 
         let container_relationships = container_view
@@ -2007,7 +2164,7 @@ workspace {
             .as_ref()
             .expect("container view should contain relationships");
         assert!(
-            container_relationships.len() >= 3,
+            container_relationships.len() >= 2,
             "container view should include relationships from include *"
         );
     }
