@@ -37,6 +37,19 @@ enum Commands {
         #[arg(long, short, default_value = "workspace.json")]
         output: PathBuf,
     },
+    /// Serve a workspace or directory of workspaces in a local web browser
+    Serve {
+        /// Path to a .dsl/.json file or a directory containing workspace(s).
+        /// Defaults to the current directory.
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        /// TCP port to listen on.
+        #[arg(long, short, default_value_t = 3000)]
+        port: u16,
+        /// Open the browser automatically after starting the server.
+        #[arg(long)]
+        open: bool,
+    },
 }
 
 fn load_workspace(path: &PathBuf) -> Result<Workspace> {
@@ -58,7 +71,8 @@ fn load_workspace(path: &PathBuf) -> Result<Workspace> {
     }
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -106,7 +120,16 @@ fn main() -> Result<()> {
                 .with_context(|| format!("Cannot write {}", output.display()))?;
             println!("Exported workspace to {}", output.display());
         }
+        Commands::Serve { path, port, open } => {
+            structurizr_web::serve(structurizr_web::ServeOptions {
+                path,
+                port,
+                open_browser: open,
+            })
+            .await?;
+        }
     }
 
     Ok(())
 }
+

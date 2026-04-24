@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>{{WORKSPACE_NAME}} – Structurizr</title>
+    <link rel="icon" type="image/png" href="/static/img/favicon.png"/>
+    <link rel="stylesheet" href="/static/css/bootstrap-5.3.7.min.css"/>
+    <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-static.css"/>
+    <style>
+        html, body { height: 100%; margin: 0; overflow: hidden; }
+        #app { display: flex; height: 100vh; flex-direction: column; }
+        #topbar { flex-shrink: 0; }
+        #content { display: flex; flex: 1; overflow: hidden; }
+        #sidebar {
+            width: 280px; min-width: 200px; max-width: 400px;
+            flex-shrink: 0; overflow-y: auto;
+            border-right: 1px solid var(--bs-border-color);
+            background: var(--bs-body-bg);
+        }
+        #sidebar-toggle-btn { display: none; }
+        #diagram-area { flex: 1; overflow: hidden; position: relative; background: #fff; }
+        #diagram { width: 100%; height: 100%; }
+        .view-item {
+            display: block; padding: .35rem .75rem; border-radius: .25rem;
+            text-decoration: none; color: var(--bs-body-color);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            font-size: .875rem;
+        }
+        .view-item:hover { background: var(--bs-tertiary-bg); color: var(--bs-body-color); }
+        .view-item.active { background: var(--bs-primary); color: #fff !important; }
+        .view-group-header {
+            font-size: .7rem; text-transform: uppercase; letter-spacing: .05em;
+            color: var(--bs-secondary-color); padding: .5rem .75rem .1rem;
+            font-weight: 600;
+        }
+        #status-bar {
+            font-size: .75rem; color: var(--bs-secondary-color);
+            padding: .15rem .75rem;
+            border-top: 1px solid var(--bs-border-color);
+            background: var(--bs-body-bg);
+            flex-shrink: 0;
+        }
+        @media (max-width: 600px) {
+            #sidebar { display: none; }
+            #sidebar.open { display: block; position: fixed; left: 0; top: 0; bottom: 0; z-index: 1000; }
+            #sidebar-toggle-btn { display: inline-block; }
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <!-- Top bar -->
+    <nav id="topbar" class="navbar navbar-expand-sm bg-body-tertiary border-bottom px-3 py-1">
+        <button id="sidebar-toggle-btn" class="btn btn-sm btn-outline-secondary me-2" title="Toggle sidebar">
+            <i class="bi bi-layout-sidebar"></i>
+        </button>
+        <a class="navbar-brand fw-semibold me-2 text-decoration-none" href="/">
+            <img src="/static/img/structurizr-logo.png" alt="" height="22" class="me-1"/>
+        </a>
+        <span class="navbar-text fw-semibold me-auto text-truncate" id="ws-title">{{WORKSPACE_NAME}}</span>
+
+        <div class="d-flex align-items-center gap-2 ms-2 flex-shrink-0">
+            <span class="badge bg-secondary d-none" id="view-type-badge"></span>
+            <button class="btn btn-sm btn-outline-secondary" id="btnFitView" title="Fit diagram (F)">
+                <i class="bi bi-fullscreen"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="themeToggle" title="Toggle dark mode">
+                <i class="bi bi-circle-half"></i>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Main content -->
+    <div id="content">
+        <!-- Sidebar -->
+        <nav id="sidebar" class="py-2">
+            <div id="view-list"></div>
+        </nav>
+
+        <!-- Diagram area — id must match the first arg to structurizr.ui.Diagram() -->
+        <div id="diagram-area">
+            <div id="diagram"></div>
+        </div>
+    </div>
+
+    <!-- Status bar -->
+    <div id="status-bar">
+        <span id="status-msg">Loading…</span>
+    </div>
+</div>
+
+<!-- Structurizr viewer scripts (must match original load order) -->
+<script src="/static/js/jquery-3.7.1.min.js"></script>
+<script src="/static/js/bootstrap-5.3.7.min.js"></script>
+<script src="/static/js/jointjs-Core-4.1.3.js"></script>
+<script src="/static/js/dagre-1.1.8.js"></script>
+<script src="/static/js/graphlib-2.2.4.min.js"></script>
+<script src="/static/js/jointjs-DirectedGraph-4.1.3.min.js"></script>
+<script src="/static/js/structurizr.js"></script>
+<script src="/static/js/structurizr-util.js"></script>
+<script src="/static/js/structurizr-ui.js"></script>
+<script src="/static/js/structurizr-workspace.js"></script>
+<script src="/static/js/structurizr-diagram.js"></script>
+
+<script>
+(function() {
+    var WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
+
+    // structurizr.diagram is created once and reused across view switches.
+    var diagram = null;
+    var currentViewKey = null;
+    var diagramReady = false;
+
+    // --- Status bar ---
+    function setStatus(msg) {
+        document.getElementById('status-msg').textContent = msg;
+    }
+
+    // --- Dark mode (delegate to structurizr.ui) ---
+    structurizr.ui.initDarkMode('/static/css/structurizr-dark.css');
+
+    function updateDiagramDarkMode() {
+        if (diagram) {
+            diagram.setDarkMode(structurizr.ui.isDarkMode());
+        }
+    }
+
+    document.getElementById('themeToggle').addEventListener('click', function() {
+        var next = structurizr.ui.isDarkMode()
+            ? structurizr.ui.RENDERING_MODE_LIGHT
+            : structurizr.ui.RENDERING_MODE_DARK;
+        structurizr.ui.setRenderingMode(next);
+        updateDiagramDarkMode();
+    });
+
+    // --- Sidebar toggle (mobile) ---
+    document.getElementById('sidebar-toggle-btn').addEventListener('click', function() {
+        document.getElementById('sidebar').classList.toggle('open');
+    });
+
+    // ===== INITIAL LOAD =====
+    loadWorkspace(location.hash ? location.hash.substring(1) : null);
+
+    function loadWorkspace(jumpToKey) {
+        fetch('/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG))
+            .then(function(r) { return r.json(); })
+            .then(function(json) { initWorkspace(json, jumpToKey); })
+            .catch(function(e) { setStatus('Error loading workspace: ' + e.message); });
+    }
+
+    function initWorkspace(json, jumpToKey) {
+        // Set the global workspace object used by structurizr-diagram.js
+        try {
+            structurizr.workspace = new structurizr.Workspace(json);
+        } catch(e) {
+            setStatus('Error parsing workspace: ' + e.message);
+            return;
+        }
+
+        // Reset and reload themes (theme URLs come from workspace configuration)
+        structurizr.ui.themes = [];
+        structurizr.ui.loadThemes(function() {
+            buildSidebar();
+
+            var views = structurizr.workspace.getViews();
+            if (views.length === 0) {
+                setStatus('No diagrams in this workspace.');
+                return;
+            }
+
+            // Determine which view to show first
+            var targetKey = jumpToKey;
+            if (!targetKey || !structurizr.workspace.findViewByKey(targetKey)) {
+                targetKey = structurizr.workspace.views.configuration.defaultView;
+            }
+            if (!targetKey || !structurizr.workspace.findViewByKey(targetKey)) {
+                targetKey = views[0].key;
+            }
+
+            if (!diagram) {
+                // Create the diagram widget once.
+                diagram = new structurizr.ui.Diagram('diagram', false, function() {
+                    // Called once after JointJS initialises and images preload.
+                    diagram.setDarkMode(structurizr.ui.isDarkMode());
+                    diagram.setNavigationEnabled(true);
+
+                    diagram.getPossibleViewportWidth = function() {
+                        return document.getElementById('diagram-area').clientWidth;
+                    };
+                    diagram.getPossibleViewportHeight = function() {
+                        return document.getElementById('diagram-area').clientHeight;
+                    };
+
+                    // Listen for view changes driven by the diagram itself (e.g. keyboard nav)
+                    diagram.onViewChanged(function(key) {
+                        currentViewKey = key;
+                        updateHash(key);
+                        updateSidebarActive(key);
+                        updateViewBadge(key);
+                    });
+
+                    diagramReady = true;
+                    activateView(targetKey);
+                });
+            } else {
+                // Diagram already exists — workspace was reloaded. Re-render current view.
+                structurizr.ui.themes = [];
+                structurizr.ui.loadThemes(function() {
+                    buildSidebar();
+                    activateView(currentViewKey || targetKey);
+                });
+            }
+
+            // React to hash changes (browser back/forward, links)
+            window.onhashchange = function() {
+                if (window.location.hash) {
+                    var key = decodeURIComponent(window.location.hash.substring(1));
+                    if (diagramReady) activateView(key);
+                }
+            };
+        });
+    }
+
+    function activateView(key) {
+        if (!key || !structurizr.workspace.findViewByKey(key)) {
+            var views = structurizr.workspace.getViews();
+            if (views.length === 0) return;
+            key = views[0].key;
+        }
+        currentViewKey = key;
+        updateHash(key);
+        updateSidebarActive(key);
+        updateViewBadge(key);
+        diagram.changeView(key, function() {
+            diagram.resize();
+            diagram.zoomToWidthOrHeight();
+        });
+    }
+
+    // ===== SIDEBAR =====
+    function buildSidebar() {
+        var views = structurizr.workspace.getViews();
+        var list = document.getElementById('view-list');
+        list.innerHTML = '';
+
+        // Group views by type
+        var groups = [
+            { label: 'Landscape',      type: structurizr.constants.SYSTEM_LANDSCAPE_VIEW_TYPE },
+            { label: 'System Context', type: structurizr.constants.SYSTEM_CONTEXT_VIEW_TYPE },
+            { label: 'Container',      type: structurizr.constants.CONTAINER_VIEW_TYPE },
+            { label: 'Component',      type: structurizr.constants.COMPONENT_VIEW_TYPE },
+            { label: 'Dynamic',        type: structurizr.constants.DYNAMIC_VIEW_TYPE },
+            { label: 'Deployment',     type: structurizr.constants.DEPLOYMENT_VIEW_TYPE },
+            { label: 'Filtered',       type: structurizr.constants.FILTERED_VIEW_TYPE },
+            { label: 'Image',          type: structurizr.constants.IMAGE_VIEW_TYPE },
+            { label: 'Custom',         type: structurizr.constants.CUSTOM_VIEW_TYPE },
+        ];
+
+        groups.forEach(function(g) {
+            var groupViews = views.filter(function(v) { return v.type === g.type; });
+            if (groupViews.length === 0) return;
+
+            var hdr = document.createElement('div');
+            hdr.className = 'view-group-header';
+            hdr.textContent = g.label;
+            list.appendChild(hdr);
+
+            groupViews.forEach(function(v) {
+                var a = document.createElement('a');
+                a.className = 'view-item';
+                a.href = '#' + v.key;
+                a.dataset.key = v.key;
+                a.title = v.description || '';
+                a.textContent = structurizr.ui.getTitleForView(v);
+                a.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    if (diagramReady) activateView(v.key);
+                    document.getElementById('sidebar').classList.remove('open');
+                });
+                list.appendChild(a);
+            });
+        });
+    }
+
+    function updateSidebarActive(key) {
+        document.querySelectorAll('.view-item').forEach(function(el) {
+            el.classList.toggle('active', el.dataset.key === key);
+        });
+    }
+
+    function updateViewBadge(key) {
+        var view = structurizr.workspace.findViewByKey(key);
+        var badge = document.getElementById('view-type-badge');
+        if (view) {
+            badge.textContent = view.type || '';
+            badge.classList.remove('d-none');
+            var title = structurizr.ui.getTitleForView(view);
+            setStatus(title + (view.description ? ' – ' + view.description : ''));
+        } else {
+            badge.classList.add('d-none');
+        }
+    }
+
+    function updateHash(key) {
+        // Update URL fragment without triggering onhashchange
+        if (history.replaceState) {
+            history.replaceState(null, '', '#' + key);
+        } else {
+            location.hash = key;
+        }
+    }
+
+    // ===== FIT BUTTON =====
+    document.getElementById('btnFitView').addEventListener('click', function() {
+        if (diagram) { diagram.resize(); diagram.zoomToWidthOrHeight(); }
+    });
+
+    // Resize diagram when window size changes
+    window.addEventListener('resize', function() {
+        if (diagram) { diagram.resize(); diagram.zoomToWidthOrHeight(); }
+    });
+
+    // ===== WEBSOCKET LIVE RELOAD =====
+    function connectWs() {
+        var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        var ws = new WebSocket(proto + '://' + location.host + '/ws');
+        ws.onmessage = function(e) {
+            var msg = JSON.parse(e.data);
+            if (msg.type === 'reload') {
+                setStatus('Reloading…');
+                loadWorkspace(currentViewKey);
+            }
+        };
+        ws.onclose = function() { setTimeout(connectWs, 2000); };
+    }
+    connectWs();
+})();
+</script>
+</body>
+</html>

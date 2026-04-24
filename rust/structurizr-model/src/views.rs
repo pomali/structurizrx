@@ -114,8 +114,10 @@ pub struct ViewBase {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub properties: Option<HashMap<String, String>>,
+    #[serde(rename = "elements")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub element_views: Option<Vec<ElementView>>,
+    #[serde(rename = "relationships")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship_views: Option<Vec<RelationshipView>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -138,8 +140,10 @@ pub struct SystemLandscapeView {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub properties: Option<HashMap<String, String>>,
+    #[serde(rename = "elements")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub element_views: Option<Vec<ElementView>>,
+    #[serde(rename = "relationships")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship_views: Option<Vec<RelationshipView>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -165,8 +169,10 @@ pub struct SystemContextView {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub properties: Option<HashMap<String, String>>,
+    #[serde(rename = "elements")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub element_views: Option<Vec<ElementView>>,
+    #[serde(rename = "relationships")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship_views: Option<Vec<RelationshipView>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -192,8 +198,10 @@ pub struct ContainerView {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub properties: Option<HashMap<String, String>>,
+    #[serde(rename = "elements")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub element_views: Option<Vec<ElementView>>,
+    #[serde(rename = "relationships")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship_views: Option<Vec<RelationshipView>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -219,8 +227,10 @@ pub struct ComponentView {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub properties: Option<HashMap<String, String>>,
+    #[serde(rename = "elements")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub element_views: Option<Vec<ElementView>>,
+    #[serde(rename = "relationships")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship_views: Option<Vec<RelationshipView>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -247,8 +257,10 @@ pub struct DynamicView {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub properties: Option<HashMap<String, String>>,
+    #[serde(rename = "elements")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub element_views: Option<Vec<ElementView>>,
+    #[serde(rename = "relationships")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship_views: Option<Vec<RelationshipView>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -272,8 +284,10 @@ pub struct DeploymentView {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub properties: Option<HashMap<String, String>>,
+    #[serde(rename = "elements")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub element_views: Option<Vec<ElementView>>,
+    #[serde(rename = "relationships")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship_views: Option<Vec<RelationshipView>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -331,8 +345,10 @@ pub struct CustomView {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub properties: Option<HashMap<String, String>>,
+    #[serde(rename = "elements")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub element_views: Option<Vec<ElementView>>,
+    #[serde(rename = "relationships")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship_views: Option<Vec<RelationshipView>>,
     #[serde(skip_serializing_if = "Option::is_none")]

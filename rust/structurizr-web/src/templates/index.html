@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="auto">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Structurizr</title>
+    <link rel="icon" type="image/png" href="/static/img/favicon.png"/>
+    <link rel="stylesheet" href="/static/css/bootstrap-5.3.7.min.css"/>
+    <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
+    <style>
+        body { background: #f8f9fa; }
+        [data-bs-theme="dark"] body { background: #111; }
+        .workspace-card { transition: box-shadow .15s; cursor: pointer; }
+        .workspace-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.18); }
+        .badge-count { font-size: .75rem; }
+        #reload-banner { display: none; position: fixed; bottom: 1rem; right: 1rem; z-index: 9999; }
+    </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom mb-4">
+    <div class="container-fluid">
+        <a class="navbar-brand fw-semibold" href="/">
+            <img src="/static/img/structurizr-logo.png" alt="Structurizr" height="28" class="me-2"/>
+            Structurizr
+        </a>
+        <div class="ms-auto">
+            <button id="themeToggle" class="btn btn-sm btn-outline-secondary" title="Toggle dark mode">
+                <i class="bi bi-circle-half"></i>
+            </button>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <div id="workspaces" class="row g-3"></div>
+    <div id="empty" class="text-center text-muted py-5" style="display:none">
+        <i class="bi bi-diagram-3 fs-1"></i>
+        <p class="mt-2">No workspaces found. Drop a <code>.dsl</code> or <code>.json</code> file in the watched directory.</p>
+    </div>
+</div>
+
+<div id="reload-banner">
+    <div class="alert alert-info alert-dismissible mb-0 shadow" role="alert">
+        <i class="bi bi-arrow-clockwise me-1"></i> Workspaces reloaded
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+</div>
+
+<script src="/static/js/bootstrap-5.3.7.min.js"></script>
+<script>
+(function() {
+    // ---- theme ----
+    const THEME_KEY = 'structurizrx-theme';
+    function applyTheme(t) {
+        document.documentElement.setAttribute('data-bs-theme', t);
+        localStorage.setItem(THEME_KEY, t);
+    }
+    const saved = localStorage.getItem(THEME_KEY) ||
+        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    applyTheme(saved);
+    document.getElementById('themeToggle').addEventListener('click', () => {
+        const cur = document.documentElement.getAttribute('data-bs-theme');
+        applyTheme(cur === 'dark' ? 'light' : 'dark');
+    });
+
+    // ---- render cards ----
+    function renderWorkspaces(list) {
+        const container = document.getElementById('workspaces');
+        const empty = document.getElementById('empty');
+        container.innerHTML = '';
+        if (!list || list.length === 0) {
+            empty.style.display = '';
+            return;
+        }
+        empty.style.display = 'none';
+        list.forEach(ws => {
+            const col = document.createElement('div');
+            col.className = 'col-12 col-sm-6 col-lg-4';
+            col.innerHTML = `
+<div class="card workspace-card h-100" onclick="location.href='/workspace/${encodeURIComponent(ws.name)}'">
+  <div class="card-body">
+    <h5 class="card-title">${escHtml(ws.display_name)}</h5>
+    ${ws.description ? `<p class="card-text text-muted small">${escHtml(ws.description)}</p>` : ''}
+  </div>
+  <div class="card-footer d-flex align-items-center justify-content-between">
+    <span class="badge bg-secondary badge-count">${ws.diagram_count} diagram${ws.diagram_count !== 1 ? 's' : ''}</span>
+    <a href="/workspace/${encodeURIComponent(ws.name)}" class="btn btn-sm btn-primary">View <i class="bi bi-arrow-right"></i></a>
+  </div>
+</div>`;
+            container.appendChild(col);
+        });
+    }
+
+    function escHtml(s) {
+        return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function loadWorkspaces() {
+        fetch('/api/workspaces').then(r => r.json()).then(renderWorkspaces).catch(console.error);
+    }
+
+    loadWorkspaces();
+
+    // ---- WebSocket live reload ----
+    function connectWs() {
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        const ws = new WebSocket(`${proto}://${location.host}/ws`);
+        ws.onmessage = (e) => {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'reload') {
+                loadWorkspaces();
+                const banner = document.getElementById('reload-banner');
+                banner.style.display = '';
+                setTimeout(() => { banner.style.display = 'none'; }, 3000);
+            }
+        };
+        ws.onclose = () => setTimeout(connectWs, 2000);
+    }
+    connectWs();
+})();
+</script>
+</body>
+</html>

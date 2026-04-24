@@ -3,6 +3,7 @@ members = [
     "structurizr-model",
     "structurizr-dsl",
     "structurizr-renderer",
+    "structurizr-web",
     "structurizr-cli",
 ]
 resolver = "2"

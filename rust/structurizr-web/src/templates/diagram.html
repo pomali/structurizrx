@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>{{DIAGRAM_KEY}} – {{WORKSPACE_NAME}}</title>
+    <link rel="icon" type="image/png" href="/static/img/favicon.png"/>
+    <link rel="stylesheet" href="/static/css/structurizr.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-embed.css"/>
+    <style>
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+        #diagram { width: 100%; height: 100vh; }
+    </style>
+</head>
+<body>
+<div id="diagram"></div>
+
+<script src="/static/js/jquery-3.7.1.min.js"></script>
+<script src="/static/js/jointjs-Core-4.1.3.js"></script>
+<script src="/static/js/dagre-1.1.8.js"></script>
+<script src="/static/js/graphlib-2.2.4.min.js"></script>
+<script src="/static/js/jointjs-DirectedGraph-4.1.3.min.js"></script>
+<script src="/static/js/structurizr.js"></script>
+<script src="/static/js/structurizr-util.js"></script>
+<script src="/static/js/structurizr-ui.js"></script>
+<script src="/static/js/structurizr-workspace.js"></script>
+<script src="/static/js/structurizr-diagram.js"></script>
+
+<script>
+(function() {
+    var WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
+    var DIAGRAM_KEY    = '{{DIAGRAM_KEY}}';
+
+    // Apply dark mode via structurizr.ui — respects system preference and cookie
+    structurizr.ui.initDarkMode('/static/css/structurizr-dark.css');
+
+    var diagram = null;
+
+    function loadAndRender() {
+        fetch('/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG))
+            .then(function(r) { return r.json(); })
+            .then(function(json) {
+                try {
+                    structurizr.workspace = new structurizr.Workspace(json);
+                } catch(e) {
+                    document.body.innerHTML = '<p style="padding:1em;color:red">Parse error: ' + e.message + '</p>';
+                    return;
+                }
+
+                var view = structurizr.workspace.findViewByKey(DIAGRAM_KEY);
+                if (!view) {
+                    document.body.innerHTML = '<p style="padding:1em;color:red">View not found: ' + DIAGRAM_KEY + '</p>';
+                    return;
+                }
+
+                structurizr.ui.themes = [];
+                structurizr.ui.loadThemes(function() {
+                    if (diagram) {
+                        // On live reload: update workspace and re-render current view
+                        diagram.changeView(DIAGRAM_KEY, function() {
+                            diagram.resize();
+                            diagram.zoomToWidthOrHeight();
+                        });
+                        return;
+                    }
+
+                    diagram = new structurizr.ui.Diagram('diagram', false, function() {
+                        diagram.setDarkMode(structurizr.ui.isDarkMode());
+                        diagram.setEmbedded(true);
+
+                        diagram.getPossibleViewportWidth = function() {
+                            return document.getElementById('diagram').clientWidth;
+                        };
+                        diagram.getPossibleViewportHeight = function() {
+                            return document.getElementById('diagram').clientHeight;
+                        };
+
+                        diagram.changeView(DIAGRAM_KEY, function() {
+                            diagram.resize();
+                            diagram.zoomToWidthOrHeight();
+
+                            // Notify parent frame for responsive embedding
+                            window.parent.postMessage({
+                                context: 'iframe.resize',
+                                src: window.location.href,
+                                diagramKey: DIAGRAM_KEY
+                            }, '*');
+                        });
+                    });
+                });
+            })
+            .catch(function(e) {
+                document.body.innerHTML = '<p style="padding:1em;color:red">Error: ' + e.message + '</p>';
+            });
+    }
+
+    loadAndRender();
+
+    // ---- WebSocket live reload ----
+    function connectWs() {
+        var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        var ws = new WebSocket(proto + '://' + location.host + '/ws');
+        ws.onmessage = function(e) {
+            var msg = JSON.parse(e.data);
+            if (msg.type === 'reload') loadAndRender();
+        };
+        ws.onclose = function() { setTimeout(connectWs, 2000); };
+    }
+    connectWs();
+})();
+</script>
+</body>
+</html>
