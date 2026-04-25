@@ -64,6 +64,9 @@
 
         <div class="d-flex align-items-center gap-2 ms-2 flex-shrink-0">
             <span class="badge bg-secondary d-none" id="view-type-badge"></span>
+            <a class="btn btn-sm btn-outline-secondary d-none" id="btnDownloadSvg" title="Download diagram as SVG" download>
+                <i class="bi bi-download"></i>
+            </a>
             <button class="btn btn-sm btn-outline-secondary" id="btnFitView" title="Fit diagram (F)">
                 <i class="bi bi-fullscreen"></i>
             </button>
@@ -356,13 +359,19 @@
     function updateViewBadge(key) {
         var view = structurizr.workspace.findViewByKey(key);
         var badge = document.getElementById('view-type-badge');
+        var svgBtn = document.getElementById('btnDownloadSvg');
         if (view) {
             badge.textContent = view.type || '';
             badge.classList.remove('d-none');
             var title = structurizr.ui.getTitleForView(view);
             setStatus(title + (view.description ? ' – ' + view.description : ''));
+            svgBtn.href = '/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG) +
+                          '/diagram/' + encodeURIComponent(key) + '/svg';
+            svgBtn.setAttribute('download', key + '.svg');
+            svgBtn.classList.remove('d-none');
         } else {
             badge.classList.add('d-none');
+            svgBtn.classList.add('d-none');
         }
     }
 
