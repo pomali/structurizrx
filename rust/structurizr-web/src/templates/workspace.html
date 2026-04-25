@@ -83,6 +83,11 @@
         <!-- Diagram area — id must match the first arg to structurizr.ui.Diagram() -->
         <div id="diagram-area">
             <div id="diagram"></div>
+            <div id="diagram-message" style="display:none; position:absolute; inset:0; align-items:center; justify-content:center; flex-direction:column; gap:1rem; padding:2rem; text-align:center;">
+                <i class="bi bi-exclamation-circle fs-1 text-secondary"></i>
+                <p id="diagram-message-text" class="text-secondary mb-0"></p>
+                <div id="diagram-message-actions"></div>
+            </div>
         </div>
     </div>
 
@@ -119,6 +124,19 @@
         document.getElementById('status-msg').textContent = msg;
     }
 
+    // --- Diagram-area overlay message (for errors / empty state) ---
+    function showDiagramMessage(icon, text, actions) {
+        var el = document.getElementById('diagram-message');
+        document.getElementById('diagram-message-text').textContent = text;
+        var actionsEl = document.getElementById('diagram-message-actions');
+        actionsEl.innerHTML = actions || '';
+        el.style.display = 'flex';
+    }
+
+    function hideDiagramMessage() {
+        document.getElementById('diagram-message').style.display = 'none';
+    }
+
     // --- Dark mode (delegate to structurizr.ui) ---
     structurizr.ui.initDarkMode('/static/css/structurizr-dark.css');
 
@@ -146,9 +164,20 @@
 
     function loadWorkspace(jumpToKey) {
         fetch('/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG))
-            .then(function(r) { return r.json(); })
+            .then(function(r) {
+                if (!r.ok) {
+                    return r.text().then(function(t) {
+                        throw new Error(t || ('HTTP ' + r.status));
+                    });
+                }
+                return r.json();
+            })
             .then(function(json) { initWorkspace(json, jumpToKey); })
-            .catch(function(e) { setStatus('Error loading workspace: ' + e.message); });
+            .catch(function(e) {
+                setStatus('Error: ' + e.message);
+                showDiagramMessage('bi-exclamation-circle', e.message,
+                    '<a href="/" class="btn btn-sm btn-outline-secondary">← Back to workspaces</a>');
+            });
     }
 
     function initWorkspace(json, jumpToKey) {
@@ -157,19 +186,36 @@
             structurizr.workspace = new structurizr.Workspace(json);
         } catch(e) {
             setStatus('Error parsing workspace: ' + e.message);
+            showDiagramMessage('bi-exclamation-circle', 'Could not parse workspace: ' + e.message);
             return;
         }
 
         // Reset and reload themes (theme URLs come from workspace configuration)
         structurizr.ui.themes = [];
         structurizr.ui.loadThemes(function() {
-            buildSidebar();
+            try { buildSidebar(); } catch(e) { console.error('buildSidebar failed:', e); }
 
             var views = structurizr.workspace.getViews();
             if (views.length === 0) {
                 setStatus('No diagrams in this workspace.');
+                var decisionsUrl = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/decisions';
+                var hasDecisions = false;
+                try {
+                    hasDecisions = structurizr.workspace.hasDecisions &&
+                                   structurizr.workspace.hasDecisions();
+                } catch(_) {}
+                if (hasDecisions) {
+                    showDiagramMessage('bi-journal-text',
+                        'This workspace has no diagrams.',
+                        '<a href="' + decisionsUrl + '" class="btn btn-sm btn-primary">' +
+                        '<i class="bi bi-journal-text me-1"></i>View Decisions</a>');
+                } else {
+                    showDiagramMessage('bi-diagram-2', 'This workspace has no diagrams.');
+                }
                 return;
             }
+
+            hideDiagramMessage();
 
             // Determine which view to show first
             var targetKey = jumpToKey;
@@ -209,7 +255,7 @@
                 // Diagram already exists — workspace was reloaded. Re-render current view.
                 structurizr.ui.themes = [];
                 structurizr.ui.loadThemes(function() {
-                    buildSidebar();
+                    try { buildSidebar(); } catch(e) { console.error('buildSidebar failed:', e); }
                     activateView(currentViewKey || targetKey);
                 });
             }
