@@ -35,8 +35,9 @@ struct Node {
     id: String,
     name: String,
     type_label: String,
-    fill: &'static str,
-    text_color: &'static str,
+    fill: String,
+    stroke: String,
+    text_color: String,
     is_person: bool,
     x: i32,
     y: i32,
@@ -104,16 +105,19 @@ impl DiagramExporter for SvgExporter {
 
 fn render_landscape(title: &str, workspace: &Workspace) -> String {
     let model = &workspace.model;
+    let styles = get_styles(workspace);
     let mut nodes: Vec<Node> = Vec::new();
 
     if let Some(people) = &model.people {
         for p in people {
+            let s = resolve_node_style(p.tags.as_deref(), "Person", styles, COLOR_PERSON, COLOR_TEXT_LIGHT);
             nodes.push(Node {
                 id: p.id.clone(),
                 name: p.name.clone(),
                 type_label: "Person".to_string(),
-                fill: COLOR_PERSON,
-                text_color: COLOR_TEXT_LIGHT,
+                fill: s.fill,
+                stroke: s.stroke,
+                text_color: s.text_color,
                 is_person: true,
                 x: 0,
                 y: 0,
@@ -123,12 +127,14 @@ fn render_landscape(title: &str, workspace: &Workspace) -> String {
 
     if let Some(systems) = &model.software_systems {
         for ss in systems {
+            let s = resolve_node_style(ss.tags.as_deref(), "Software System", styles, COLOR_SYSTEM, COLOR_TEXT_LIGHT);
             nodes.push(Node {
                 id: ss.id.clone(),
                 name: ss.name.clone(),
                 type_label: "Software System".to_string(),
-                fill: COLOR_SYSTEM,
-                text_color: COLOR_TEXT_LIGHT,
+                fill: s.fill,
+                stroke: s.stroke,
+                text_color: s.text_color,
                 is_person: false,
                 x: 0,
                 y: 0,
@@ -143,6 +149,7 @@ fn render_landscape(title: &str, workspace: &Workspace) -> String {
 
 fn render_system_context(title: &str, view: &SystemContextView, workspace: &Workspace) -> String {
     let model = &workspace.model;
+    let styles = get_styles(workspace);
     let focal_id = &view.software_system_id;
 
     let mut people_nodes: Vec<Node> = Vec::new();
@@ -151,12 +158,14 @@ fn render_system_context(title: &str, view: &SystemContextView, workspace: &Work
 
     if let Some(people) = &model.people {
         for p in people {
+            let s = resolve_node_style(p.tags.as_deref(), "Person", styles, COLOR_PERSON, COLOR_TEXT_LIGHT);
             people_nodes.push(Node {
                 id: p.id.clone(),
                 name: p.name.clone(),
                 type_label: "Person".to_string(),
-                fill: COLOR_PERSON,
-                text_color: COLOR_TEXT_LIGHT,
+                fill: s.fill,
+                stroke: s.stroke,
+                text_color: s.text_color,
                 is_person: true,
                 x: 0,
                 y: 0,
@@ -167,23 +176,27 @@ fn render_system_context(title: &str, view: &SystemContextView, workspace: &Work
     if let Some(systems) = &model.software_systems {
         for ss in systems {
             if &ss.id == focal_id {
+                let s = resolve_node_style(ss.tags.as_deref(), "Software System", styles, COLOR_SYSTEM, COLOR_TEXT_LIGHT);
                 focal_node = Some(Node {
                     id: ss.id.clone(),
                     name: ss.name.clone(),
                     type_label: "Software System".to_string(),
-                    fill: COLOR_SYSTEM,
-                    text_color: COLOR_TEXT_LIGHT,
+                    fill: s.fill,
+                    stroke: s.stroke,
+                    text_color: s.text_color,
                     is_person: false,
                     x: 0,
                     y: 0,
                 });
             } else {
+                let s = resolve_node_style(ss.tags.as_deref(), "Software System", styles, COLOR_SYSTEM_EXT, COLOR_TEXT_LIGHT);
                 ext_nodes.push(Node {
                     id: ss.id.clone(),
                     name: ss.name.clone(),
                     type_label: "Software System".to_string(),
-                    fill: COLOR_SYSTEM_EXT,
-                    text_color: COLOR_TEXT_LIGHT,
+                    fill: s.fill,
+                    stroke: s.stroke,
+                    text_color: s.text_color,
                     is_person: false,
                     x: 0,
                     y: 0,
@@ -205,6 +218,7 @@ fn render_system_context(title: &str, view: &SystemContextView, workspace: &Work
 
 fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspace) -> String {
     let model = &workspace.model;
+    let styles = get_styles(workspace);
     let focal_id = &view.software_system_id;
 
     let mut people_nodes: Vec<Node> = Vec::new();
@@ -214,12 +228,14 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
 
     if let Some(people) = &model.people {
         for p in people {
+            let s = resolve_node_style(p.tags.as_deref(), "Person", styles, COLOR_PERSON, COLOR_TEXT_LIGHT);
             people_nodes.push(Node {
                 id: p.id.clone(),
                 name: p.name.clone(),
                 type_label: "Person".to_string(),
-                fill: COLOR_PERSON,
-                text_color: COLOR_TEXT_LIGHT,
+                fill: s.fill,
+                stroke: s.stroke,
+                text_color: s.text_color,
                 is_person: true,
                 x: 0,
                 y: 0,
@@ -239,12 +255,14 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
                         } else {
                             format!("Container: {}", tech)
                         };
+                        let s = resolve_node_style(c.tags.as_deref(), "Container", styles, COLOR_CONTAINER, COLOR_TEXT_LIGHT);
                         container_nodes.push(Node {
                             id: c.id.clone(),
                             name: c.name.clone(),
                             type_label,
-                            fill: COLOR_CONTAINER,
-                            text_color: COLOR_TEXT_LIGHT,
+                            fill: s.fill,
+                            stroke: s.stroke,
+                            text_color: s.text_color,
                             is_person: false,
                             x: 0,
                             y: 0,
@@ -252,12 +270,14 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
                     }
                 }
             } else {
+                let s = resolve_node_style(ss.tags.as_deref(), "Software System", styles, COLOR_SYSTEM_EXT, COLOR_TEXT_LIGHT);
                 ext_nodes.push(Node {
                     id: ss.id.clone(),
                     name: ss.name.clone(),
                     type_label: "Software System".to_string(),
-                    fill: COLOR_SYSTEM_EXT,
-                    text_color: COLOR_TEXT_LIGHT,
+                    fill: s.fill,
+                    stroke: s.stroke,
+                    text_color: s.text_color,
                     is_person: false,
                     x: 0,
                     y: 0,
@@ -635,7 +655,7 @@ fn render_node(svg: &mut String, node: &Node) {
         svg.push_str(&format!(
             r##"    <rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}" stroke-width="1.5" rx="4"/>
 "##,
-            x, y, BOX_W, BOX_H, node.fill, darken(node.fill)
+            x, y, BOX_W, BOX_H, node.fill, node.stroke
         ));
     }
 
@@ -678,7 +698,7 @@ fn render_person_shape(svg: &mut String, node: &Node) {
     svg.push_str(&format!(
         r##"    <rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}" stroke-width="1.5" rx="4"/>
 "##,
-        x, y, BOX_W, BOX_H, node.fill, darken(node.fill)
+        x, y, BOX_W, BOX_H, node.fill, node.stroke
     ));
 
     // Head circle at top-center of box
@@ -687,7 +707,7 @@ fn render_person_shape(svg: &mut String, node: &Node) {
     svg.push_str(&format!(
         r##"    <circle cx="{}" cy="{}" r="{}" fill="{}" stroke="{}" stroke-width="1.5"/>
 "##,
-        cx, head_cy, head_r, node.fill, darken(node.fill)
+        cx, head_cy, head_r, node.fill, node.stroke
     ));
 }
 
@@ -718,15 +738,90 @@ fn edge_point(cx: i32, cy: i32, tx: i32, ty: i32) -> (i32, i32) {
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 
-/// Produce a slightly darker hex colour for strokes (simple heuristic).
-fn darken(hex: &str) -> &str {
-    match hex {
-        COLOR_PERSON => "#052E56",
-        COLOR_SYSTEM => "#0B4884",
-        COLOR_SYSTEM_EXT => "#444444",
-        COLOR_CONTAINER => "#2E6DA0",
-        _ => "#333333",
+/// Factor by which each RGB channel is scaled when computing a darker stroke colour.
+const DARKEN_FACTOR: f64 = 0.7;
+
+/// Produce a slightly darker hex colour for strokes.
+fn darken(hex: &str) -> String {
+    if let Some(s) = try_darken_hex(hex) {
+        return s;
     }
+    "#333333".to_string()
+}
+
+/// Parse a 6-digit hex colour and reduce each channel by `DARKEN_FACTOR`.
+fn try_darken_hex(hex: &str) -> Option<String> {
+    let h = hex.trim_start_matches('#');
+    if h.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&h[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&h[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&h[4..6], 16).ok()?;
+    Some(format!(
+        "#{:02X}{:02X}{:02X}",
+        (r as f64 * DARKEN_FACTOR) as u8,
+        (g as f64 * DARKEN_FACTOR) as u8,
+        (b as f64 * DARKEN_FACTOR) as u8,
+    ))
+}
+
+/// Extract the workspace-level element styles, if any.
+fn get_styles(workspace: &Workspace) -> Option<&Styles> {
+    workspace.views.configuration.as_ref()?.styles.as_ref()
+}
+
+/// Resolved fill / stroke / text colours for a single node.
+struct ResolvedNodeStyle {
+    fill: String,
+    stroke: String,
+    text_color: String,
+}
+
+/// Compute the effective colours for a node by walking its comma-separated tag
+/// list and applying any matching `ElementStyle` entries in order (first tag =
+/// lowest priority, last tag = highest priority).
+fn resolve_node_style(
+    tags: Option<&str>,
+    default_type_tag: &str,
+    styles: Option<&Styles>,
+    default_fill: &str,
+    default_text: &str,
+) -> ResolvedNodeStyle {
+    let mut fill = default_fill.to_string();
+    let mut text_color = default_text.to_string();
+    let mut stroke: Option<String> = None;
+
+    if let Some(styles) = styles {
+        if let Some(element_styles) = &styles.elements {
+            let owned;
+            let tags_str: &str = match tags {
+                Some(t) => t,
+                None => {
+                    owned = format!("Element,{}", default_type_tag);
+                    &owned
+                }
+            };
+            for tag in tags_str.split(',').map(|t| t.trim()) {
+                for style in element_styles {
+                    if style.tag.eq_ignore_ascii_case(tag) {
+                        if let Some(bg) = &style.background {
+                            fill = bg.clone();
+                        }
+                        if let Some(color) = &style.color {
+                            text_color = color.clone();
+                        }
+                        if let Some(s) = &style.stroke {
+                            stroke = Some(s.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let stroke = stroke.unwrap_or_else(|| darken(&fill));
+    ResolvedNodeStyle { fill, stroke, text_color }
 }
 
 fn xml_escape(s: &str) -> String {
@@ -893,5 +988,81 @@ mod tests {
         let (ex, ey) = edge_point(100, 100, 100, 300);
         assert_eq!(ex, 100);
         assert_eq!(ey, 100 + BOX_H / 2);
+    }
+
+    #[test]
+    fn svg_exporter_respects_element_styles() {
+        use structurizr_model::{ElementStyle, Styles, ViewConfiguration};
+
+        let mut workspace = basic_workspace();
+        workspace.views.system_landscape_views = Some(vec![SystemLandscapeView {
+            key: Some("Landscape".to_string()),
+            ..Default::default()
+        }]);
+
+        // Override the Person fill colour to red and text to black.
+        let elem_style = ElementStyle {
+            tag: "Person".to_string(),
+            background: Some("#FF0000".to_string()),
+            color: Some("#000000".to_string()),
+            ..Default::default()
+        };
+        workspace.views.configuration = Some(ViewConfiguration {
+            styles: Some(Styles {
+                elements: Some(vec![elem_style]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+
+        let exporter = SvgExporter;
+        let diagrams = exporter.export_workspace(&workspace);
+        let svg = &diagrams[0].content;
+
+        assert!(svg.contains("#FF0000"), "custom background colour should appear in SVG");
+        assert!(svg.contains("#000000"), "custom text colour should appear in SVG");
+        // The default person blue should NOT appear since it was overridden.
+        assert!(!svg.contains(COLOR_PERSON), "default person colour should be replaced");
+    }
+
+    #[test]
+    fn svg_exporter_custom_stroke_overrides_darken() {
+        use structurizr_model::{ElementStyle, Styles, ViewConfiguration};
+
+        let mut workspace = basic_workspace();
+        workspace.views.system_landscape_views = Some(vec![SystemLandscapeView {
+            key: Some("Landscape".to_string()),
+            ..Default::default()
+        }]);
+
+        let elem_style = ElementStyle {
+            tag: "Software System".to_string(),
+            stroke: Some("#ABCDEF".to_string()),
+            ..Default::default()
+        };
+        workspace.views.configuration = Some(ViewConfiguration {
+            styles: Some(Styles {
+                elements: Some(vec![elem_style]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+
+        let exporter = SvgExporter;
+        let diagrams = exporter.export_workspace(&workspace);
+        let svg = &diagrams[0].content;
+
+        assert!(svg.contains("#ABCDEF"), "custom stroke colour should appear in SVG");
+    }
+
+    #[test]
+    fn darken_hex_colour() {
+        // 0xFF * 0.7 = 0xB2
+        let darkened = darken("#FFFFFF");
+        assert_eq!(darkened, "#B2B2B2");
+
+        // Unknown format falls back to a safe dark colour.
+        let fallback = darken("invalid");
+        assert_eq!(fallback, "#333333");
     }
 }

@@ -9,6 +9,8 @@ use axum::{
 };
 use axum::extract::ws::{Message, WebSocket};
 
+use structurizr_renderer::{exporter::DiagramExporter, svg::SvgExporter};
+
 use crate::assets::Assets;
 use crate::markdown::render_markdown;
 use crate::state::{AppState, BroadcastMsg, WorkspaceSummary};
@@ -31,6 +33,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/workspace/{name}", get(api_workspace_handler))
         .route("/api/workspace/{name}/decisions", get(api_decisions_handler))
         .route("/api/workspace/{name}/decisions/{id}", get(api_decision_handler))
+        .route("/api/workspace/{name}/diagram/{key}/svg", get(api_diagram_svg_handler))
         .route("/static/{*path}", get(static_handler))
         .route("/ws", get(ws_handler))
         .with_state(state)
@@ -169,6 +172,38 @@ async fn api_decision_handler(
 }
 
 // ---- Static assets ----
+
+/// Render a single diagram as an SVG using the built-in Rust renderer.
+///
+/// `GET /api/workspace/{name}/diagram/{key}/svg`
+///
+/// Returns `image/svg+xml` on success, or a plain-text error with an
+/// appropriate HTTP status code on failure.
+async fn api_diagram_svg_handler(
+    State(state): State<AppState>,
+    Path((name, key)): Path<(String, String)>,
+) -> Response {
+    let workspaces = state.workspaces.lock().unwrap();
+    let Some(entry) = workspaces.iter().find(|e| e.name == name) else {
+        return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
+    };
+
+    let diagrams = SvgExporter.export_workspace(&entry.workspace);
+    let Some(diagram) = diagrams.into_iter().find(|d| d.key == key) else {
+        return (
+            StatusCode::NOT_FOUND,
+            format!("Diagram '{}' not found in workspace '{}'", key, name),
+        )
+            .into_response();
+    };
+
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")],
+        diagram.content,
+    )
+        .into_response()
+}
 
 async fn static_handler(Path(path): Path<String>) -> Response {
     match Assets::get(&path) {

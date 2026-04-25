@@ -1342,6 +1342,7 @@ dependencies = [
  "serde_json",
  "structurizr-dsl",
  "structurizr-model",
+ "structurizr-renderer",
  "tokio",
  "tower-http",
 ]
