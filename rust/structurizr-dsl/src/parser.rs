@@ -270,10 +270,9 @@ impl Parser {
         if leading_digits.is_empty() {
             return None;
         }
-        let id = leading_digits
-            .trim_start_matches('0')
-            .to_string();
-        let id = if id.is_empty() { "0".to_string() } else { id };
+        // Parse as integer to strip leading zeros ("0001" → 1 → "1", "0000" → 0 → "0").
+        let id: u64 = leading_digits.parse().ok()?;
+        let id = id.to_string();
 
         let raw = std::fs::read_to_string(path).ok()?;
         let content = raw.replace('\r', "");
