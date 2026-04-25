@@ -137,7 +137,7 @@ fn render_landscape(title: &str, workspace: &Workspace) -> String {
     }
 
     let edges = collect_all_edges(model);
-    layout_grid(&mut nodes, COLS);
+    layout_hierarchical(&mut nodes, &edges);
     render_svg(title, &nodes, &edges, None)
 }
 
@@ -199,7 +199,7 @@ fn render_system_context(title: &str, view: &SystemContextView, workspace: &Work
     nodes.extend(ext_nodes);
 
     let edges = collect_all_edges(model);
-    layout_grid(&mut nodes, COLS);
+    layout_hierarchical(&mut nodes, &edges);
     render_svg(title, &nodes, &edges, None)
 }
 
@@ -273,9 +273,8 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
     let container_end = all_nodes.len();
     all_nodes.extend(ext_nodes);
 
-    layout_grid(&mut all_nodes, COLS);
-
     let edges = collect_all_edges_with_containers(model);
+    layout_hierarchical(&mut all_nodes, &edges);
 
     // Compute the bounding box around container nodes for the system boundary
     let boundary = if container_end > people_count {
@@ -290,7 +289,131 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 
+/// Assign x/y positions using a **hierarchical (layered) layout**.
+///
+/// The algorithm mirrors the first two phases of Sugiyama's framework:
+///
+/// 1. **Longest-path layering** — propagate layer numbers through the directed
+///    graph so that every edge goes from a lower layer to a higher one.
+/// 2. **Barycentric ordering** — reorder nodes within each layer by the
+///    average position of their predecessors to reduce edge crossings.
+/// 3. **Coordinate assignment** — centre each layer horizontally relative to
+///    the widest layer.
+///
+/// Falls back to a simple COLS-wide grid when no edges connect any of the
+/// supplied nodes (isolated-node diagrams look better in a compact grid).
+fn layout_hierarchical(nodes: &mut Vec<Node>, edges: &[Edge]) {
+    if nodes.is_empty() {
+        return;
+    }
+
+    // Build node-id → index map (only for nodes that are in this diagram)
+    let id_to_idx: HashMap<&str, usize> = nodes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.id.as_str(), i))
+        .collect();
+
+    // Check whether any edges connect two visible nodes.
+    let has_local_edges = edges.iter().any(|e| {
+        id_to_idx.contains_key(e.src_id.as_str())
+            && id_to_idx.contains_key(e.dst_id.as_str())
+    });
+
+    if !has_local_edges {
+        layout_grid(nodes, COLS);
+        return;
+    }
+
+    let n = nodes.len();
+
+    // ── 1. Longest-path layering ──────────────────────────────────────────────
+    let mut layer = vec![0usize; n];
+    // Iterate n times so that longest paths of any length are propagated.
+    for _ in 0..n {
+        for edge in edges {
+            if let (Some(&src), Some(&dst)) = (
+                id_to_idx.get(edge.src_id.as_str()),
+                id_to_idx.get(edge.dst_id.as_str()),
+            ) {
+                if layer[src] + 1 > layer[dst] {
+                    layer[dst] = layer[src] + 1;
+                }
+            }
+        }
+    }
+
+    // ── 2. Group nodes by layer ───────────────────────────────────────────────
+    let num_layers = layer.iter().max().copied().unwrap_or(0) + 1;
+    let mut layers: Vec<Vec<usize>> = vec![Vec::new(); num_layers];
+    for (i, &l) in layer.iter().enumerate() {
+        layers[l].push(i);
+    }
+
+    // ── 3. Barycentric ordering (one downward sweep) ─────────────────────────
+    // Track the position-within-layer of each node for barycentre calculation.
+    let mut pos_in_layer = vec![0usize; n];
+    for layer_nodes in &layers {
+        for (pos, &idx) in layer_nodes.iter().enumerate() {
+            pos_in_layer[idx] = pos;
+        }
+    }
+
+    // Build predecessor lists (for nodes in this diagram only).
+    let mut predecessors: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for edge in edges {
+        if let (Some(&src), Some(&dst)) = (
+            id_to_idx.get(edge.src_id.as_str()),
+            id_to_idx.get(edge.dst_id.as_str()),
+        ) {
+            predecessors[dst].push(src);
+        }
+    }
+
+    for row in 1..num_layers {
+        if layers[row].len() <= 1 {
+            continue;
+        }
+        let mut bary: Vec<(usize, f64)> = layers[row]
+            .iter()
+            .map(|&idx| {
+                let preds = &predecessors[idx];
+                let score = if preds.is_empty() {
+                    pos_in_layer[idx] as f64
+                } else {
+                    preds.iter().map(|&p| pos_in_layer[p] as f64).sum::<f64>()
+                        / preds.len() as f64
+                };
+                (idx, score)
+            })
+            .collect();
+        bary.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        layers[row] = bary.iter().map(|(idx, _)| *idx).collect();
+        for (pos, &idx) in layers[row].iter().enumerate() {
+            pos_in_layer[idx] = pos;
+        }
+    }
+
+    // ── 4. Coordinate assignment ─────────────────────────────────────────────
+    let max_per_layer = layers.iter().map(|l| l.len()).max().unwrap_or(1).max(1);
+    let canvas_w = max_per_layer as i32 * (BOX_W + H_GAP) - H_GAP + 2 * MARGIN;
+
+    for (row, layer_nodes) in layers.iter().enumerate() {
+        let count = layer_nodes.len() as i32;
+        if count == 0 {
+            continue;
+        }
+        let layer_w = count * BOX_W + (count - 1).max(0) * H_GAP;
+        let start_x = (canvas_w - layer_w) / 2;
+        for (col, &node_idx) in layer_nodes.iter().enumerate() {
+            nodes[node_idx].x = start_x + col as i32 * (BOX_W + H_GAP);
+            nodes[node_idx].y = MARGIN + row as i32 * (BOX_H + V_GAP);
+        }
+    }
+}
+
 /// Assign x/y positions in a left-to-right, top-to-bottom grid.
+/// Used as the fallback when no edges exist between the diagram's nodes.
 fn layout_grid(nodes: &mut Vec<Node>, cols: usize) {
     let cols = cols.max(1);
     for (i, node) in nodes.iter_mut().enumerate() {
