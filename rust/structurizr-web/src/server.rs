@@ -146,7 +146,8 @@ async fn api_decision_handler(
             .cloned();
         match decision {
             Some(mut d) => {
-                if d.format.to_lowercase() != "asciidoc" {
+                let fmt = d.format.to_lowercase();
+                if fmt == "markdown" || fmt.is_empty() {
                     d.content = render_markdown(&d.content);
                     d.format = "HTML".to_string();
                 }

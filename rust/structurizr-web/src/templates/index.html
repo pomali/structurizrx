@@ -82,8 +82,11 @@
     <h5 class="card-title">${escHtml(ws.display_name)}</h5>
     ${ws.description ? `<p class="card-text text-muted small">${escHtml(ws.description)}</p>` : ''}
   </div>
-  <div class="card-footer d-flex align-items-center justify-content-between">
-    <span class="badge bg-secondary badge-count">${ws.diagram_count} diagram${ws.diagram_count !== 1 ? 's' : ''}</span>
+  <div class="card-footer d-flex align-items-center justify-content-between flex-wrap gap-1">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <span class="badge bg-secondary badge-count">${ws.diagram_count} diagram${ws.diagram_count !== 1 ? 's' : ''}</span>
+      ${ws.decision_count > 0 ? `<a href="/workspace/${encodeURIComponent(ws.name)}/decisions" class="badge bg-info text-decoration-none" onclick="event.stopPropagation()">${ws.decision_count} decision${ws.decision_count !== 1 ? 's' : ''}</a>` : ''}
+    </div>
     <a href="/workspace/${encodeURIComponent(ws.name)}" class="btn btn-sm btn-primary">View <i class="bi bi-arrow-right"></i></a>
   </div>
 </div>`;
