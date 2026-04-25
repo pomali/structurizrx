@@ -1,0 +1,151 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact_name: structurizrx-aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact_name: structurizrx-x86_64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: structurizrx-x86_64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build
+        working-directory: rust
+        run: cargo build --release --target ${{ matrix.target }} --bin structurizrx
+
+      - name: Package binary
+        run: |
+          mkdir -p package
+          cp rust/target/${{ matrix.target }}/release/structurizrx package/structurizrx
+          tar czf ${{ matrix.artifact_name }}.tar.gz -C package structurizrx
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}.tar.gz
+
+  release:
+    name: Create Release & Update Formula
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Compute SHA256 checksums
+        id: checksums
+        run: |
+          SHA_ARM=$(sha256sum artifacts/structurizrx-aarch64-apple-darwin/structurizrx-aarch64-apple-darwin.tar.gz | awk '{print $1}')
+          SHA_X86=$(sha256sum artifacts/structurizrx-x86_64-apple-darwin/structurizrx-x86_64-apple-darwin.tar.gz | awk '{print $1}')
+          SHA_LINUX=$(sha256sum artifacts/structurizrx-x86_64-unknown-linux-gnu/structurizrx-x86_64-unknown-linux-gnu.tar.gz | awk '{print $1}')
+          echo "arm=$SHA_ARM" >> $GITHUB_OUTPUT
+          echo "x86=$SHA_X86" >> $GITHUB_OUTPUT
+          echo "linux=$SHA_LINUX" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/structurizrx-aarch64-apple-darwin/structurizrx-aarch64-apple-darwin.tar.gz
+            artifacts/structurizrx-x86_64-apple-darwin/structurizrx-x86_64-apple-darwin.tar.gz
+            artifacts/structurizrx-x86_64-unknown-linux-gnu/structurizrx-x86_64-unknown-linux-gnu.tar.gz
+
+      - name: Update Homebrew formula
+        run: |
+          VERSION="${{ github.ref_name }}"
+          BARE_VERSION="${VERSION#v}"
+          REPO="${{ github.repository }}"
+          SHA_ARM="${{ steps.checksums.outputs.arm }}"
+          SHA_X86="${{ steps.checksums.outputs.x86 }}"
+          SHA_LINUX="${{ steps.checksums.outputs.linux }}"
+          mkdir -p Formula
+          cat > Formula/structurizrx.rb << EOF
+          # This formula is automatically updated by the release workflow when a new tag is pushed.
+          # To install, first add the tap:
+          #
+          #   brew tap pomali/structurizrx https://github.com/${REPO}
+          #   brew install structurizrx
+          class Structurizrx < Formula
+            desc "Structurizr DSL toolchain - Rust implementation"
+            homepage "https://github.com/${REPO}"
+            version "${BARE_VERSION}"
+            license "Apache-2.0"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/${REPO}/releases/download/${VERSION}/structurizrx-aarch64-apple-darwin.tar.gz"
+                sha256 "${SHA_ARM}"
+              else
+                url "https://github.com/${REPO}/releases/download/${VERSION}/structurizrx-x86_64-apple-darwin.tar.gz"
+                sha256 "${SHA_X86}"
+              end
+            end
+
+            on_linux do
+              url "https://github.com/${REPO}/releases/download/${VERSION}/structurizrx-x86_64-unknown-linux-gnu.tar.gz"
+              sha256 "${SHA_LINUX}"
+            end
+
+            def install
+              bin.install "structurizrx"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/structurizrx --version")
+            end
+          end
+          EOF
+
+      - name: Commit and push formula
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin ${{ github.event.repository.default_branch }}
+          git checkout ${{ github.event.repository.default_branch }}
+          git add Formula/structurizrx.rb
+          git diff --cached --quiet || git commit -m "chore: update formula for ${{ github.ref_name }}"
+          git push origin HEAD:${{ github.event.repository.default_branch }}
