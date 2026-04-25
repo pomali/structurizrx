@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use structurizr_model::*;
 
@@ -9,8 +9,12 @@ use crate::lexer::{tokenize, Spanned, Token};
 
 /// Parse a DSL file from disk.
 pub fn parse_file(path: impl AsRef<Path>) -> Result<Workspace, ParseError> {
+    let path = path.as_ref();
     let source = std::fs::read_to_string(path)?;
-    parse_str(&source)
+    let tokens = tokenize(&source);
+    let mut parser = Parser::new(tokens);
+    parser.base_path = path.parent().map(|p| p.to_path_buf());
+    parser.parse_workspace()
 }
 
 /// Parse a DSL string into a Workspace.
@@ -26,6 +30,10 @@ struct Parser {
     id_counter: u64,
     register: IdentifierRegister,
     constants: HashMap<String, String>,
+    /// Directory of the DSL file being parsed (used for resolving relative !adrs paths).
+    base_path: Option<PathBuf>,
+    /// Decisions accumulated while parsing (flushed into workspace.documentation at the end).
+    accumulated_decisions: Vec<Decision>,
 }
 
 impl Parser {
@@ -36,6 +44,8 @@ impl Parser {
             id_counter: 1,
             register: IdentifierRegister::new(),
             constants: HashMap::new(),
+            base_path: None,
+            accumulated_decisions: Vec::new(),
         }
     }
 
@@ -220,6 +230,97 @@ impl Parser {
         }
     }
 
+    // ─── ADR import ─────────────────────────────────────────────────────────────
+
+    /// Read all AdrTools-format `.md` files from `rel_path` (relative to `base_path`)
+    /// and return them as `Decision` objects.
+    fn import_adrs(&self, rel_path: &str) -> Vec<Decision> {
+        let base = match &self.base_path {
+            Some(p) => p.clone(),
+            None => {
+                eprintln!("Warning: !adrs '{}' ignored (no base path — use parse_file)", rel_path);
+                return vec![];
+            }
+        };
+        let dir = base.join(rel_path);
+        if !dir.is_dir() {
+            eprintln!("Warning: ADR directory not found: {}", dir.display());
+            return vec![];
+        }
+        let mut files: Vec<PathBuf> = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.is_file() && p.extension().map_or(false, |e| e == "md"))
+                .collect(),
+            Err(e) => {
+                eprintln!("Warning: Could not read ADR directory {}: {}", dir.display(), e);
+                return vec![];
+            }
+        };
+        files.sort();
+        files.iter().filter_map(|p| Self::parse_adr_file(p)).collect()
+    }
+
+    /// Parse a single AdrTools-format Markdown file into a `Decision`.
+    fn parse_adr_file(path: &Path) -> Option<Decision> {
+        let filename = path.file_name()?.to_str()?;
+        // ID is parsed from the leading digits of the filename (e.g. "0001" → "1").
+        let leading_digits: String = filename.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if leading_digits.is_empty() {
+            return None;
+        }
+        // Parse as integer to strip leading zeros ("0001" → 1 → "1", "0000" → 0 → "0").
+        let id: u64 = leading_digits.parse().ok()?;
+        let id = id.to_string();
+
+        let raw = std::fs::read_to_string(path).ok()?;
+        let content = raw.replace('\r', "");
+        let lines: Vec<&str> = content.lines().collect();
+
+        // Title: first line is expected to be "# N. Title" → extract "Title".
+        let title = lines.first()
+            .and_then(|l| {
+                let stripped = l.trim_start_matches('#').trim();
+                stripped.find(". ").map(|i| stripped[i + 2..].trim().to_string())
+            })
+            .unwrap_or_else(|| filename.to_string());
+
+        // Date: first line matching "Date: YYYY-MM-DD".
+        let date = lines.iter()
+            .find(|l| l.starts_with("Date: "))
+            .map(|l| l["Date: ".len()..].trim().to_string())
+            .unwrap_or_default();
+
+        // Status: first non-empty line after "## Status".
+        let mut in_status = false;
+        let mut status = "Proposed".to_string();
+        for line in &lines {
+            if !in_status {
+                if line.trim() == "## Status" {
+                    in_status = true;
+                }
+            } else {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    let word = trimmed.split_whitespace().next().unwrap_or("Proposed");
+                    status = if word == "Superceded" { "Superseded".to_string() } else { word.to_string() };
+                    break;
+                }
+            }
+        }
+
+        Some(Decision {
+            id,
+            title,
+            date,
+            status,
+            format: "Markdown".to_string(),
+            content,
+            element_id: None,
+        })
+    }
+
     // ─── Top level ──────────────────────────────────────────────────────────────
 
     fn parse_workspace(&mut self) -> Result<Workspace, ParseError> {
@@ -246,6 +347,13 @@ impl Parser {
         }
 
         self.expect_close_brace()?;
+
+        // Flush all accumulated ADR decisions into workspace.documentation.
+        if !self.accumulated_decisions.is_empty() {
+            let doc = workspace.documentation.get_or_insert_with(Documentation::default);
+            let existing = doc.decisions.get_or_insert_with(Vec::new);
+            existing.append(&mut self.accumulated_decisions);
+        }
 
         Ok(workspace)
     }
@@ -299,10 +407,20 @@ impl Parser {
                         // Skip optional boolean/block
                         self.consume_string();
                     }
+                    "adrs" | "decisions" => {
+                        self.advance();
+                        let rel_path = self.consume_string().unwrap_or_default();
+                        // Skip optional exclude block.
+                        if self.peek_open_brace() {
+                            self.advance();
+                            self.skip_block();
+                        }
+                        let decisions = self.import_adrs(&rel_path);
+                        self.accumulated_decisions.extend(decisions);
+                    }
                     _ => {
                         self.advance();
-                        // Skip any following value or block
-                        self.skip_optional_block_or_value();
+                        self.skip_directive_args();
                     }
                 }
             }
@@ -365,6 +483,18 @@ impl Parser {
             while matches!(self.peek(), Some(Token::Word(_)) | Some(Token::Quoted(_)) | Some(Token::TextBlock(_))) {
                 self.advance();
             }
+        }
+    }
+
+    /// Skip a directive's arguments: consume at most ONE argument string and then
+    /// optionally a `{ ... }` block.  This avoids the greedy multi-word consumption
+    /// of `skip_optional_block_or_value` which would accidentally eat the next
+    /// keyword on the following line (e.g. `properties`, `model`, etc.).
+    fn skip_directive_args(&mut self) {
+        let _ = self.consume_string(); // consume at most one argument
+        if self.peek_open_brace() {
+            self.advance();
+            self.skip_block();
         }
     }
 
@@ -460,7 +590,7 @@ impl Parser {
                         self.constants.insert(name, value);
                     }
                     _ => {
-                        self.skip_optional_block_or_value();
+                        self.skip_directive_args();
                     }
                 }
             }
@@ -632,12 +762,17 @@ impl Parser {
                         tags: Some("Relationship".to_string()),
                         ..Default::default()
                     });
+                } else if matches!(self.peek(), Some(Token::Directive(d)) if d.eq_ignore_ascii_case("adrs") || d.eq_ignore_ascii_case("decisions")) {
+                    self.advance();
+                    let rel_path = self.consume_string().unwrap_or_default();
+                    if self.peek_open_brace() { self.advance(); self.skip_block(); }
+                    let mut decisions = self.import_adrs(&rel_path);
+                    for d in &mut decisions { d.element_id = Some(id.clone()); }
+                    self.accumulated_decisions.extend(decisions);
                 } else if matches!(self.peek(), Some(Token::Directive(_))) {
                     self.advance();
-                    self.skip_optional_block_or_value();
+                    self.skip_directive_args();
                 } else {
-                    // Unknown property keyword (e.g. `tags`, `description`, `technology`).
-                    // Consume only one value to avoid eating the next element's identifier.
                     self.advance();
                     if self.peek_open_brace() {
                         self.advance();
@@ -725,11 +860,17 @@ impl Parser {
                         tags: Some("Relationship".to_string()),
                         ..Default::default()
                     });
+                } else if matches!(self.peek(), Some(Token::Directive(d)) if d.eq_ignore_ascii_case("adrs") || d.eq_ignore_ascii_case("decisions")) {
+                    self.advance();
+                    let rel_path = self.consume_string().unwrap_or_default();
+                    if self.peek_open_brace() { self.advance(); self.skip_block(); }
+                    let mut decisions = self.import_adrs(&rel_path);
+                    for d in &mut decisions { d.element_id = Some(id.clone()); }
+                    self.accumulated_decisions.extend(decisions);
                 } else if matches!(self.peek(), Some(Token::Directive(_))) {
                     self.advance();
-                    self.skip_optional_block_or_value();
+                    self.skip_directive_args();
                 } else {
-                    // Unknown property keyword (e.g. `tags`, `description`).
                     // Consume only one value to avoid eating the next element's identifier.
                     self.advance();
                     if self.peek_open_brace() {
@@ -831,7 +972,7 @@ impl Parser {
                     });
                 } else if matches!(self.peek(), Some(Token::Directive(_))) {
                     self.advance();
-                    self.skip_optional_block_or_value();
+                    self.skip_directive_args();
                 } else {
                     self.advance();
                     self.skip_optional_block_or_value();
@@ -982,7 +1123,7 @@ impl Parser {
                     });
                 } else if matches!(self.peek(), Some(Token::Directive(_))) {
                     self.advance();
-                    self.skip_optional_block_or_value();
+                    self.skip_directive_args();
                 } else {
                     // Unknown property keyword (e.g. `tags`, `description`, `technology`,
                     // `url`, `properties`, `perspectives`).  Consume the keyword then
@@ -1112,7 +1253,7 @@ impl Parser {
     }
 
     /// Parse an element block (relationships and style overrides inside `{ }`).
-    fn parse_element_block(&mut self, _source_id: &str) -> Result<Vec<Relationship>, ParseError> {
+    fn parse_element_block(&mut self, source_id: &str) -> Result<Vec<Relationship>, ParseError> {
         let mut rels = Vec::new();
         while !self.peek_close_brace() && self.peek().is_some() {
             if self.peek_at_arrow_after_word() {
@@ -1133,9 +1274,16 @@ impl Parser {
                     tags: Some("Relationship".to_string()),
                     ..Default::default()
                 });
+            } else if matches!(self.peek(), Some(Token::Directive(d)) if d.eq_ignore_ascii_case("adrs") || d.eq_ignore_ascii_case("decisions")) {
+                self.advance();
+                let rel_path = self.consume_string().unwrap_or_default();
+                if self.peek_open_brace() { self.advance(); self.skip_block(); }
+                let mut decisions = self.import_adrs(&rel_path);
+                for d in &mut decisions { d.element_id = Some(source_id.to_string()); }
+                self.accumulated_decisions.extend(decisions);
             } else if matches!(self.peek(), Some(Token::Directive(_))) {
                 self.advance();
-                self.skip_optional_block_or_value();
+                self.skip_directive_args();
             } else {
                 self.advance();
                 self.skip_optional_block_or_value();

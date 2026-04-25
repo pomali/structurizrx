@@ -18,6 +18,7 @@
 //! ```
 
 pub mod assets;
+pub mod markdown;
 pub mod resolver;
 pub mod server;
 pub mod state;

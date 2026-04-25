@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="auto">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Decision – {{WORKSPACE_NAME}} – Structurizr</title>
+    <link rel="icon" type="image/png" href="/static/img/favicon.png"/>
+    <link rel="stylesheet" href="/static/css/bootstrap-5.3.7.min.css"/>
+    <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
+    <style>
+        body { background: var(--bs-body-bg); }
+        .decision-content { max-width: 800px; }
+        .decision-content h1,
+        .decision-content h2,
+        .decision-content h3 { margin-top: 1.5rem; }
+        .decision-content pre { background: var(--bs-tertiary-bg); padding: 1rem; border-radius: .375rem; overflow-x: auto; }
+        .decision-content code { background: var(--bs-tertiary-bg); padding: .1em .3em; border-radius: .2em; }
+        .decision-content pre code { background: none; padding: 0; }
+        .decision-content table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
+        .decision-content table th,
+        .decision-content table td { border: 1px solid var(--bs-border-color); padding: .4rem .6rem; }
+        .decision-content table thead tr { background: var(--bs-tertiary-bg); }
+        .decision-content blockquote { border-left: 4px solid var(--bs-primary); padding: .5rem 1rem; margin-left: 0; color: var(--bs-secondary-color); }
+        .adr-meta { font-size: .875rem; color: var(--bs-secondary-color); }
+        .status-badge-Proposed    { background-color: #0d6efd !important; }
+        .status-badge-Accepted    { background-color: #198754 !important; }
+        .status-badge-Superseded  { background-color: #6c757d !important; }
+        .status-badge-Deprecated  { background-color: #dc3545 !important; }
+        .status-badge-Rejected    { background-color: #dc3545 !important; }
+        #reload-banner { display: none; position: fixed; bottom: 1rem; right: 1rem; z-index: 9999; }
+    </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom mb-4">
+    <div class="container-fluid">
+        <a class="navbar-brand fw-semibold" href="/">
+            <img src="/static/img/structurizr-logo.png" alt="Structurizr" height="28" class="me-2"/>
+            Structurizr
+        </a>
+        <ol class="breadcrumb mb-0 ms-2">
+            <li class="breadcrumb-item"><a href="/">Workspaces</a></li>
+            <li class="breadcrumb-item"><a href="/workspace/{{WORKSPACE_SLUG}}">{{WORKSPACE_NAME}}</a></li>
+            <li class="breadcrumb-item"><a href="/workspace/{{WORKSPACE_SLUG}}/decisions">Decisions</a></li>
+            <li class="breadcrumb-item active" id="breadcrumb-id">{{DECISION_ID}}</li>
+        </ol>
+        <div class="ms-auto">
+            <button id="themeToggle" class="btn btn-sm btn-outline-secondary" title="Toggle dark mode">
+                <i class="bi bi-circle-half"></i>
+            </button>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <div id="error-msg" class="alert alert-danger" style="display:none"></div>
+
+    <div id="decision-body" style="display:none">
+        <div class="d-flex align-items-start mb-3 gap-3 flex-wrap">
+            <div>
+                <h4 id="decision-title" class="mb-1"></h4>
+                <div class="adr-meta d-flex align-items-center gap-3 flex-wrap">
+                    <span><i class="bi bi-hash me-1"></i><span id="decision-id"></span></span>
+                    <span><i class="bi bi-calendar3 me-1"></i><span id="decision-date"></span></span>
+                    <span><span class="badge" id="decision-status-badge"></span></span>
+                </div>
+            </div>
+            <div class="ms-auto d-flex gap-2 flex-shrink-0">
+                <a id="btn-prev" class="btn btn-sm btn-outline-secondary" style="display:none">
+                    <i class="bi bi-arrow-left"></i> Prev
+                </a>
+                <a id="btn-next" class="btn btn-sm btn-outline-secondary" style="display:none">
+                    Next <i class="bi bi-arrow-right"></i>
+                </a>
+            </div>
+        </div>
+
+        <hr/>
+        <div id="decision-content" class="decision-content"></div>
+    </div>
+</div>
+
+<div id="reload-banner">
+    <div class="alert alert-info alert-dismissible mb-0 shadow" role="alert">
+        <i class="bi bi-arrow-clockwise me-1"></i> Workspace reloaded
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+</div>
+
+<script src="/static/js/bootstrap-5.3.7.min.js"></script>
+<script>
+(function() {
+    var WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
+    var DECISION_ID    = '{{DECISION_ID}}';
+
+    // ---- theme ----
+    const THEME_KEY = 'structurizrx-theme';
+    function applyTheme(t) {
+        document.documentElement.setAttribute('data-bs-theme', t);
+        localStorage.setItem(THEME_KEY, t);
+    }
+    var saved = localStorage.getItem(THEME_KEY) ||
+        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    applyTheme(saved);
+    document.getElementById('themeToggle').addEventListener('click', function() {
+        var cur = document.documentElement.getAttribute('data-bs-theme');
+        applyTheme(cur === 'dark' ? 'light' : 'dark');
+    });
+
+    function statusClass(status) {
+        var s = (status || '').trim();
+        return 'badge status-badge-' + s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+    }
+
+    function decisionUrl(id) {
+        return '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/decisions/' + encodeURIComponent(id);
+    }
+
+    // ---- fetch all decisions for prev/next navigation ----
+    var allDecisions = [];
+
+    function loadAll() {
+        return fetch('/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/decisions')
+            .then(function(r) { return r.json(); })
+            .then(function(list) { allDecisions = list || []; });
+    }
+
+    function buildNavigation() {
+        var idx = allDecisions.findIndex(function(d) { return d.id === DECISION_ID; });
+        var btnPrev = document.getElementById('btn-prev');
+        var btnNext = document.getElementById('btn-next');
+        if (idx > 0) {
+            btnPrev.href = decisionUrl(allDecisions[idx - 1].id);
+            btnPrev.style.display = '';
+        }
+        if (idx >= 0 && idx < allDecisions.length - 1) {
+            btnNext.href = decisionUrl(allDecisions[idx + 1].id);
+            btnNext.style.display = '';
+        }
+    }
+
+    // ---- fetch and render this decision ----
+    function loadDecision() {
+        var url = '/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG) +
+                  '/decisions/' + encodeURIComponent(DECISION_ID);
+        return fetch(url)
+            .then(function(r) {
+                if (!r.ok) { throw new Error('Decision not found (HTTP ' + r.status + ')'); }
+                return r.json();
+            })
+            .then(function(d) {
+                document.getElementById('decision-title').textContent = d.title || '';
+                document.getElementById('decision-id').textContent   = d.id || '';
+                document.getElementById('decision-date').textContent = d.date || '';
+                document.title = 'ADR ' + d.id + ' – ' + d.title + ' – Structurizr';
+                document.getElementById('breadcrumb-id').textContent = 'ADR-' + d.id;
+
+                var badge = document.getElementById('decision-status-badge');
+                badge.textContent = d.status || '';
+                badge.className   = statusClass(d.status);
+
+                var contentEl = document.getElementById('decision-content');
+                if (d.format === 'HTML') {
+                    contentEl.innerHTML = d.content || '';
+                } else {
+                    // AsciiDoc or unknown: display as pre-formatted text
+                    var pre = document.createElement('pre');
+                    pre.textContent = d.content || '';
+                    contentEl.appendChild(pre);
+                }
+
+                document.getElementById('decision-body').style.display = '';
+                document.getElementById('error-msg').style.display = 'none';
+            })
+            .catch(function(e) {
+                document.getElementById('error-msg').textContent = e.message;
+                document.getElementById('error-msg').style.display = '';
+                document.getElementById('decision-body').style.display = 'none';
+            });
+    }
+
+    function init() {
+        Promise.all([loadAll(), loadDecision()]).then(buildNavigation);
+    }
+
+    init();
+
+    // ---- WebSocket live reload ----
+    function connectWs() {
+        var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        var ws = new WebSocket(proto + '://' + location.host + '/ws');
+        ws.onmessage = function(e) {
+            var msg = JSON.parse(e.data);
+            if (msg.type === 'reload') {
+                init();
+                var banner = document.getElementById('reload-banner');
+                banner.style.display = '';
+                setTimeout(function() { banner.style.display = 'none'; }, 3000);
+            }
+        };
+        ws.onclose = function() { setTimeout(connectWs, 2000); };
+    }
+    connectWs();
+})();
+</script>
+</body>
+</html>
