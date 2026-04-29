@@ -21,6 +21,7 @@ const WORKSPACE_HTML: &str = include_str!("templates/workspace.html");
 const DIAGRAM_HTML: &str = include_str!("templates/diagram.html");
 const DECISIONS_HTML: &str = include_str!("templates/decisions.html");
 const DECISION_HTML: &str = include_str!("templates/decision.html");
+const CANVAS_HTML: &str = include_str!("templates/canvas.html");
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
@@ -29,6 +30,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/workspace/{name}/diagram/{key}", get(diagram_handler))
         .route("/workspace/{name}/decisions", get(decisions_handler))
         .route("/workspace/{name}/decisions/{id}", get(decision_handler))
+        .route("/workspace/{name}/canvas", get(canvas_handler))
         .route("/api/workspaces", get(api_workspaces_handler))
         .route("/api/workspace/{name}", get(api_workspace_handler))
         .route("/api/workspace/{name}/decisions", get(api_decisions_handler))
@@ -76,6 +78,14 @@ async fn decision_handler(Path((name, id)): Path<(String, String)>) -> Html<Stri
             .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
             .replace("{{WORKSPACE_SLUG}}", &js_escape(&name))
             .replace("{{DECISION_ID}}", &js_escape(&id)),
+    )
+}
+
+async fn canvas_handler(Path(name): Path<String>) -> Html<String> {
+    Html(
+        CANVAS_HTML
+            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
     )
 }
 
@@ -221,7 +231,9 @@ async fn static_handler(Path(path): Path<String>) -> Response {
 }
 
 fn mime_from_path(path: &str) -> &'static str {
-    if path.ends_with(".js") {
+    if path.ends_with(".wasm") {
+        "application/wasm"
+    } else if path.ends_with(".js") {
         "application/javascript; charset=utf-8"
     } else if path.ends_with(".css") {
         "text/css; charset=utf-8"
