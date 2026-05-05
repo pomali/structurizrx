@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use structurizr_model::*;
 
@@ -74,7 +74,7 @@ impl DiagramExporter for SvgExporter {
             for v in sl_views {
                 let key = v.key.clone().unwrap_or_else(|| "SystemLandscape".to_string());
                 let title = v.title.as_deref().unwrap_or(&key);
-                let content = render_landscape(title, workspace);
+                let content = render_landscape(title, v, workspace);
                 diagrams.push(Diagram::new(key, content, DiagramFormat::Svg));
             }
         }
@@ -103,13 +103,18 @@ impl DiagramExporter for SvgExporter {
 
 // ── Per-view renderers ────────────────────────────────────────────────────────
 
-fn render_landscape(title: &str, workspace: &Workspace) -> String {
+fn render_landscape(title: &str, view: &SystemLandscapeView, workspace: &Workspace) -> String {
     let model = &workspace.model;
     let styles = get_styles(workspace);
+    let (elem_filter, elem_pos) = build_element_filter(view.element_views.as_deref());
+    let rel_filter = build_rel_filter(view.relationship_views.as_deref());
     let mut nodes: Vec<Node> = Vec::new();
 
     if let Some(people) = &model.people {
         for p in people {
+            if !elem_allowed(&elem_filter, &p.id) {
+                continue;
+            }
             let s = resolve_node_style(p.tags.as_deref(), "Person", styles, COLOR_PERSON, COLOR_TEXT_LIGHT);
             nodes.push(Node {
                 id: p.id.clone(),
@@ -127,6 +132,9 @@ fn render_landscape(title: &str, workspace: &Workspace) -> String {
 
     if let Some(systems) = &model.software_systems {
         for ss in systems {
+            if !elem_allowed(&elem_filter, &ss.id) {
+                continue;
+            }
             let s = resolve_node_style(ss.tags.as_deref(), "Software System", styles, COLOR_SYSTEM, COLOR_TEXT_LIGHT);
             nodes.push(Node {
                 id: ss.id.clone(),
@@ -142,8 +150,13 @@ fn render_landscape(title: &str, workspace: &Workspace) -> String {
         }
     }
 
-    let edges = collect_all_edges(model);
-    layout_hierarchical(&mut nodes, &edges);
+    // Only use auto-layout when no stored positions are available.  Running layout
+    // when some nodes already have explicit coordinates would overwrite those values.
+    let edges = collect_all_edges(model, rel_filter.as_ref());
+    let positioned = apply_stored_positions(&mut nodes, &elem_pos);
+    if positioned == 0 {
+        layout_hierarchical(&mut nodes, &edges);
+    }
     render_svg(title, &nodes, &edges, None)
 }
 
@@ -151,6 +164,8 @@ fn render_system_context(title: &str, view: &SystemContextView, workspace: &Work
     let model = &workspace.model;
     let styles = get_styles(workspace);
     let focal_id = &view.software_system_id;
+    let (elem_filter, elem_pos) = build_element_filter(view.element_views.as_deref());
+    let rel_filter = build_rel_filter(view.relationship_views.as_deref());
 
     let mut people_nodes: Vec<Node> = Vec::new();
     let mut focal_node: Option<Node> = None;
@@ -158,6 +173,9 @@ fn render_system_context(title: &str, view: &SystemContextView, workspace: &Work
 
     if let Some(people) = &model.people {
         for p in people {
+            if !elem_allowed(&elem_filter, &p.id) {
+                continue;
+            }
             let s = resolve_node_style(p.tags.as_deref(), "Person", styles, COLOR_PERSON, COLOR_TEXT_LIGHT);
             people_nodes.push(Node {
                 id: p.id.clone(),
@@ -175,6 +193,9 @@ fn render_system_context(title: &str, view: &SystemContextView, workspace: &Work
 
     if let Some(systems) = &model.software_systems {
         for ss in systems {
+            if !elem_allowed(&elem_filter, &ss.id) {
+                continue;
+            }
             if &ss.id == focal_id {
                 let s = resolve_node_style(ss.tags.as_deref(), "Software System", styles, COLOR_SYSTEM, COLOR_TEXT_LIGHT);
                 focal_node = Some(Node {
@@ -211,8 +232,11 @@ fn render_system_context(title: &str, view: &SystemContextView, workspace: &Work
     }
     nodes.extend(ext_nodes);
 
-    let edges = collect_all_edges(model);
-    layout_hierarchical(&mut nodes, &edges);
+    let edges = collect_all_edges(model, rel_filter.as_ref());
+    let positioned = apply_stored_positions(&mut nodes, &elem_pos);
+    if positioned == 0 {
+        layout_hierarchical(&mut nodes, &edges);
+    }
     render_svg(title, &nodes, &edges, None)
 }
 
@@ -220,6 +244,8 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
     let model = &workspace.model;
     let styles = get_styles(workspace);
     let focal_id = &view.software_system_id;
+    let (elem_filter, elem_pos) = build_element_filter(view.element_views.as_deref());
+    let rel_filter = build_rel_filter(view.relationship_views.as_deref());
 
     let mut people_nodes: Vec<Node> = Vec::new();
     let mut container_nodes: Vec<Node> = Vec::new();
@@ -228,6 +254,9 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
 
     if let Some(people) = &model.people {
         for p in people {
+            if !elem_allowed(&elem_filter, &p.id) {
+                continue;
+            }
             let s = resolve_node_style(p.tags.as_deref(), "Person", styles, COLOR_PERSON, COLOR_TEXT_LIGHT);
             people_nodes.push(Node {
                 id: p.id.clone(),
@@ -249,6 +278,9 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
                 focal_system_name = ss.name.clone();
                 if let Some(containers) = &ss.containers {
                     for c in containers {
+                        if !elem_allowed(&elem_filter, &c.id) {
+                            continue;
+                        }
                         let tech = c.technology.as_deref().unwrap_or("").to_string();
                         let type_label = if tech.is_empty() {
                             "Container".to_string()
@@ -270,6 +302,9 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
                     }
                 }
             } else {
+                if !elem_allowed(&elem_filter, &ss.id) {
+                    continue;
+                }
                 let s = resolve_node_style(ss.tags.as_deref(), "Software System", styles, COLOR_SYSTEM_EXT, COLOR_TEXT_LIGHT);
                 ext_nodes.push(Node {
                     id: ss.id.clone(),
@@ -293,8 +328,11 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
     let container_end = all_nodes.len();
     all_nodes.extend(ext_nodes);
 
-    let edges = collect_all_edges_with_containers(model);
-    layout_hierarchical(&mut all_nodes, &edges);
+    let edges = collect_all_edges_with_containers(model, rel_filter.as_ref());
+    let positioned = apply_stored_positions(&mut all_nodes, &elem_pos);
+    if positioned == 0 {
+        layout_hierarchical(&mut all_nodes, &edges);
+    }
 
     // Compute the bounding box around container nodes for the system boundary
     let boundary = if container_end > people_count {
@@ -446,31 +484,31 @@ fn layout_grid(nodes: &mut Vec<Node>, cols: usize) {
 
 // ── Edge collection ───────────────────────────────────────────────────────────
 
-fn collect_all_edges(model: &Model) -> Vec<Edge> {
+fn collect_all_edges(model: &Model, rel_filter: Option<&HashSet<String>>) -> Vec<Edge> {
     let mut edges = Vec::new();
     if let Some(people) = &model.people {
         for p in people {
-            collect_rels(&p.relationships, &mut edges);
+            collect_rels(&p.relationships, &mut edges, rel_filter);
         }
     }
     if let Some(systems) = &model.software_systems {
         for ss in systems {
-            collect_rels(&ss.relationships, &mut edges);
+            collect_rels(&ss.relationships, &mut edges, rel_filter);
         }
     }
     edges
 }
 
-fn collect_all_edges_with_containers(model: &Model) -> Vec<Edge> {
-    let mut edges = collect_all_edges(model);
+fn collect_all_edges_with_containers(model: &Model, rel_filter: Option<&HashSet<String>>) -> Vec<Edge> {
+    let mut edges = collect_all_edges(model, rel_filter);
     if let Some(systems) = &model.software_systems {
         for ss in systems {
             if let Some(containers) = &ss.containers {
                 for c in containers {
-                    collect_rels(&c.relationships, &mut edges);
+                    collect_rels(&c.relationships, &mut edges, rel_filter);
                     if let Some(components) = &c.components {
                         for comp in components {
-                            collect_rels(&comp.relationships, &mut edges);
+                            collect_rels(&comp.relationships, &mut edges, rel_filter);
                         }
                     }
                 }
@@ -480,9 +518,14 @@ fn collect_all_edges_with_containers(model: &Model) -> Vec<Edge> {
     edges
 }
 
-fn collect_rels(rels: &Option<Vec<Relationship>>, edges: &mut Vec<Edge>) {
+fn collect_rels(rels: &Option<Vec<Relationship>>, edges: &mut Vec<Edge>, rel_filter: Option<&HashSet<String>>) {
     if let Some(rels) = rels {
         for r in rels {
+            if let Some(filter) = rel_filter {
+                if !filter.contains(&r.id) {
+                    continue;
+                }
+            }
             edges.push(Edge {
                 src_id: r.source_id.clone(),
                 dst_id: r.destination_id.clone(),
@@ -491,6 +534,65 @@ fn collect_rels(rels: &Option<Vec<Relationship>>, edges: &mut Vec<Edge>) {
             });
         }
     }
+}
+
+// ── View filter helpers ───────────────────────────────────────────────────────
+
+/// Build an element ID allowlist and a stored-position map from a view's `element_views`.
+///
+/// Returns `(None, empty_map)` when `element_views` is absent or empty, which means
+/// "show all elements" (backwards-compatible behaviour for workspaces without explicit views).
+fn build_element_filter(
+    element_views: Option<&[ElementView]>,
+) -> (Option<HashSet<String>>, HashMap<String, (i32, i32)>) {
+    let evs = match element_views {
+        None => return (None, HashMap::new()),
+        Some(evs) if evs.is_empty() => return (None, HashMap::new()),
+        Some(evs) => evs,
+    };
+    let ids: HashSet<String> = evs.iter().map(|ev| ev.id.clone()).collect();
+    let pos: HashMap<String, (i32, i32)> = evs
+        .iter()
+        .filter_map(|ev| ev.x.zip(ev.y).map(|(x, y)| (ev.id.clone(), (x, y))))
+        .collect();
+    (Some(ids), pos)
+}
+
+/// Build a relationship ID allowlist from a view's `relationship_views`.
+///
+/// Returns `None` when absent or empty (meaning "allow all relationships").
+fn build_rel_filter(rel_views: Option<&[RelationshipView]>) -> Option<HashSet<String>> {
+    let rvs = rel_views?;
+    if rvs.is_empty() {
+        return None;
+    }
+    Some(rvs.iter().map(|rv| rv.id.clone()).collect())
+}
+
+/// Returns `true` if `id` is allowed by the element filter.
+///
+/// When the filter is `None` (no `element_views` present), all elements are allowed.
+fn elem_allowed(filter: &Option<HashSet<String>>, id: &str) -> bool {
+    match filter {
+        None => true,
+        Some(set) => set.contains(id),
+    }
+}
+
+/// Apply stored x/y positions from the element-position map to `nodes`.
+///
+/// Returns the number of nodes that received a stored position.  Nodes whose IDs
+/// are absent from the map are left at their current coordinates.
+fn apply_stored_positions(nodes: &mut [Node], pos: &HashMap<String, (i32, i32)>) -> usize {
+    let mut count = 0;
+    for node in nodes.iter_mut() {
+        if let Some(&(x, y)) = pos.get(&node.id) {
+            node.x = x;
+            node.y = y;
+            count += 1;
+        }
+    }
+    count
 }
 
 // ── Boundary helper ───────────────────────────────────────────────────────────
@@ -529,12 +631,21 @@ fn render_svg(
     // Build lookup for quick position access
     let pos: HashMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
-    // Compute canvas size from node positions
+    // Compute canvas size from node positions.
+    // Person nodes have a head that protrudes PERSON_HEAD_RADIUS px above their y coordinate.
+    // We clamp `top` to at most 0: a positive minimum means everything is already below the
+    // origin and no extra padding is needed; a negative value means some element extends
+    // above y=0 and we must enlarge the canvas to avoid clipping.
+    let top = nodes.iter().map(|n| {
+        if n.is_person { n.y - PERSON_HEAD_RADIUS } else { n.y }
+    }).min().unwrap_or(0).min(0);
     let right = nodes.iter().map(|n| n.x + BOX_W).max().unwrap_or(200);
     let bottom = nodes.iter().map(|n| n.y + BOX_H).max().unwrap_or(200);
     let title_h = 40;
+    // Extra top padding so that person heads that protrude above y=0 are not clipped.
+    let extra_top = if top < 0 { -top } else { 0 };
     let width = right + MARGIN;
-    let height = bottom + MARGIN + title_h;
+    let height = bottom + MARGIN + title_h + extra_top;
 
     let mut svg = String::new();
 
@@ -571,8 +682,9 @@ fn render_svg(
         xml_escape(title)
     ));
 
-    // Translate remaining elements downward by title_h
-    svg.push_str(&format!(r##"  <g transform="translate(0,{})">"##, title_h));
+    // Translate remaining elements downward by title_h + extra_top so that person
+    // heads that protrude above their y coordinate are not clipped by the title area.
+    svg.push_str(&format!(r##"  <g transform="translate(0,{})">"##, title_h + extra_top));
     svg.push('\n');
 
     // System boundary (if any)
@@ -659,14 +771,10 @@ fn render_node(svg: &mut String, node: &Node) {
         ));
     }
 
-    // Name text
+    // Name text — centred inside the box for both person and non-person nodes.
+    // For person nodes the head protrudes above y, so the box interior still starts at y.
     let text_x = x + BOX_W / 2;
-    let name_y = if node.is_person {
-        // Head circle protrudes PERSON_HEAD_RADIUS + 2px above the box top; offset text accordingly
-        y + PERSON_HEAD_RADIUS + 2 + 16
-    } else {
-        y + BOX_H / 2 - 6
-    };
+    let name_y = y + BOX_H / 2 - 6;
 
     svg.push_str(&format!(
         r##"    <text x="{}" y="{}" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="{}" text-anchor="middle">{}</text>
@@ -688,22 +796,23 @@ fn render_node(svg: &mut String, node: &Node) {
     ));
 }
 
-/// Render a person shape: a small circle (head) above the box as a visual hint.
+/// Render a person shape: a circle (head) above the box, in the classic C4 style.
 fn render_person_shape(svg: &mut String, node: &Node) {
     let x = node.x;
     let y = node.y;
     let cx = x + BOX_W / 2;
 
-    // Draw background box
+    // Draw background box (body)
     svg.push_str(&format!(
         r##"    <rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}" stroke-width="1.5" rx="4"/>
 "##,
         x, y, BOX_W, BOX_H, node.fill, node.stroke
     ));
 
-    // Head circle at top-center of box
+    // Head circle centred just above the box top — classic C4 person glyph.
+    // The circle centre is at y - head_r so the circle bottom edge touches the box top.
     let head_r = PERSON_HEAD_RADIUS;
-    let head_cy = y + head_r + 2;
+    let head_cy = y - head_r;
     svg.push_str(&format!(
         r##"    <circle cx="{}" cy="{}" r="{}" fill="{}" stroke="{}" stroke-width="1.5"/>
 "##,
@@ -1064,5 +1173,128 @@ mod tests {
         // Unknown format falls back to a safe dark colour.
         let fallback = darken("invalid");
         assert_eq!(fallback, "#333333");
+    }
+
+    // ── Element filtering & stored-position tests ─────────────────────────────
+
+    #[test]
+    fn element_filter_excludes_unlisted_elements() {
+        // Workspace has two systems but the view only lists one.
+        let mut workspace = Workspace::default();
+        workspace.name = "FilterTest".to_string();
+        workspace.model.software_systems = Some(vec![
+            SoftwareSystem { id: "1".to_string(), name: "Alpha".to_string(), ..Default::default() },
+            SoftwareSystem { id: "2".to_string(), name: "Beta".to_string(), ..Default::default() },
+        ]);
+        workspace.views.system_landscape_views = Some(vec![SystemLandscapeView {
+            key: Some("Landscape".to_string()),
+            element_views: Some(vec![ElementView { id: "1".to_string(), x: None, y: None }]),
+            ..Default::default()
+        }]);
+
+        let exporter = SvgExporter;
+        let diagrams = exporter.export_workspace(&workspace);
+        let svg = &diagrams[0].content;
+
+        assert!(svg.contains("Alpha"), "included element should appear");
+        assert!(!svg.contains("Beta"), "excluded element must NOT appear");
+    }
+
+    #[test]
+    fn stored_positions_used_when_present() {
+        // View provides explicit x/y — auto-layout must NOT be used.
+        let mut workspace = Workspace::default();
+        workspace.name = "PosTest".to_string();
+        workspace.model.software_systems = Some(vec![
+            SoftwareSystem { id: "1".to_string(), name: "Sys".to_string(), ..Default::default() },
+        ]);
+        workspace.views.system_landscape_views = Some(vec![SystemLandscapeView {
+            key: Some("Landscape".to_string()),
+            element_views: Some(vec![ElementView { id: "1".to_string(), x: Some(500), y: Some(300) }]),
+            ..Default::default()
+        }]);
+
+        let exporter = SvgExporter;
+        let diagrams = exporter.export_workspace(&workspace);
+        let svg = &diagrams[0].content;
+
+        // The stored coordinates must appear in the rect element.
+        assert!(svg.contains(r#"x="500""#), "stored x=500 should be in SVG");
+        assert!(svg.contains(r#"y="300""#), "stored y=300 should be in SVG");
+    }
+
+    #[test]
+    fn person_head_circle_above_box() {
+        // With the fix, head_cy = node.y - PERSON_HEAD_RADIUS.
+        // For a single person laid out by the grid: node.y = MARGIN = 60.
+        // Expected: head_cy = 60 - 12 = 48, rect y = 60 (48 < 60 ⇒ head is above box).
+        let mut workspace = Workspace::default();
+        workspace.name = "PersonTest".to_string();
+        workspace.model.people = Some(vec![
+            Person { id: "1".to_string(), name: "Bob".to_string(), ..Default::default() },
+        ]);
+        workspace.views.system_landscape_views = Some(vec![SystemLandscapeView {
+            key: Some("Landscape".to_string()),
+            ..Default::default()
+        }]);
+
+        let exporter = SvgExporter;
+        let diagrams = exporter.export_workspace(&workspace);
+        let svg = &diagrams[0].content;
+
+        assert!(svg.contains("<circle"), "person shape must include a circle");
+        // Head circle centre must be above the box top: cy = MARGIN - PERSON_HEAD_RADIUS = 48.
+        assert!(
+            svg.contains(r#"cy="48""#),
+            "head circle cy should be {} (MARGIN - PERSON_HEAD_RADIUS)",
+            MARGIN - PERSON_HEAD_RADIUS
+        );
+        // The person box rect must have y = MARGIN = 60 (strictly greater than cy=48).
+        assert!(
+            svg.contains(r#"y="60""#),
+            "person box rect y should be MARGIN = {}", MARGIN
+        );
+    }
+
+    #[test]
+    fn relationship_filter_excludes_unlisted_edges() {
+        use structurizr_model::Relationship;
+
+        let mut workspace = Workspace::default();
+        workspace.name = "RelFilterTest".to_string();
+        let rel1 = Relationship {
+            id: "r1".to_string(),
+            source_id: "1".to_string(),
+            destination_id: "2".to_string(),
+            description: Some("Sends".to_string()),
+            ..Default::default()
+        };
+        let rel2 = Relationship {
+            id: "r2".to_string(),
+            source_id: "2".to_string(),
+            destination_id: "1".to_string(),
+            description: Some("Replies".to_string()),
+            ..Default::default()
+        };
+        workspace.model.people = Some(vec![
+            Person { id: "1".to_string(), name: "Alice".to_string(), relationships: Some(vec![rel1]), ..Default::default() },
+        ]);
+        workspace.model.software_systems = Some(vec![
+            SoftwareSystem { id: "2".to_string(), name: "System".to_string(), relationships: Some(vec![rel2]), ..Default::default() },
+        ]);
+        workspace.views.system_landscape_views = Some(vec![SystemLandscapeView {
+            key: Some("Landscape".to_string()),
+            relationship_views: Some(vec![
+                RelationshipView { id: "r1".to_string(), ..Default::default() },
+            ]),
+            ..Default::default()
+        }]);
+
+        let exporter = SvgExporter;
+        let diagrams = exporter.export_workspace(&workspace);
+        let svg = &diagrams[0].content;
+
+        assert!(svg.contains("Sends"), "included relationship label should appear");
+        assert!(!svg.contains("Replies"), "excluded relationship label must NOT appear");
     }
 }
