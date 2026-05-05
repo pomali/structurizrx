@@ -3,5 +3,11 @@ name = "structurizr-renderer"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+# Enable PNG rasterization via resvg (pure-Rust, WASM-compatible).
+png = ["dep:resvg"]
+
 [dependencies]
 structurizr-model = { path = "../structurizr-model" }
+resvg = { version = "0.47", optional = true }

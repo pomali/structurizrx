@@ -295,6 +295,19 @@
         var list = document.getElementById('view-list');
         list.innerHTML = '';
 
+        // Canvas demo link
+        var canvasHdr = document.createElement('div');
+        canvasHdr.className = 'view-group-header';
+        canvasHdr.textContent = 'Tools';
+        list.appendChild(canvasHdr);
+
+        var canvasLink = document.createElement('a');
+        canvasLink.className = 'view-item';
+        canvasLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/canvas';
+        canvasLink.innerHTML = '<i class="bi bi-display me-1"></i>Canvas demo';
+        canvasLink.title = 'Render the first diagram with the WASM render_to_canvas function';
+        list.appendChild(canvasLink);
+
         // ADR decisions link (shown only if workspace has decisions)
         var hasDecisions = structurizr.workspace.hasDecisions &&
                            structurizr.workspace.hasDecisions();

@@ -1,0 +1,31 @@
+[package]
+name = "structurizr-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "WASM and native Rust library for rendering Structurizr diagrams to SVG, PNG and Canvas"
+
+[lib]
+# cdylib  → WASM dynamic library loaded by wasm-bindgen
+# rlib    → native Rust library for tests and downstream crates
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+
+[dependencies]
+structurizr-model = { path = "../structurizr-model" }
+structurizr-renderer = { path = "../structurizr-renderer", features = ["png"] }
+wasm-bindgen = "=0.2.118"
+js-sys = "0.3"
+serde_json = "1"
+
+# web-sys is only needed for Canvas rendering on the WASM target.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = [
+    "HtmlCanvasElement",
+    "CanvasRenderingContext2d",
+    "ImageData",
+    "Window",
+    "Document",
+    "Element",
+] }
