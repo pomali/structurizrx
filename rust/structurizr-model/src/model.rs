@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::{CustomElement, DeploymentNode, Person, SoftwareSystem};
+use crate::{CustomElement, DeploymentNode, Person, RelationshipKind, SoftwareSystem, Status};
 
 /// A relationship between two model elements.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -24,6 +24,20 @@ pub struct Relationship {
     pub interaction_style: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub linked_relationship_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<RelationshipKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_port_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destination_port_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<Status>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub introduced: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retired: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub perspectives: Option<Vec<Perspective>>,
 }
 
 impl Relationship {

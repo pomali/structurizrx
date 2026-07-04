@@ -1,7 +1,38 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::Relationship;
+use crate::{Perspective, PortDirection, Relationship, Status};
+
+/// A named interaction point on an element.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Port {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direction: Option<PortDirection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub perspectives: Option<Vec<Perspective>>,
+}
+
+impl Port {
+    pub fn tags_as_vec(&self) -> Vec<String> {
+        match &self.tags {
+            Some(t) => t.split(',').map(|s| s.trim().to_string()).collect(),
+            None => vec![],
+        }
+    }
+}
 
 /// A person (user) in the model.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -23,6 +54,16 @@ pub struct Person {
     pub group: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ports: Option<Vec<Port>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<Status>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub introduced: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retired: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub perspectives: Option<Vec<Perspective>>,
 }
 
 /// A software system in the model.
@@ -47,6 +88,16 @@ pub struct SoftwareSystem {
     pub location: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub containers: Option<Vec<Container>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ports: Option<Vec<Port>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<Status>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub introduced: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retired: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub perspectives: Option<Vec<Perspective>>,
 }
 
 /// A container within a software system.
@@ -71,6 +122,16 @@ pub struct Container {
     pub group: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub components: Option<Vec<Component>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ports: Option<Vec<Port>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<Status>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub introduced: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retired: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub perspectives: Option<Vec<Perspective>>,
 }
 
 /// A component within a container.
@@ -93,6 +154,16 @@ pub struct Component {
     pub relationships: Option<Vec<Relationship>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ports: Option<Vec<Port>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<Status>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub introduced: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retired: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub perspectives: Option<Vec<Perspective>>,
 }
 
 /// A deployment node.
@@ -213,4 +284,14 @@ pub struct CustomElement {
     pub relationships: Option<Vec<Relationship>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ports: Option<Vec<Port>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<Status>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub introduced: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retired: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub perspectives: Option<Vec<Perspective>>,
 }

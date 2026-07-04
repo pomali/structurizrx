@@ -118,3 +118,36 @@ pub enum ViewSortOrder {
     Type,
     Key,
 }
+
+/// Lifecycle/confidence status of an element or relationship.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Status {
+    Idea,
+    Draft,
+    Specified,
+    Implemented,
+    Deprecated,
+}
+
+/// Closed vocabulary of connector semantics.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RelationshipKind {
+    Sync,
+    Async,
+    Publish,
+    Subscribe,
+    Dataflow,
+    Dependency,
+    Deploy,
+}
+
+/// Direction of a port; absence means inout.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PortDirection {
+    In,
+    Out,
+    InOut,
+}
