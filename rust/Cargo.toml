@@ -6,5 +6,6 @@ members = [
     "structurizr-web",
     "structurizr-cli",
     "structurizr-wasm",
+    "structurizr-query",
 ]
 resolver = "2"

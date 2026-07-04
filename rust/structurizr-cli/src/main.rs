@@ -37,6 +37,17 @@ enum Commands {
         #[arg(long, short, default_value = "workspace.json")]
         output: PathBuf,
     },
+    /// Run a selector expression against a workspace (spec §6.2),
+    /// e.g. `query ws.dsl "element.tag==Database"` or `query ws.dsl "->api->2"`
+    Query {
+        file: PathBuf,
+        /// Selector expression, e.g. `element.status==idea && element.layer==domain`
+        #[arg(allow_hyphen_values = true)]
+        expression: String,
+        /// Emit machine-readable JSON instead of a text listing
+        #[arg(long)]
+        json: bool,
+    },
     /// Serve a workspace or directory of workspaces in a local web browser
     Serve {
         /// Path to a .dsl/.json file or a directory containing workspace(s).
@@ -50,6 +61,27 @@ enum Commands {
         #[arg(long)]
         open: bool,
     },
+}
+
+/// Map every element id in the model to a human-readable name for query output.
+fn collect_element_names(ws: &Workspace) -> std::collections::HashMap<String, String> {
+    let mut names = std::collections::HashMap::new();
+    for p in ws.model.people.iter().flatten() {
+        names.insert(p.id.clone(), format!("person \"{}\"", p.name));
+    }
+    for s in ws.model.software_systems.iter().flatten() {
+        names.insert(s.id.clone(), format!("softwareSystem \"{}\"", s.name));
+        for c in s.containers.iter().flatten() {
+            names.insert(c.id.clone(), format!("container \"{}\"", c.name));
+            for comp in c.components.iter().flatten() {
+                names.insert(comp.id.clone(), format!("component \"{}\"", comp.name));
+            }
+        }
+    }
+    for ce in ws.model.custom_elements.iter().flatten() {
+        names.insert(ce.id.clone(), format!("element \"{}\"", ce.name));
+    }
+    names
 }
 
 fn load_workspace(path: &PathBuf) -> Result<Workspace> {
@@ -119,6 +151,35 @@ async fn main() -> Result<()> {
             std::fs::write(&output, &json)
                 .with_context(|| format!("Cannot write {}", output.display()))?;
             println!("Exported workspace to {}", output.display());
+        }
+        Commands::Query { file, expression, json } => {
+            let workspace = load_workspace(&file)?;
+            let selection = structurizr_query::query(&expression, &workspace)
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
+            let names = collect_element_names(&workspace);
+            if json {
+                let out = serde_json::json!({
+                    "elements": selection.elements.iter().map(|id| serde_json::json!({
+                        "id": id,
+                        "name": names.get(id),
+                    })).collect::<Vec<_>>(),
+                    "relationships": selection.relationships.iter().collect::<Vec<_>>(),
+                });
+                println!("{}", serde_json::to_string_pretty(&out)?);
+            } else {
+                for id in &selection.elements {
+                    match names.get(id) {
+                        Some(name) => println!("element  {}  {}", id, name),
+                        None => println!("element  {}", id),
+                    }
+                }
+                for id in &selection.relationships {
+                    println!("relationship  {}", id);
+                }
+                if selection.elements.is_empty() && selection.relationships.is_empty() {
+                    eprintln!("(no matches)");
+                }
+            }
         }
         Commands::Serve { path, port, open } => {
             structurizr_web::serve(structurizr_web::ServeOptions {
