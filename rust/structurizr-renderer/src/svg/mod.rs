@@ -56,12 +56,20 @@ impl Node {
 
 #[derive(Debug, Clone)]
 struct Edge {
+    rel_id: String,
     src_id: String,
     dst_id: String,
     label: String,
     technology: String,
     /// stroke-dasharray: async-family kinds and uncertain relationships render dashed.
     dash: Option<&'static str>,
+    /// Port ids from the relationship (resolved to names by annotate_edge_ports).
+    src_port_id: Option<String>,
+    dst_port_id: Option<String>,
+    src_port_name: Option<String>,
+    dst_port_name: Option<String>,
+    /// Stroke colour override (delta views mark added/removed edges).
+    color: Option<String>,
 }
 
 /// Default dash theming: ideas/drafts and placeholders render sketchy (spec §4.2).
@@ -246,11 +254,12 @@ fn render_landscape(title: &str, view: &SystemLandscapeView, workspace: &Workspa
 
     // Only use auto-layout when no stored positions are available.  Running layout
     // when some nodes already have explicit coordinates would overwrite those values.
-    let edges = if elem_filter.is_some() {
+    let mut edges = if elem_filter.is_some() {
         collect_all_edges_with_containers(model, rel_filter.as_ref())
     } else {
         collect_all_edges(model, rel_filter.as_ref())
     };
+    apply_delta_styling(view.properties.as_ref(), &mut nodes, &mut edges);
     let positioned = apply_stored_positions(&mut nodes, &elem_pos);
     if positioned == 0 {
         layout_hierarchical(&mut nodes, &edges);
@@ -588,6 +597,48 @@ fn layout_grid(nodes: &mut Vec<Node>, cols: usize) {
 
 // ── Edge collection ───────────────────────────────────────────────────────────
 
+const COLOR_DELTA_ADDED: &str = "#2e7d32";
+const COLOR_DELTA_REMOVED: &str = "#c62828";
+
+/// Delta views (spec §8.3) carry added/removed ids in view properties;
+/// style them green (added) and red + dashed (removed).
+fn apply_delta_styling(
+    properties: Option<&HashMap<String, String>>,
+    nodes: &mut [Node],
+    edges: &mut [Edge],
+) {
+    let Some(props) = properties else { return };
+    let ids = |key: &str| -> HashSet<String> {
+        props
+            .get(key)
+            .map(|v| v.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect())
+            .unwrap_or_default()
+    };
+    let added_e = ids("delta.addedElements");
+    let removed_e = ids("delta.removedElements");
+    let added_r = ids("delta.addedRelationships");
+    let removed_r = ids("delta.removedRelationships");
+    if added_e.is_empty() && removed_e.is_empty() && added_r.is_empty() && removed_r.is_empty() {
+        return;
+    }
+    for n in nodes.iter_mut() {
+        if added_e.contains(&n.id) {
+            n.stroke = COLOR_DELTA_ADDED.to_string();
+        } else if removed_e.contains(&n.id) {
+            n.stroke = COLOR_DELTA_REMOVED.to_string();
+            n.dash = Some("4,4");
+        }
+    }
+    for e in edges.iter_mut() {
+        if added_r.contains(&e.rel_id) {
+            e.color = Some(COLOR_DELTA_ADDED.to_string());
+        } else if removed_r.contains(&e.rel_id) {
+            e.color = Some(COLOR_DELTA_REMOVED.to_string());
+            e.dash = Some("4,4");
+        }
+    }
+}
+
 fn collect_all_edges(model: &Model, rel_filter: Option<&HashSet<String>>) -> Vec<Edge> {
     let mut edges = Vec::new();
     if let Some(people) = &model.people {
@@ -600,7 +651,41 @@ fn collect_all_edges(model: &Model, rel_filter: Option<&HashSet<String>>) -> Vec
             collect_rels(&ss.relationships, &mut edges, rel_filter);
         }
     }
+    annotate_edge_ports(&mut edges, model);
     edges
+}
+
+/// Resolve edge port ids to port names for glyph rendering (spec §5.1).
+fn annotate_edge_ports(edges: &mut [Edge], model: &Model) {
+    let mut names: HashMap<(String, String), String> = HashMap::new();
+    let mut record = |elem_id: &str, ports: &Option<Vec<structurizr_model::Port>>| {
+        for p in ports.iter().flatten() {
+            names.insert((elem_id.to_string(), p.id.clone()), p.name.clone());
+        }
+    };
+    for p in model.people.iter().flatten() {
+        record(&p.id, &p.ports);
+    }
+    for ss in model.software_systems.iter().flatten() {
+        record(&ss.id, &ss.ports);
+        for c in ss.containers.iter().flatten() {
+            record(&c.id, &c.ports);
+            for comp in c.components.iter().flatten() {
+                record(&comp.id, &comp.ports);
+            }
+        }
+    }
+    for ce in model.custom_elements.iter().flatten() {
+        record(&ce.id, &ce.ports);
+    }
+    for e in edges.iter_mut() {
+        if let Some(pid) = &e.src_port_id {
+            e.src_port_name = names.get(&(e.src_id.clone(), pid.clone())).cloned();
+        }
+        if let Some(pid) = &e.dst_port_id {
+            e.dst_port_name = names.get(&(e.dst_id.clone(), pid.clone())).cloned();
+        }
+    }
 }
 
 fn collect_all_edges_with_containers(model: &Model, rel_filter: Option<&HashSet<String>>) -> Vec<Edge> {
@@ -619,6 +704,7 @@ fn collect_all_edges_with_containers(model: &Model, rel_filter: Option<&HashSet<
             }
         }
     }
+    annotate_edge_ports(&mut edges, model);
     edges
 }
 
@@ -631,11 +717,17 @@ fn collect_rels(rels: &Option<Vec<Relationship>>, edges: &mut Vec<Edge>, rel_fil
                 }
             }
             edges.push(Edge {
+                rel_id: r.id.clone(),
                 src_id: r.source_id.clone(),
                 dst_id: r.destination_id.clone(),
                 label: r.description.clone().unwrap_or_default(),
                 technology: r.technology.clone().unwrap_or_default(),
                 dash: edge_dash(r),
+                src_port_id: r.source_port_id.clone(),
+                dst_port_id: r.destination_port_id.clone(),
+                src_port_name: None,
+                dst_port_name: None,
+                color: None,
             });
         }
     }
@@ -827,11 +919,37 @@ fn render_svg(
             .dash
             .map(|d| format!(r#" stroke-dasharray="{}""#, d))
             .unwrap_or_default();
+        let stroke = edge.color.as_deref().unwrap_or(COLOR_ARROW);
         svg.push_str(&format!(
             r##"    <line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="1.5"{} marker-end="url(#arrowhead)"/>
 "##,
-            x1, y1, x2, y2, COLOR_ARROW, dash_attr
+            x1, y1, x2, y2, stroke, dash_attr
         ));
+
+        // Port glyphs: a small square on the element border where the
+        // relationship attaches through a declared port (spec §5.1).
+        for (px, py, pname) in [
+            (x1, y1, edge.src_port_name.as_deref()),
+            (x2, y2, edge.dst_port_name.as_deref()),
+        ] {
+            if let Some(pname) = pname {
+                svg.push_str(&format!(
+                    r##"    <rect x="{}" y="{}" width="8" height="8" fill="#ffffff" stroke="{}" stroke-width="1.2"/>
+"##,
+                    px - 4,
+                    py - 4,
+                    stroke
+                ));
+                svg.push_str(&format!(
+                    r##"    <text x="{}" y="{}" font-family="Arial, sans-serif" font-size="8" fill="{}" text-anchor="middle">{}</text>
+"##,
+                    px,
+                    py - 7,
+                    stroke,
+                    xml_escape(pname)
+                ));
+            }
+        }
 
         // Edge label
         let lx = (x1 + x2) / 2;
@@ -849,7 +967,7 @@ fn render_svg(
 "##,
                 lx,
                 ly,
-                COLOR_ARROW,
+                stroke,
                 xml_escape(&label_text)
             ));
         }

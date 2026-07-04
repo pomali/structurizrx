@@ -324,7 +324,58 @@
             list.appendChild(decisionsLink);
         }
 
-        // Group views by type
+        function addViewItem(v) {
+            var a = document.createElement('a');
+            a.className = 'view-item';
+            a.href = '#' + v.key;
+            a.dataset.key = v.key;
+            a.title = v.description || '';
+            a.textContent = structurizr.ui.getTitleForView(v);
+            a.addEventListener('click', function(e) {
+                e.preventDefault();
+                if (diagramReady) activateView(v.key);
+                document.getElementById('sidebar').classList.remove('open');
+            });
+            list.appendChild(a);
+        }
+
+        function addGroup(label, groupViews) {
+            if (groupViews.length === 0) return;
+            var hdr = document.createElement('div');
+            hdr.className = 'view-group-header';
+            hdr.textContent = label;
+            list.appendChild(hdr);
+            groupViews.forEach(addViewItem);
+        }
+
+        // Generated views (auto-* keys) are grouped by their generator so the
+        // sidebar reads: Focus, Perspectives, Timeline, … (spec §6.3).
+        var isAuto = function(v) { return v.key && v.key.indexOf('auto-') === 0; };
+        var autoViews = views.filter(isAuto);
+        var manualViews = views.filter(function(v) { return !isAuto(v); });
+
+        var autoGroups = [
+            { label: 'Overview (generated)', gens: ['landscape', 'context', 'container', 'component'] },
+            { label: 'Focus',                gens: ['focus'] },
+            { label: 'Perspectives',         gens: ['perspective'] },
+            { label: 'Layers',               gens: ['layer'] },
+            { label: 'Slices',               gens: ['slice', 'paths'] },
+            { label: 'Timeline',             gens: ['asof', 'delta'] },
+            { label: 'Lint',                 gens: ['lint'] },
+        ];
+        autoGroups.forEach(function(g) {
+            addGroup(g.label, autoViews.filter(function(v) {
+                var gen = v.key.split('-')[1];
+                return g.gens.indexOf(gen) !== -1;
+            }));
+        });
+        // any generator we don't know yet
+        addGroup('Generated', autoViews.filter(function(v) {
+            var gen = v.key.split('-')[1];
+            return !autoGroups.some(function(g) { return g.gens.indexOf(gen) !== -1; });
+        }));
+
+        // Hand-authored views, grouped by type
         var groups = [
             { label: 'Landscape',      type: structurizr.constants.SYSTEM_LANDSCAPE_VIEW_TYPE },
             { label: 'System Context', type: structurizr.constants.SYSTEM_CONTEXT_VIEW_TYPE },
@@ -338,28 +389,7 @@
         ];
 
         groups.forEach(function(g) {
-            var groupViews = views.filter(function(v) { return v.type === g.type; });
-            if (groupViews.length === 0) return;
-
-            var hdr = document.createElement('div');
-            hdr.className = 'view-group-header';
-            hdr.textContent = g.label;
-            list.appendChild(hdr);
-
-            groupViews.forEach(function(v) {
-                var a = document.createElement('a');
-                a.className = 'view-item';
-                a.href = '#' + v.key;
-                a.dataset.key = v.key;
-                a.title = v.description || '';
-                a.textContent = structurizr.ui.getTitleForView(v);
-                a.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    if (diagramReady) activateView(v.key);
-                    document.getElementById('sidebar').classList.remove('open');
-                });
-                list.appendChild(a);
-            });
+            addGroup(g.label, manualViews.filter(function(v) { return v.type === g.type; }));
         });
     }
 

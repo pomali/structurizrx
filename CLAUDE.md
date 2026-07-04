@@ -18,8 +18,8 @@ cd rust
 # Build everything
 cargo build
 
-# Build the CLI binary
-cargo build -p structurizrx
+# Build the CLI binary (package structurizr-cli, binary name structurizrx)
+cargo build -p structurizr-cli
 
 # Run all tests
 cargo test
@@ -36,10 +36,10 @@ cargo test -p structurizr-renderer svg_exporter_relationships
 cargo clippy
 
 # Run the CLI
-cargo run -p structurizrx -- validate path/to/workspace.dsl
-cargo run -p structurizrx -- render path/to/workspace.dsl --format svg --output ./out
-cargo run -p structurizrx -- export path/to/workspace.dsl
-cargo run -p structurizrx -- serve path/to/workspace.dsl --port 3000 --open
+cargo run -p structurizr-cli -- validate path/to/workspace.dsl
+cargo run -p structurizr-cli -- render path/to/workspace.dsl --format svg --output ./out
+cargo run -p structurizr-cli -- export path/to/workspace.dsl
+cargo run -p structurizr-cli -- serve path/to/workspace.dsl --port 3000 --open
 ```
 
 ### WASM build
@@ -90,5 +90,8 @@ Axum HTTP server serving a workspace browser at `http://localhost:<port>`. Key r
 
 HTML templates live in `structurizr-web/src/templates/`. Static assets (CSS, JS, icons, WASM output) are embedded at compile time via `rust-embed` from `structurizr-web/assets/`. The WASM output files land in `assets/wasm/` and are produced by the `build.rs` script.
 
+### `structurizr-query`
+Selector-expression engine (spec §6.2) and view generation (`generate_views`, spec §6.3). Depends only on `structurizr-model`; used by `structurizr-cli` and `structurizr-web`.
+
 ### `structurizr-cli`
-Entry point `structurizrx`. Subcommands: `validate`, `render`, `export`, `serve`. Accepts both `.dsl` and `.json` workspace files.
+Entry point `structurizrx`. Subcommands: `validate [--strict]`, `render`, `export`, `digest`, `query`, `serve`. Accepts both `.dsl` and `.json` workspace files. `render` and `serve` materialize generated (`auto`) views before rendering.

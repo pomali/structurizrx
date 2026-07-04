@@ -724,7 +724,27 @@ fn gen_delta(ws: &mut Workspace, idx: &Index, spec: &AutoViewSpec, generated: &m
 
     let key = key_for("delta", Some(m1), Some(m2), None);
     let title = format!("delta: {} → {}", m1, m2);
-    push_generated(ws, generated, key, title, Some(description), &elems, &rels);
+    if all_view_keys(ws).contains(&key) {
+        return;
+    }
+    // Record added/removed ids so renderers can style them (spec §8.3).
+    let join = |ids: Vec<&String>| ids.into_iter().cloned().collect::<Vec<_>>().join(",");
+    let mut properties = std::collections::HashMap::new();
+    properties.insert("delta.addedElements".to_string(), join(e2.difference(&e1).collect()));
+    properties.insert("delta.removedElements".to_string(), join(e1.difference(&e2).collect()));
+    properties.insert("delta.addedRelationships".to_string(), join(r2.difference(&r1).collect()));
+    properties.insert("delta.removedRelationships".to_string(), join(r1.difference(&r2).collect()));
+    let view = SystemLandscapeView {
+        key: Some(key.clone()),
+        title: Some(title),
+        description: Some(description),
+        properties: Some(properties),
+        element_views: element_views(&elems),
+        relationship_views: relationship_views(&rels),
+        ..Default::default()
+    };
+    ws.views.system_landscape_views.get_or_insert_with(Vec::new).push(view);
+    generated.push(key);
 }
 
 // ---------------------------------------------------------------------------
