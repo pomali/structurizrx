@@ -1314,6 +1314,7 @@ name = "structurizr-query"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "structurizr-dsl",
  "structurizr-model",
  "thiserror 1.0.69",
 ]
@@ -1352,6 +1353,7 @@ dependencies = [
  "serde_json",
  "structurizr-dsl",
  "structurizr-model",
+ "structurizr-query",
  "structurizr-renderer",
  "tokio",
  "tower-http",

@@ -805,3 +805,72 @@ workspace {
         "body tags must not be silently dropped: {:?}", db.tags);
 }
 
+// ─── Phase 4a: auto view specs ───────────────────────────────────────────────
+
+#[test]
+fn auto_view_specs_parse() {
+    let dsl = r#"
+workspace {
+    model {
+        api = softwareSystem "API"
+        db = softwareSystem "DB"
+        api -> db "reads"
+    }
+    views {
+        auto
+        auto focus api {
+            depth 2
+            direction in
+            splitBy kind
+        }
+        auto perspective "security"
+        auto layer "domain"
+        auto slice relationship.kind==dataflow && element.tag==Core
+        auto paths api db
+        auto rollup owner
+        auto rollup
+        auto asof m1
+        auto delta m1 m2
+        auto lint
+    }
+}
+"#;
+    let ws = parse_str(dsl).expect("should parse");
+    let api_id = ws.model.software_systems.as_ref().unwrap()[0].id.clone();
+    let db_id = ws.model.software_systems.as_ref().unwrap()[1].id.clone();
+    let specs = ws.views.auto_views.as_ref().expect("auto views recorded");
+    assert_eq!(specs.len(), 11);
+    assert_eq!(specs[0].generator, "default");
+    assert_eq!(specs[1].generator, "focus");
+    // element refs are resolved to ids at parse time, while the register is alive
+    assert_eq!(specs[1].target.as_deref(), Some(api_id.as_str()));
+    assert_eq!(specs[1].depth, Some(2));
+    assert_eq!(specs[1].direction.as_deref(), Some("in"));
+    assert_eq!(specs[1].split_by.as_deref(), Some("kind"));
+    assert_eq!(specs[2].generator, "perspective");
+    assert_eq!(specs[2].target.as_deref(), Some("security"));
+    assert_eq!(specs[3].target.as_deref(), Some("domain"));
+    assert_eq!(specs[4].generator, "slice");
+    assert_eq!(specs[4].expression.as_deref(), Some("relationship.kind==dataflow&&element.tag==Core"));
+    assert_eq!(specs[5].target.as_deref(), Some(api_id.as_str()));
+    assert_eq!(specs[5].target2.as_deref(), Some(db_id.as_str()));
+    assert_eq!(specs[6].target.as_deref(), Some("owner"));
+    assert!(specs[7].target.is_none(), "bare rollup takes owner default at generation time");
+    assert_eq!(specs[8].target.as_deref(), Some("m1"));
+    assert_eq!(specs[9].target.as_deref(), Some("m1"));
+    assert_eq!(specs[9].target2.as_deref(), Some("m2"));
+    assert_eq!(specs[10].generator, "lint");
+}
+
+#[test]
+fn auto_focus_bad_direction_errors() {
+    let dsl = r#"
+workspace {
+    model { api = softwareSystem "API" }
+    views {
+        auto focus api { direction sideways }
+    }
+}
+"#;
+    assert!(parse_str(dsl).is_err());
+}

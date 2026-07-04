@@ -122,7 +122,12 @@ async fn main() -> Result<()> {
             }
         }
         Commands::Render { file, format, output } => {
-            let workspace = load_workspace(&file)?;
+            let mut workspace = load_workspace(&file)?;
+            let generated = structurizr_query::generate_views(&mut workspace)
+                .map_err(|e| anyhow::anyhow!("view generation: {}", e))?;
+            if !generated.is_empty() {
+                println!("Generated views: {}", generated.join(", "));
+            }
             std::fs::create_dir_all(&output)
                 .with_context(|| format!("Cannot create output dir {}", output.display()))?;
 

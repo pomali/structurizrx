@@ -9,3 +9,4 @@ thiserror = "1"
 
 [dev-dependencies]
 serde_json = "1"
+structurizr-dsl = { path = "../structurizr-dsl" }

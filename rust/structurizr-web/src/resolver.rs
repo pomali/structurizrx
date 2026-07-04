@@ -110,15 +110,22 @@ fn load_workspace(path: &Path) -> Result<Workspace> {
         .unwrap_or("")
         .to_lowercase();
 
-    if ext == "json" {
+    let mut ws = if ext == "json" {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read {}", path.display()))?;
-        let ws: Workspace = serde_json::from_str(&content)
-            .with_context(|| format!("Failed to parse JSON from {}", path.display()))?;
-        Ok(ws)
+        serde_json::from_str::<Workspace>(&content)
+            .with_context(|| format!("Failed to parse JSON from {}", path.display()))?
     } else {
-        parse_file(path).with_context(|| format!("Failed to parse DSL from {}", path.display()))
+        parse_file(path).with_context(|| format!("Failed to parse DSL from {}", path.display()))?
+    };
+
+    // Materialize `auto` views (and the zero-config default set) so the
+    // browser lists generated diagrams alongside hand-authored ones.
+    if let Err(e) = structurizr_query::generate_views(&mut ws) {
+        eprintln!("warning: view generation failed for {}: {}", path.display(), e);
     }
+
+    Ok(ws)
 }
 
 fn slug_from_path(path: &Path) -> String {

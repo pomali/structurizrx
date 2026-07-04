@@ -25,6 +25,43 @@ pub struct ViewSet {
     pub custom_views: Option<Vec<CustomView>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub configuration: Option<ViewConfiguration>,
+    /// Declarative generated-view specs (spec §6.3). Parsed from `auto ...`
+    /// entries in the DSL views block; materialized into concrete views by the
+    /// generation pass in structurizr-query. Extension to the upstream schema.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_views: Option<Vec<AutoViewSpec>>,
+}
+
+/// A declarative generated-view specification (spec §6.3), e.g.
+/// `auto focus api { depth 2 direction in splitBy kind }`.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoViewSpec {
+    /// Generator name: default | focus | perspective | layer | slice | paths |
+    /// rollup | asof | delta | lint
+    pub generator: String,
+    /// Primary argument: focus element ref, perspective/layer name, rollup
+    /// partition, asof milestone, paths source, delta first milestone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    /// Secondary argument: paths destination, delta second milestone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target2: Option<String>,
+    /// Selector expression for `slice` (structurizr-query §6.2 syntax).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expression: Option<String>,
+    /// Neighborhood depth for `focus` (default 1; 0 = element only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub depth: Option<u32>,
+    /// Traversal direction for `focus`: in | out | both (default).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direction: Option<String>,
+    /// Emit one view per distinct value: kind | tag | layer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub split_by: Option<String>,
+    /// Evaluate against the model as of this milestone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asof: Option<String>,
 }
 
 /// Configuration for the view set.

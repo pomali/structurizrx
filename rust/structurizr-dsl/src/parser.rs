@@ -103,6 +103,7 @@ struct ElementExtras {
     url: Option<String>,
     /// Extra tags from a `tags` body keyword, comma-split.
     tags_extra: Vec<String>,
+    properties: HashMap<String, String>,
 }
 
 impl Parser {
@@ -471,8 +472,10 @@ impl Parser {
     /// default include-all landscape view is synthesized.
     fn parse_sketch(&mut self) -> Result<Workspace, ParseError> {
         self.sketch = true;
-        let mut workspace = Workspace::default();
-        workspace.name = "Sketch".to_string();
+        let mut workspace = Workspace {
+            name: "Sketch".to_string(),
+            ..Default::default()
+        };
 
         while self.peek().is_some() {
             if self.peek_close_brace() {
@@ -931,6 +934,9 @@ impl Parser {
                     None => extra,
                 });
             }
+            if !extras.properties.is_empty() {
+                person.properties.get_or_insert_with(HashMap::new).extend(extras.properties);
+            }
             self.expect_close_brace()?;
         }
 
@@ -1133,6 +1139,9 @@ impl Parser {
                     None => extra,
                 });
             }
+            if !ss_extras.properties.is_empty() {
+                ss.properties.get_or_insert_with(HashMap::new).extend(ss_extras.properties);
+            }
         }
 
         Ok(ss)
@@ -1291,6 +1300,9 @@ impl Parser {
                     None => extra,
                 });
             }
+            if !cont_extras.properties.is_empty() {
+                container.properties.get_or_insert_with(HashMap::new).extend(cont_extras.properties);
+            }
         }
 
         Ok(container)
@@ -1349,6 +1361,9 @@ impl Parser {
                     Some(t) => format!("{},{}", t, extra),
                     None => extra,
                 });
+            }
+            if !extras.properties.is_empty() {
+                component.properties.get_or_insert_with(HashMap::new).extend(extras.properties);
             }
             self.expect_close_brace()?;
         }
@@ -1836,6 +1851,11 @@ impl Parser {
                 Some(Token::Word(w)) => {
                     let w = w.to_lowercase();
                     match w.as_str() {
+                        "auto" => {
+                            self.advance();
+                            let spec = self.parse_auto_view_spec()?;
+                            views.auto_views.get_or_insert_with(Vec::new).push(spec);
+                        }
                         "systemlandscape" => {
                             self.advance();
                             let v = self.parse_system_landscape_view(model)?;
@@ -1935,6 +1955,150 @@ impl Parser {
             }
         }
         Ok(())
+    }
+
+    /// Parse an `auto ...` generated-view declaration (spec §6.3).
+    ///
+    /// Forms: `auto` | `auto focus <ref> [{ depth N  direction in|out|both
+    /// splitBy kind|tag|layer  asof <milestone> }]` | `auto perspective <name|*>`
+    /// | `auto layer <name>` | `auto slice <selector-expr>` | `auto paths <a> <b>`
+    /// | `auto rollup [<partition>]` | `auto asof <m>` | `auto delta <m1> <m2>`
+    /// | `auto lint`
+    fn parse_auto_view_spec(&mut self) -> Result<AutoViewSpec, ParseError> {
+        let mut spec = AutoViewSpec::default();
+
+        let generator = match self.peek() {
+            Some(Token::Word(w)) if matches!(
+                w.to_lowercase().as_str(),
+                "focus" | "perspective" | "layer" | "slice" | "paths" | "rollup"
+                    | "asof" | "delta" | "lint"
+            ) => {
+                let g = w.to_lowercase();
+                self.advance();
+                g
+            }
+            _ => "default".to_string(),
+        };
+        spec.generator = generator.clone();
+
+        match generator.as_str() {
+            "focus" => {
+                // Resolve DSL identifiers to element ids while the register is
+                // alive; unknown refs pass through for name-based matching.
+                spec.target = self.consume_bare_word_or_string().map(|t| self.resolve_identifier(&t));
+                if self.peek_open_brace() {
+                    self.advance();
+                    while !self.peek_close_brace() && self.peek().is_some() {
+                        if self.peek_word("depth") {
+                            self.advance();
+                            let (line, col) = self.current_pos();
+                            let v = self.consume_bare_word_or_string().unwrap_or_default();
+                            if v == "*" {
+                                spec.depth = Some(u32::MAX);
+                            } else {
+                                spec.depth = Some(v.parse().map_err(|_| {
+                                    ParseError::syntax(line, col, format!("depth must be a number or *, got: {}", v))
+                                })?);
+                            }
+                        } else if self.peek_word("direction") {
+                            self.advance();
+                            let (line, col) = self.current_pos();
+                            let v = self.consume_bare_word_or_string().unwrap_or_default().to_lowercase();
+                            if !matches!(v.as_str(), "in" | "out" | "both") {
+                                return Err(ParseError::syntax(line, col, format!("direction must be in|out|both, got: {}", v)));
+                            }
+                            spec.direction = Some(v);
+                        } else if self.peek_word("splitby") {
+                            self.advance();
+                            let (line, col) = self.current_pos();
+                            let v = self.consume_bare_word_or_string().unwrap_or_default().to_lowercase();
+                            if !matches!(v.as_str(), "kind" | "tag" | "layer") {
+                                return Err(ParseError::syntax(line, col, format!("splitBy must be kind|tag|layer, got: {}", v)));
+                            }
+                            spec.split_by = Some(v);
+                        } else if self.peek_word("asof") {
+                            self.advance();
+                            spec.asof = self.consume_bare_word_or_string();
+                        } else {
+                            self.advance();
+                            self.skip_optional_block_or_value();
+                        }
+                    }
+                    self.expect_close_brace()?;
+                }
+            }
+            "perspective" | "layer" | "asof" | "rollup" => {
+                spec.target = self.consume_bare_word_or_string_same_line();
+            }
+            "paths" => {
+                spec.target = self.consume_bare_word_or_string().map(|t| self.resolve_identifier(&t));
+                spec.target2 = self.consume_bare_word_or_string().map(|t| self.resolve_identifier(&t));
+            }
+            "delta" => {
+                // delta arguments are milestone names, never element refs
+                spec.target = self.consume_bare_word_or_string();
+                spec.target2 = self.consume_bare_word_or_string();
+            }
+            "slice" => {
+                spec.expression = Some(self.reassemble_selector_expression_same_line());
+            }
+            _ => {} // default | lint take no arguments
+        }
+
+        Ok(spec)
+    }
+
+    /// Consume a bare word or string only if it is on the same line as the
+    /// previously consumed token (so `auto rollup` on its own line does not
+    /// swallow the next view keyword).
+    fn consume_bare_word_or_string_same_line(&mut self) -> Option<String> {
+        let last_line = self.last_consumed_line();
+        let next_line = self.tokens.get(self.pos).map(|s| s.pos.line).unwrap_or(usize::MAX);
+        if next_line != last_line {
+            return None;
+        }
+        self.consume_bare_word_or_string()
+    }
+
+    /// Rebuild a selector expression string (structurizr-query syntax) from the
+    /// DSL token stream: consume tokens while they remain on the starting line.
+    /// `element.kind==container` lexes as Word/Equals/Equals/Word and is joined
+    /// back together here.
+    fn reassemble_selector_expression_same_line(&mut self) -> String {
+        let line = self.last_consumed_line();
+        let mut out = String::new();
+        loop {
+            let same_line = self
+                .tokens
+                .get(self.pos)
+                .map(|s| s.pos.line == line)
+                .unwrap_or(false);
+            if !same_line {
+                break;
+            }
+            match self.peek() {
+                Some(Token::Word(w)) => {
+                    out.push_str(w);
+                    self.advance();
+                }
+                Some(Token::Equals) => {
+                    out.push('=');
+                    self.advance();
+                }
+                Some(Token::Arrow) => {
+                    out.push_str("->");
+                    self.advance();
+                }
+                Some(Token::Quoted(q)) => {
+                    out.push('"');
+                    out.push_str(q);
+                    out.push('"');
+                    self.advance();
+                }
+                _ => break,
+            }
+        }
+        out
     }
 
     fn parse_system_landscape_view(&mut self, model: &Model) -> Result<SystemLandscapeView, ParseError> {
@@ -3360,6 +3524,12 @@ impl Parser {
                     "url" => {
                         self.advance();
                         extras.url = self.consume_string();
+                        Ok(true)
+                    }
+                    "properties" => {
+                        self.advance();
+                        let props = self.parse_properties_block_body()?;
+                        extras.properties.extend(props);
                         Ok(true)
                     }
                     "tags" => {

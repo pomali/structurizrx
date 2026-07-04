@@ -15,53 +15,62 @@ use crate::{CompOp, Expr, QueryError, Selection};
 
 /// Everything about one model element needed for query evaluation.
 #[derive(Debug)]
-struct ElemEntry {
-    id: String,
-    name: String,
+pub(crate) struct ElemEntry {
+    pub(crate) id: String,
+    pub(crate) name: String,
     /// Structural kind: "person", "softwareSystem", "container", "component", "custom".
-    kind: &'static str,
-    tags: Vec<String>,
-    group: Option<String>,
-    technology: Option<String>,
+    pub(crate) kind: &'static str,
+    pub(crate) tags: Vec<String>,
+    pub(crate) group: Option<String>,
+    pub(crate) technology: Option<String>,
     /// Lowercase serde name of the status variant ("idea", "draft", …).
-    status: Option<String>,
-    properties: HashMap<String, String>,
+    pub(crate) status: Option<String>,
+    pub(crate) properties: HashMap<String, String>,
     /// Names of perspectives carried by this element.
-    perspectives: Vec<String>,
+    pub(crate) perspectives: Vec<String>,
     /// Direct parent element id (None for top-level elements).
-    parent_id: Option<String>,
+    pub(crate) parent_id: Option<String>,
     /// All ancestor ids from closest to farthest (for `parent^`).
-    ancestors: Vec<String>,
+    pub(crate) ancestors: Vec<String>,
     /// Names of the corresponding ancestors.
-    ancestor_names: Vec<String>,
+    pub(crate) ancestor_names: Vec<String>,
+    /// Lifecycle milestone names (spec §8).
+    pub(crate) introduced: Option<String>,
+    pub(crate) retired: Option<String>,
+    /// Declared ports as (port id, port name).
+    pub(crate) ports: Vec<(String, String)>,
 }
 
 /// Everything about one relationship needed for query evaluation.
 #[derive(Debug)]
-struct RelEntry {
-    id: String,
-    source_id: String,
-    dest_id: String,
+pub(crate) struct RelEntry {
+    pub(crate) id: String,
+    pub(crate) source_id: String,
+    pub(crate) dest_id: String,
     /// Lowercase serde name ("sync", "async", …).
-    kind: Option<String>,
+    pub(crate) kind: Option<String>,
     /// Lowercase serde name.
-    status: Option<String>,
-    tags: Vec<String>,
-    perspectives: Vec<String>,
-    properties: HashMap<String, String>,
+    pub(crate) status: Option<String>,
+    pub(crate) tags: Vec<String>,
+    pub(crate) perspectives: Vec<String>,
+    pub(crate) properties: HashMap<String, String>,
+    pub(crate) introduced: Option<String>,
+    pub(crate) retired: Option<String>,
+    pub(crate) source_port_id: Option<String>,
+    pub(crate) dest_port_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
 // Index
 // ---------------------------------------------------------------------------
 
-struct Index {
-    elements: Vec<ElemEntry>,
-    relationships: Vec<RelEntry>,
+pub(crate) struct Index {
+    pub(crate) elements: Vec<ElemEntry>,
+    pub(crate) relationships: Vec<RelEntry>,
     /// Maps element id → index into `elements`.
-    by_id: HashMap<String, usize>,
+    pub(crate) by_id: HashMap<String, usize>,
     /// Maps lowercase element name → index into `elements`.
-    by_name: HashMap<String, usize>,
+    pub(crate) by_name: HashMap<String, usize>,
 }
 
 // ---------------------------------------------------------------------------
@@ -112,11 +121,19 @@ fn props(m: &Option<HashMap<String, String>>) -> HashMap<String, String> {
     m.clone().unwrap_or_default()
 }
 
+fn port_pairs(ports: &Option<Vec<structurizr_model::Port>>) -> Vec<(String, String)> {
+    ports
+        .iter()
+        .flatten()
+        .map(|p| (p.id.clone(), p.name.clone()))
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Index construction
 // ---------------------------------------------------------------------------
 
-fn build_index(workspace: &Workspace) -> Index {
+pub(crate) fn build_index(workspace: &Workspace) -> Index {
     let mut elements: Vec<ElemEntry> = Vec::new();
     let mut relationships: Vec<RelEntry> = Vec::new();
 
@@ -131,6 +148,10 @@ fn build_index(workspace: &Workspace) -> Index {
             tags: split_tags(&r.tags),
             perspectives: persp_names(&r.perspectives),
             properties: props(&r.properties),
+            introduced: r.introduced.clone(),
+            retired: r.retired.clone(),
+            source_port_id: r.source_port_id.clone(),
+            dest_port_id: r.destination_port_id.clone(),
         });
     };
 
@@ -151,6 +172,9 @@ fn build_index(workspace: &Workspace) -> Index {
             parent_id: None,
             ancestors: vec![],
             ancestor_names: vec![],
+            introduced: p.introduced.clone(),
+            retired: p.retired.clone(),
+            ports: port_pairs(&p.ports),
         });
         for r in p.relationships.as_deref().unwrap_or(&[]) {
             push_rel(r);
@@ -172,6 +196,9 @@ fn build_index(workspace: &Workspace) -> Index {
             parent_id: None,
             ancestors: vec![],
             ancestor_names: vec![],
+            introduced: sys.introduced.clone(),
+            retired: sys.retired.clone(),
+            ports: port_pairs(&sys.ports),
         });
         for r in sys.relationships.as_deref().unwrap_or(&[]) {
             push_rel(r);
@@ -191,6 +218,9 @@ fn build_index(workspace: &Workspace) -> Index {
                 parent_id: Some(sys.id.clone()),
                 ancestors: vec![sys.id.clone()],
                 ancestor_names: vec![sys.name.clone()],
+                introduced: cont.introduced.clone(),
+                retired: cont.retired.clone(),
+                ports: port_pairs(&cont.ports),
             });
             for r in cont.relationships.as_deref().unwrap_or(&[]) {
                 push_rel(r);
@@ -210,6 +240,9 @@ fn build_index(workspace: &Workspace) -> Index {
                     parent_id: Some(cont.id.clone()),
                     ancestors: vec![cont.id.clone(), sys.id.clone()],
                     ancestor_names: vec![cont.name.clone(), sys.name.clone()],
+                    introduced: comp.introduced.clone(),
+                    retired: comp.retired.clone(),
+                    ports: port_pairs(&comp.ports),
                 });
                 for r in comp.relationships.as_deref().unwrap_or(&[]) {
                     push_rel(r);
@@ -233,6 +266,9 @@ fn build_index(workspace: &Workspace) -> Index {
             parent_id: None,
             ancestors: vec![],
             ancestor_names: vec![],
+            introduced: c.introduced.clone(),
+            retired: c.retired.clone(),
+            ports: port_pairs(&c.ports),
         });
         for r in c.relationships.as_deref().unwrap_or(&[]) {
             push_rel(r);
