@@ -182,9 +182,75 @@ fn render_landscape(title: &str, view: &SystemLandscapeView, workspace: &Workspa
         }
     }
 
+    // Generated views (focus/slice/layer/lint/…) are landscape-shaped but may
+    // reference containers, components, or custom elements. When the view has
+    // an explicit element list, include those too; without a filter the
+    // landscape keeps its classic people+systems scope.
+    if elem_filter.is_some() {
+        if let Some(systems) = &model.software_systems {
+            for ss in systems {
+                for c in ss.containers.iter().flatten() {
+                    if elem_allowed(&elem_filter, &c.id) {
+                        let s = resolve_node_style(c.tags.as_deref(), "Container", styles, COLOR_CONTAINER, COLOR_TEXT_LIGHT);
+                        nodes.push(Node {
+                            id: c.id.clone(),
+                            name: c.name.clone(),
+                            type_label: "Container".to_string(),
+                            fill: s.fill,
+                            stroke: s.stroke,
+                            text_color: s.text_color,
+                            is_person: false,
+                            x: 0,
+                            y: 0,
+                            dash: dash_for(c.status, c.tags.as_deref()),
+                        });
+                    }
+                    for comp in c.components.iter().flatten() {
+                        if elem_allowed(&elem_filter, &comp.id) {
+                            let s = resolve_node_style(comp.tags.as_deref(), "Component", styles, COLOR_CONTAINER, COLOR_TEXT_LIGHT);
+                            nodes.push(Node {
+                                id: comp.id.clone(),
+                                name: comp.name.clone(),
+                                type_label: "Component".to_string(),
+                                fill: s.fill,
+                                stroke: s.stroke,
+                                text_color: s.text_color,
+                                is_person: false,
+                                x: 0,
+                                y: 0,
+                                dash: dash_for(comp.status, comp.tags.as_deref()),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        for ce in model.custom_elements.iter().flatten() {
+            if elem_allowed(&elem_filter, &ce.id) {
+                let s = resolve_node_style(ce.tags.as_deref(), "Element", styles, COLOR_SYSTEM_EXT, COLOR_TEXT_LIGHT);
+                nodes.push(Node {
+                    id: ce.id.clone(),
+                    name: ce.name.clone(),
+                    type_label: "Element".to_string(),
+                    fill: s.fill,
+                    stroke: s.stroke,
+                    text_color: s.text_color,
+                    is_person: false,
+                    x: 0,
+                    y: 0,
+                    dash: dash_for(ce.status, ce.tags.as_deref()),
+                });
+            }
+        }
+    }
+
     // Only use auto-layout when no stored positions are available.  Running layout
     // when some nodes already have explicit coordinates would overwrite those values.
-    let edges = collect_all_edges(model, rel_filter.as_ref());
+    let edges = if elem_filter.is_some() {
+        collect_all_edges_with_containers(model, rel_filter.as_ref())
+    } else {
+        collect_all_edges(model, rel_filter.as_ref())
+    };
     let positioned = apply_stored_positions(&mut nodes, &elem_pos);
     if positioned == 0 {
         layout_hierarchical(&mut nodes, &edges);
