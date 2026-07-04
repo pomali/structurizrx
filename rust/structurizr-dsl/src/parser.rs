@@ -11,10 +11,46 @@ use crate::lexer::{tokenize, Spanned, Token};
 pub fn parse_file(path: impl AsRef<Path>) -> Result<Workspace, ParseError> {
     let path = path.as_ref();
     let source = std::fs::read_to_string(path)?;
+    let base = path.parent().map(|p| p.to_path_buf());
+    let source = match &base {
+        Some(dir) => preprocess_includes(&source, dir, 0)?,
+        None => source,
+    };
     let tokens = tokenize(&source);
     let mut parser = Parser::new(tokens);
-    parser.base_path = path.parent().map(|p| p.to_path_buf());
+    parser.base_path = base;
     parser.parse_workspace()
+}
+
+/// Splice `!include <path>` lines with the referenced file's contents,
+/// recursively (paths are relative to the including file). Line numbers in
+/// errors refer to the post-include source; a depth cap guards against cycles.
+fn preprocess_includes(source: &str, dir: &Path, depth: usize) -> Result<String, ParseError> {
+    const MAX_INCLUDE_DEPTH: usize = 16;
+    if depth > MAX_INCLUDE_DEPTH {
+        return Err(ParseError::syntax(0, 0, "include depth exceeded (cycle?)".to_string()));
+    }
+    let mut out = String::with_capacity(source.len());
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        let rest = trimmed
+            .strip_prefix("!include ")
+            .or_else(|| trimmed.strip_prefix("!INCLUDE "));
+        if let Some(rest) = rest {
+            let rel = rest.trim().trim_matches('"');
+            let inc_path = dir.join(rel);
+            let inc_src = std::fs::read_to_string(&inc_path).map_err(|e| {
+                ParseError::syntax(0, 0, format!("cannot read !include '{}': {}", inc_path.display(), e))
+            })?;
+            let inc_dir = inc_path.parent().unwrap_or(dir).to_path_buf();
+            out.push_str(&preprocess_includes(&inc_src, &inc_dir, depth + 1)?);
+            out.push('\n');
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    Ok(out)
 }
 
 /// Parse a DSL string into a Workspace.
@@ -34,6 +70,39 @@ struct Parser {
     base_path: Option<PathBuf>,
     /// Decisions accumulated while parsing (flushed into workspace.documentation at the end).
     accumulated_decisions: Vec<Decision>,
+    /// Maps a lowercase dotted path `"element_path.port_ident"` → (element_id, port_id).
+    port_register: HashMap<String, (String, String)>,
+    /// Kind aliases declared in a `specification { kind <alias> <base> ... }` block.
+    kind_aliases: HashMap<String, KindAlias>,
+    /// Sketch mode (spec §4.1): unknown relationship endpoints are auto-created
+    /// as placeholder software systems. Set by `!sketch` or a bare sketch file.
+    sketch: bool,
+}
+
+/// A vocabulary alias declared in `specification { kind queue container { ... } }`.
+/// Elements declared through an alias are stored as the base kind, with the alias
+/// tags merged and a `kind` property recording the alias name (spec §3.1).
+#[derive(Debug, Clone)]
+struct KindAlias {
+    base: String,
+    tags: Option<String>,
+    technology: Option<String>,
+}
+
+/// Extra attributes collected from an element body block (`{ ... }`).
+#[derive(Default)]
+struct ElementExtras {
+    status: Option<Status>,
+    introduced: Option<String>,
+    retired: Option<String>,
+    perspectives: Vec<Perspective>,
+    /// Ports parsed from `port <ident> [...]` declarations: (local DSL ident, Port).
+    ports: Vec<(String, Port)>,
+    description: Option<String>,
+    technology: Option<String>,
+    url: Option<String>,
+    /// Extra tags from a `tags` body keyword, comma-split.
+    tags_extra: Vec<String>,
 }
 
 impl Parser {
@@ -46,6 +115,9 @@ impl Parser {
             constants: HashMap::new(),
             base_path: None,
             accumulated_decisions: Vec::new(),
+            port_register: HashMap::new(),
+            kind_aliases: HashMap::new(),
+            sketch: false,
         }
     }
 
@@ -169,6 +241,37 @@ impl Parser {
         }
 
         identifier.to_string()
+    }
+
+    /// Resolve a relationship endpoint identifier to `(element_id, Option<port_id>)`.
+    ///
+    /// Resolution order:
+    /// (a) If the full string resolves to a known element (direct or hierarchical fallback),
+    ///     return `(element_id, None)`.
+    /// (b) If the string contains '.' and is found in the port register, return
+    ///     `(element_id, Some(port_id))`.
+    /// (c) Otherwise fall back to `resolve_identifier` (returns the string itself if unknown).
+    fn resolve_endpoint(&self, ident: &str) -> (String, Option<String>) {
+        // (a) Try full ident as direct element in register.
+        if self.register.resolve_id(ident).is_some() {
+            return (self.resolve_identifier(ident), None);
+        }
+        // Also try hierarchical fallback (last segment after last dot).
+        if self.register.mode == IdentifierMode::Hierarchical && ident.contains('.') {
+            if let Some(last) = ident.rsplit('.').next() {
+                if self.register.resolve_id(last).is_some() {
+                    return (self.resolve_identifier(ident), None);
+                }
+            }
+        }
+        // (b) Try port_register lookup (only makes sense when ident contains '.').
+        if ident.contains('.') {
+            if let Some((elem_id, port_id)) = self.port_register.get(&ident.to_lowercase()) {
+                return (elem_id.clone(), Some(port_id.clone()));
+            }
+        }
+        // (c) Fall back to current resolve_identifier behaviour.
+        (self.resolve_identifier(ident), None)
     }
 
     fn substitute_vars(&self, s: &str) -> String {
@@ -329,6 +432,12 @@ impl Parser {
         // Handle optional directives before `workspace`
         self.handle_pre_workspace_directives();
 
+        // A file with no `workspace` block is a sketch (spec §4.1): bare model
+        // statements, auto-vivified placeholders, one default landscape view.
+        if !self.peek_word("workspace") && self.peek().is_some() {
+            return self.parse_sketch();
+        }
+
         // `workspace` keyword
         self.expect_word("workspace")?;
 
@@ -358,6 +467,51 @@ impl Parser {
         Ok(workspace)
     }
 
+    /// Parse a bare sketch file: statements are treated as model items and a
+    /// default include-all landscape view is synthesized.
+    fn parse_sketch(&mut self) -> Result<Workspace, ParseError> {
+        self.sketch = true;
+        let mut workspace = Workspace::default();
+        workspace.name = "Sketch".to_string();
+
+        while self.peek().is_some() {
+            if self.peek_close_brace() {
+                self.advance(); // tolerate stray braces
+                continue;
+            }
+            self.parse_model_item(&mut workspace.model, None)?;
+        }
+
+        let mut view = SystemLandscapeView {
+            key: Some("sketch".to_string()),
+            ..Default::default()
+        };
+        self.populate_system_landscape_view(&workspace.model, &mut view);
+        workspace.views.system_landscape_views = Some(vec![view]);
+
+        Ok(workspace)
+    }
+
+    /// In sketch mode, create a placeholder software system for an identifier
+    /// that does not resolve to any declared element (spec §4.1).
+    fn vivify_placeholder(&mut self, model: &mut Model, ident: &str) {
+        if ident.is_empty() || ident.contains('.') || ident == "*" {
+            return;
+        }
+        if self.register.resolve_id(ident).is_some() {
+            return;
+        }
+        let id = self.next_id();
+        let ss = SoftwareSystem {
+            id: id.clone(),
+            name: ident.to_string(),
+            tags: Some("Element,Software System,Placeholder".to_string()),
+            ..Default::default()
+        };
+        model.software_systems.get_or_insert_with(Vec::new).push(ss);
+        self.register.register(ident, id, ElementType::SoftwareSystem);
+    }
+
     fn handle_pre_workspace_directives(&mut self) {
         while let Some(Token::Directive(_)) = self.peek() {
             let dir = match self.advance().map(|s| s.token.clone()) {
@@ -369,6 +523,9 @@ impl Parser {
                     let name = self.consume_string().unwrap_or_default();
                     let value = self.consume_string().unwrap_or_default();
                     self.constants.insert(name, value);
+                }
+                "sketch" => {
+                    self.sketch = true;
                 }
                 _ => {}
             }
@@ -401,6 +558,10 @@ impl Parser {
                         if mode.eq_ignore_ascii_case("hierarchical") {
                             self.register.mode = IdentifierMode::Hierarchical;
                         }
+                    }
+                    "sketch" => {
+                        self.advance();
+                        self.sketch = true;
                     }
                     "implied_relationships" | "impliedrelationships" => {
                         self.advance();
@@ -459,6 +620,90 @@ impl Parser {
                         self.advance();
                         self.expect_open_brace()?;
                         self.skip_block();
+                    }
+                    "specification" => {
+                        self.advance();
+                        self.expect_open_brace()?;
+                        while !self.peek_close_brace() && self.peek().is_some() {
+                            if self.peek_word("kind") {
+                                self.advance();
+                                let (line, col) = self.current_pos();
+                                let alias_name = self.consume_bare_word_or_string().unwrap_or_default().to_lowercase();
+                                let base = self.consume_bare_word_or_string().unwrap_or_default().to_lowercase();
+                                if !matches!(base.as_str(), "person" | "softwaresystem" | "container" | "component") {
+                                    return Err(ParseError::syntax(line, col, format!(
+                                        "kind alias base must be person|softwareSystem|container|component, got: {}",
+                                        base
+                                    )));
+                                }
+                                let mut alias_tags = None;
+                                let mut alias_tech = None;
+                                if self.peek_open_brace() {
+                                    self.advance();
+                                    while !self.peek_close_brace() && self.peek().is_some() {
+                                        if self.peek_word("tags") {
+                                            self.advance();
+                                            alias_tags = self.consume_string();
+                                        } else if self.peek_word("technology") {
+                                            self.advance();
+                                            alias_tech = self.consume_string();
+                                        } else {
+                                            self.advance();
+                                            self.skip_optional_block_or_value();
+                                        }
+                                    }
+                                    self.expect_close_brace()?;
+                                }
+                                if !alias_name.is_empty() {
+                                    self.kind_aliases.insert(alias_name, KindAlias {
+                                        base,
+                                        tags: alias_tags,
+                                        technology: alias_tech,
+                                    });
+                                }
+                            } else {
+                                self.advance();
+                                self.skip_optional_block_or_value();
+                            }
+                        }
+                        self.expect_close_brace()?;
+                    }
+                    "milestones" => {
+                        self.advance();
+                        self.expect_open_brace()?;
+                        let mut milestones: Vec<Milestone> = Vec::new();
+                        while !self.peek_close_brace() && self.peek().is_some() {
+                            // Each entry: name [date [description]]
+                            // Name is a bare word or quoted string; date and description are
+                            // quoted strings (or bare words for robustness).
+                            let name = match self.peek() {
+                                Some(Token::Word(_)) | Some(Token::Quoted(_)) | Some(Token::TextBlock(_)) => {
+                                    self.consume_bare_word_or_string().unwrap_or_default()
+                                }
+                                _ => { self.advance(); continue; }
+                            };
+                            if name.is_empty() { continue; }
+                            let date        = self.consume_string_if_not_brace();
+                            let description = self.consume_string_if_not_brace();
+                            milestones.push(Milestone { name, date, description });
+                        }
+                        self.expect_close_brace()?;
+                        workspace.milestones = Some(milestones);
+                    }
+                    "perspectives" => {
+                        // Workspace-level perspectives registry:
+                        // perspectives { name ["description"] ... }
+                        self.advance();
+                        self.expect_open_brace()?;
+                        let mut perspectives: Vec<Perspective> = Vec::new();
+                        while !self.peek_close_brace() && self.peek().is_some() {
+                            let p = self.parse_one_perspective();
+                            if !p.name.is_empty() {
+                                perspectives.push(p);
+                            }
+                        }
+                        self.expect_close_brace()?;
+                        workspace.perspectives = Some(perspectives);
                     }
                     _ => {
                         self.advance();
@@ -561,6 +806,20 @@ impl Parser {
                         }
                     }
                     _ => {
+                        if let Some((alias_name, alias)) = self.peek_kind_alias("person") {
+                            self.advance();
+                            let mut p = self.parse_person(if has_assign { &identifier } else { "" })?;
+                            apply_alias_to_tags_props(&alias_name, &alias, &mut p.tags, &mut p.properties);
+                            model.people.get_or_insert_with(Vec::new).push(p);
+                            return Ok(());
+                        }
+                        if let Some((alias_name, alias)) = self.peek_kind_alias("softwaresystem") {
+                            self.advance();
+                            let mut ss = self.parse_software_system(if has_assign { &identifier } else { "" })?;
+                            apply_alias_to_tags_props(&alias_name, &alias, &mut ss.tags, &mut ss.properties);
+                            model.software_systems.get_or_insert_with(Vec::new).push(ss);
+                            return Ok(());
+                        }
                         // Could be a relationship: `sourceId -> destinationId ...`
                         // or an unknown keyword
                         if !has_assign {
@@ -572,6 +831,10 @@ impl Parser {
                                 self.advance();
                                 self.skip_optional_block_or_value();
                             }
+                        } else if self.peek_at_arrow_after_word() {
+                            // Named relationship: `name = a -> b ...`
+                            let rel_id = self.parse_relationship_in_model(model)?;
+                            self.register.register(&identifier, rel_id, ElementType::Relationship);
                         } else {
                             // has identifier but unknown keyword
                             self.advance();
@@ -636,11 +899,37 @@ impl Parser {
             ..Default::default()
         };
 
+        if self.consume_uncertainty_marker() {
+            person.tags = match person.tags.take() {
+                Some(t) => Some(format!("{},Uncertain", t)),
+                None => Some("Uncertain".to_string()),
+            };
+        }
+
         if self.peek_open_brace() {
             self.advance();
-            let rels = self.parse_element_block(&id)?;
+            let paths = vec![identifier.to_string()];
+            let (rels, extras) = self.parse_element_block(&id, &paths)?;
             if !rels.is_empty() {
                 person.relationships = Some(rels);
+            }
+            if extras.status.is_some()    { person.status    = extras.status; }
+            if extras.introduced.is_some(){ person.introduced = extras.introduced; }
+            if extras.retired.is_some()   { person.retired   = extras.retired; }
+            if !extras.perspectives.is_empty() {
+                person.perspectives = Some(extras.perspectives);
+            }
+            if !extras.ports.is_empty() {
+                person.ports = Some(extras.ports.into_iter().map(|(_, p)| p).collect());
+            }
+            if extras.description.is_some() { person.description = extras.description; }
+            if extras.url.is_some()         { person.url         = extras.url; }
+            if !extras.tags_extra.is_empty() {
+                let extra = extras.tags_extra.join(",");
+                person.tags = Some(match person.tags.take() {
+                    Some(t) => format!("{},{}", t, extra),
+                    None => extra,
+                });
             }
             self.expect_close_brace()?;
         }
@@ -667,10 +956,18 @@ impl Parser {
             ..Default::default()
         };
 
+        if self.consume_uncertainty_marker() {
+            ss.tags = match ss.tags.take() {
+                Some(t) => Some(format!("{},Uncertain", t)),
+                None => Some("Uncertain".to_string()),
+            };
+        }
+
         if self.peek_open_brace() {
             self.advance();
             let mut containers: Vec<Container> = Vec::new();
             let mut rels: Vec<Relationship> = Vec::new();
+            let mut ss_extras = ElementExtras::default();
 
             while !self.peek_close_brace() && self.peek().is_some() {
                 let (ident, _) = self.peek_assignment();
@@ -688,6 +985,17 @@ impl Parser {
                         if has_ident { &ident } else { "" },
                         identifier,
                     )?;
+                    containers.push(c);
+                } else if let Some((alias_name, alias)) = self.peek_kind_alias("container") {
+                    self.advance();
+                    let mut c = self.parse_container(
+                        if has_ident { &ident } else { "" },
+                        identifier,
+                    )?;
+                    apply_alias_to_tags_props(&alias_name, &alias, &mut c.tags, &mut c.properties);
+                    if c.technology.is_none() {
+                        c.technology = alias.technology.clone();
+                    }
                     containers.push(c);
                 } else if self.peek_word("group") {
                     self.advance();
@@ -745,23 +1053,41 @@ impl Parser {
                         self.expect_close_brace()?;
                     }
                 } else if self.peek_at_arrow_after_word() {
-                    let src = self.consume_string().unwrap_or_default();
+                    let src  = self.consume_string().unwrap_or_default();
                     self.advance(); // ->
-                    let dst = self.consume_string().unwrap_or_default();
+                    let dst  = self.consume_string().unwrap_or_default();
                     let desc = self.consume_string_if_not_brace();
                     let tech = self.consume_string_if_not_brace();
                     let rel_id = self.next_id();
-                    let src_id = self.resolve_identifier(&src);
-                    let dst_id = self.resolve_identifier(&dst);
-                    rels.push(Relationship {
+                    let uncertain = self.consume_uncertainty_marker();
+                    let (src_id, src_port) = self.resolve_endpoint(&src);
+                    let (dst_id, dst_port) = self.resolve_endpoint(&dst);
+                    let mut rel = Relationship {
                         id: rel_id,
                         source_id: src_id,
                         destination_id: dst_id,
+                        source_port_id: src_port,
+                        destination_port_id: dst_port,
                         description: desc,
                         technology: tech,
                         tags: Some("Relationship".to_string()),
                         ..Default::default()
-                    });
+                    };
+                    if self.peek_open_brace() {
+                        self.parse_relationship_body(&mut rel)?;
+                    }
+                    if uncertain {
+                        rel.tags = Some(match rel.tags.take() {
+                            Some(t) => format!("{},Uncertain", t),
+                            None => "Uncertain".to_string(),
+                        });
+                    }
+                    rels.push(rel);
+                } else if !has_ident && {
+                    let paths = vec![identifier.to_string()];
+                    self.try_parse_common_element_keyword(&mut ss_extras, &id, &paths)?
+                } {
+                    // element attribute for the software system itself consumed
                 } else if matches!(self.peek(), Some(Token::Directive(d)) if d.eq_ignore_ascii_case("adrs") || d.eq_ignore_ascii_case("decisions")) {
                     self.advance();
                     let rel_path = self.consume_string().unwrap_or_default();
@@ -788,6 +1114,24 @@ impl Parser {
             }
             if !rels.is_empty() {
                 ss.relationships = Some(rels);
+            }
+            if ss_extras.status.is_some()     { ss.status     = ss_extras.status; }
+            if ss_extras.introduced.is_some() { ss.introduced = ss_extras.introduced; }
+            if ss_extras.retired.is_some()    { ss.retired    = ss_extras.retired; }
+            if !ss_extras.perspectives.is_empty() {
+                ss.perspectives = Some(ss_extras.perspectives);
+            }
+            if !ss_extras.ports.is_empty() {
+                ss.ports = Some(ss_extras.ports.into_iter().map(|(_, p)| p).collect());
+            }
+            if ss_extras.description.is_some() { ss.description = ss_extras.description; }
+            if ss_extras.url.is_some()         { ss.url         = ss_extras.url; }
+            if !ss_extras.tags_extra.is_empty() {
+                let extra = ss_extras.tags_extra.join(",");
+                ss.tags = Some(match ss.tags.take() {
+                    Some(t) => format!("{},{}", t, extra),
+                    None => extra,
+                });
             }
         }
 
@@ -823,10 +1167,18 @@ impl Parser {
             ..Default::default()
         };
 
+        if self.consume_uncertainty_marker() {
+            container.tags = match container.tags.take() {
+                Some(t) => Some(format!("{},Uncertain", t)),
+                None => Some("Uncertain".to_string()),
+            };
+        }
+
         if self.peek_open_brace() {
             self.advance();
             let mut components: Vec<Component> = Vec::new();
             let mut rels: Vec<Relationship> = Vec::new();
+            let mut cont_extras = ElementExtras::default();
 
             while !self.peek_close_brace() && self.peek().is_some() {
                 let (ident, _) = self.peek_assignment();
@@ -842,24 +1194,56 @@ impl Parser {
                     self.advance();
                     let c = self.parse_component(if has_ident { &ident } else { "" })?;
                     components.push(c);
+                } else if let Some((alias_name, alias)) = self.peek_kind_alias("component") {
+                    self.advance();
+                    let mut c = self.parse_component(if has_ident { &ident } else { "" })?;
+                    apply_alias_to_tags_props(&alias_name, &alias, &mut c.tags, &mut c.properties);
+                    if c.technology.is_none() {
+                        c.technology = alias.technology.clone();
+                    }
+                    components.push(c);
                 } else if self.peek_at_arrow_after_word() {
-                    let src = self.consume_string().unwrap_or_default();
+                    let src  = self.consume_string().unwrap_or_default();
                     self.advance(); // ->
-                    let dst = self.consume_string().unwrap_or_default();
+                    let dst  = self.consume_string().unwrap_or_default();
                     let desc = self.consume_string_if_not_brace();
                     let tech = self.consume_string_if_not_brace();
                     let rel_id = self.next_id();
-                    let src_id = self.resolve_identifier(&src);
-                    let dst_id = self.resolve_identifier(&dst);
-                    rels.push(Relationship {
+                    let uncertain = self.consume_uncertainty_marker();
+                    let (src_id, src_port) = self.resolve_endpoint(&src);
+                    let (dst_id, dst_port) = self.resolve_endpoint(&dst);
+                    let mut rel = Relationship {
                         id: rel_id,
                         source_id: src_id,
                         destination_id: dst_id,
+                        source_port_id: src_port,
+                        destination_port_id: dst_port,
                         description: desc,
                         technology: tech,
                         tags: Some("Relationship".to_string()),
                         ..Default::default()
-                    });
+                    };
+                    if self.peek_open_brace() {
+                        self.parse_relationship_body(&mut rel)?;
+                    }
+                    if uncertain {
+                        rel.tags = Some(match rel.tags.take() {
+                            Some(t) => format!("{},Uncertain", t),
+                            None => "Uncertain".to_string(),
+                        });
+                    }
+                    rels.push(rel);
+                } else if !has_ident && {
+                    let mut paths = vec![identifier.to_string()];
+                    if self.register.mode == IdentifierMode::Hierarchical
+                        && !parent_identifier.is_empty()
+                        && !identifier.is_empty()
+                    {
+                        paths.push(format!("{}.{}", parent_identifier, identifier));
+                    }
+                    self.try_parse_common_element_keyword(&mut cont_extras, &id, &paths)?
+                } {
+                    // element attribute for the container itself consumed
                 } else if matches!(self.peek(), Some(Token::Directive(d)) if d.eq_ignore_ascii_case("adrs") || d.eq_ignore_ascii_case("decisions")) {
                     self.advance();
                     let rel_path = self.consume_string().unwrap_or_default();
@@ -888,6 +1272,25 @@ impl Parser {
             if !rels.is_empty() {
                 container.relationships = Some(rels);
             }
+            if cont_extras.status.is_some()     { container.status     = cont_extras.status; }
+            if cont_extras.introduced.is_some() { container.introduced = cont_extras.introduced; }
+            if cont_extras.retired.is_some()    { container.retired    = cont_extras.retired; }
+            if !cont_extras.perspectives.is_empty() {
+                container.perspectives = Some(cont_extras.perspectives);
+            }
+            if !cont_extras.ports.is_empty() {
+                container.ports = Some(cont_extras.ports.into_iter().map(|(_, p)| p).collect());
+            }
+            if cont_extras.description.is_some() { container.description = cont_extras.description; }
+            if cont_extras.technology.is_some()  { container.technology  = cont_extras.technology; }
+            if cont_extras.url.is_some()         { container.url         = cont_extras.url; }
+            if !cont_extras.tags_extra.is_empty() {
+                let extra = cont_extras.tags_extra.join(",");
+                container.tags = Some(match container.tags.take() {
+                    Some(t) => format!("{},{}", t, extra),
+                    None => extra,
+                });
+            }
         }
 
         Ok(container)
@@ -914,11 +1317,38 @@ impl Parser {
             ..Default::default()
         };
 
+        if self.consume_uncertainty_marker() {
+            component.tags = match component.tags.take() {
+                Some(t) => Some(format!("{},Uncertain", t)),
+                None => Some("Uncertain".to_string()),
+            };
+        }
+
         if self.peek_open_brace() {
             self.advance();
-            let rels = self.parse_element_block(&id)?;
+            let paths = vec![identifier.to_string()];
+            let (rels, extras) = self.parse_element_block(&id, &paths)?;
             if !rels.is_empty() {
                 component.relationships = Some(rels);
+            }
+            if extras.status.is_some()     { component.status     = extras.status; }
+            if extras.introduced.is_some() { component.introduced = extras.introduced; }
+            if extras.retired.is_some()    { component.retired    = extras.retired; }
+            if !extras.perspectives.is_empty() {
+                component.perspectives = Some(extras.perspectives);
+            }
+            if !extras.ports.is_empty() {
+                component.ports = Some(extras.ports.into_iter().map(|(_, p)| p).collect());
+            }
+            if extras.description.is_some() { component.description = extras.description; }
+            if extras.technology.is_some()  { component.technology  = extras.technology; }
+            if extras.url.is_some()         { component.url         = extras.url; }
+            if !extras.tags_extra.is_empty() {
+                let extra = extras.tags_extra.join(",");
+                component.tags = Some(match component.tags.take() {
+                    Some(t) => format!("{},{}", t, extra),
+                    None => extra,
+                });
             }
             self.expect_close_brace()?;
         }
@@ -1252,28 +1682,49 @@ impl Parser {
         Ok(inf)
     }
 
-    /// Parse an element block (relationships and style overrides inside `{ }`).
-    fn parse_element_block(&mut self, source_id: &str) -> Result<Vec<Relationship>, ParseError> {
-        let mut rels = Vec::new();
+    /// Parse an element block (relationships and attributes inside `{ }`).
+    /// Returns the relationships found plus any element-level extras (status, etc.).
+    fn parse_element_block(
+        &mut self,
+        source_id: &str,
+        ident_paths: &[String],
+    ) -> Result<(Vec<Relationship>, ElementExtras), ParseError> {
+        let mut rels   = Vec::new();
+        let mut extras = ElementExtras::default();
         while !self.peek_close_brace() && self.peek().is_some() {
             if self.peek_at_arrow_after_word() {
-                let src = self.consume_string().unwrap_or_default();
+                let src  = self.consume_string().unwrap_or_default();
                 self.advance(); // ->
-                let dst = self.consume_string().unwrap_or_default();
+                let dst  = self.consume_string().unwrap_or_default();
                 let desc = self.consume_string_if_not_brace();
                 let tech = self.consume_string_if_not_brace();
                 let rel_id = self.next_id();
-                    let src_id = self.resolve_identifier(&src);
-                    let dst_id = self.resolve_identifier(&dst);
-                rels.push(Relationship {
+                let uncertain = self.consume_uncertainty_marker();
+                let (src_id, src_port) = self.resolve_endpoint(&src);
+                let (dst_id, dst_port) = self.resolve_endpoint(&dst);
+                let mut rel = Relationship {
                     id: rel_id,
                     source_id: src_id,
                     destination_id: dst_id,
+                    source_port_id: src_port,
+                    destination_port_id: dst_port,
                     description: desc,
                     technology: tech,
                     tags: Some("Relationship".to_string()),
                     ..Default::default()
-                });
+                };
+                if self.peek_open_brace() {
+                    self.parse_relationship_body(&mut rel)?;
+                }
+                if uncertain {
+                    rel.tags = Some(match rel.tags.take() {
+                        Some(t) => format!("{},Uncertain", t),
+                        None => "Uncertain".to_string(),
+                    });
+                }
+                rels.push(rel);
+            } else if self.try_parse_common_element_keyword(&mut extras, source_id, ident_paths)? {
+                // element attribute consumed
             } else if matches!(self.peek(), Some(Token::Directive(d)) if d.eq_ignore_ascii_case("adrs") || d.eq_ignore_ascii_case("decisions")) {
                 self.advance();
                 let rel_path = self.consume_string().unwrap_or_default();
@@ -1289,35 +1740,54 @@ impl Parser {
                 self.skip_optional_block_or_value();
             }
         }
-        Ok(rels)
+        Ok((rels, extras))
     }
 
-    fn parse_relationship_in_model(&mut self, model: &mut Model) -> Result<(), ParseError> {
-        let src = self.consume_string().unwrap_or_default();
+    fn parse_relationship_in_model(&mut self, model: &mut Model) -> Result<String, ParseError> {
+        let src  = self.consume_string().unwrap_or_default();
         self.advance(); // ->
-        let dst = self.consume_string().unwrap_or_default();
+        let dst  = self.consume_string().unwrap_or_default();
         let desc = self.consume_string_if_not_brace();
         let tech = self.consume_string_if_not_brace_or_kw();
         let tags = self.consume_string_if_not_brace_or_kw();
 
+        let uncertain = self.consume_uncertainty_marker();
+        if self.sketch {
+            self.vivify_placeholder(model, &src);
+            self.vivify_placeholder(model, &dst);
+        }
         let rel_id = self.next_id();
-        let src_id = self.resolve_identifier(&src);
-        let dst_id = self.resolve_identifier(&dst);
+        let returned_rel_id = rel_id.clone();
+        let (src_id, src_port) = self.resolve_endpoint(&src);
+        let (dst_id, dst_port) = self.resolve_endpoint(&dst);
 
-        let rel = Relationship {
+        let mut rel = Relationship {
             id: rel_id,
             source_id: src_id.clone(),
             destination_id: dst_id,
+            source_port_id: src_port,
+            destination_port_id: dst_port,
             description: desc,
             technology: tech,
             tags: tags.or_else(|| Some("Relationship".to_string())),
             ..Default::default()
         };
 
+        if self.peek_open_brace() {
+            self.parse_relationship_body(&mut rel)?;
+        }
+
+        if uncertain {
+            rel.tags = Some(match rel.tags.take() {
+                Some(t) => format!("{},Uncertain", t),
+                None => "Uncertain".to_string(),
+            });
+        }
+
         // Attach relationship to source element
         self.attach_relationship_to_element(model, &src_id, rel);
 
-        Ok(())
+        Ok(returned_rel_id)
     }
 
     fn attach_relationship_to_element(&self, model: &mut Model, source_id: &str, rel: Relationship) {
@@ -2542,6 +3012,31 @@ impl Parser {
         }
     }
 
+    /// If the next token is a declared kind alias with the given base kind,
+    /// return its name and definition without consuming anything.
+    fn peek_kind_alias(&self, base: &str) -> Option<(String, KindAlias)> {
+        if let Some(Token::Word(w)) = self.peek() {
+            let w = w.to_lowercase();
+            if let Some(alias) = self.kind_aliases.get(&w) {
+                if alias.base == base {
+                    return Some((w, alias.clone()));
+                }
+            }
+        }
+        None
+    }
+
+    /// Consume a trailing `?` uncertainty marker if present (spec §4.1).
+    /// Returns true when a marker was consumed; callers add the `Uncertain` tag.
+    fn consume_uncertainty_marker(&mut self) -> bool {
+        if matches!(self.peek(), Some(Token::Word(w)) if w == "?") {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
     /// Consume the next token as a bare word or quoted string, but not an OpenBrace/CloseBrace.
     /// Used for autolayout direction and similar unambiguous positional args.
     fn consume_bare_word_or_string(&mut self) -> Option<String> {
@@ -2551,6 +3046,386 @@ impl Parser {
             _ => None,
         }
     }
+
+    // ─── Phase-2a helpers ────────────────────────────────────────────────────────
+
+    /// Parse a `Status` value word from the current position.
+    fn parse_status_value(&mut self) -> Result<Status, ParseError> {
+        let (line, col) = self.current_pos();
+        let word = self.consume_bare_word_or_string().unwrap_or_default();
+        match word.to_lowercase().as_str() {
+            "idea"        => Ok(Status::Idea),
+            "draft"       => Ok(Status::Draft),
+            "specified"   => Ok(Status::Specified),
+            "implemented" => Ok(Status::Implemented),
+            "deprecated"  => Ok(Status::Deprecated),
+            other => Err(ParseError::syntax(line, col, format!("unknown status value: {}", other))),
+        }
+    }
+
+    /// Parse a `PortDirection` value word from the current position.
+    fn parse_port_direction_value(&mut self) -> Result<PortDirection, ParseError> {
+        let (line, col) = self.current_pos();
+        let word = self.consume_bare_word_or_string().unwrap_or_default();
+        match word.to_lowercase().as_str() {
+            "in"    => Ok(PortDirection::In),
+            "out"   => Ok(PortDirection::Out),
+            "inout" => Ok(PortDirection::InOut),
+            other => Err(ParseError::syntax(line, col, format!("unknown port direction: {}", other))),
+        }
+    }
+
+    /// Parse a `port <ident> ["Name"] [{ ... }]` declaration. The `port` keyword
+    /// has already been consumed. Returns the DSL-local port identifier and the Port.
+    fn parse_port(&mut self) -> Result<(String, Port), ParseError> {
+        let ident = self.consume_bare_word_or_string().unwrap_or_default();
+        let id = self.next_id();
+        let name = self.consume_string_if_not_brace().unwrap_or_else(|| ident.clone());
+        let mut port = Port { id, name, ..Default::default() };
+
+        if self.peek_open_brace() {
+            self.advance();
+            while !self.peek_close_brace() && self.peek().is_some() {
+                match self.peek() {
+                    Some(Token::Word(w)) => {
+                        let w = w.to_lowercase();
+                        match w.as_str() {
+                            "protocol" => {
+                                self.advance();
+                                port.protocol = self.consume_string();
+                            }
+                            "direction" => {
+                                self.advance();
+                                port.direction = Some(self.parse_port_direction_value()?);
+                            }
+                            "description" => {
+                                self.advance();
+                                port.description = self.consume_string();
+                            }
+                            "url" => {
+                                self.advance();
+                                port.url = self.consume_string();
+                            }
+                            "tags" => {
+                                self.advance();
+                                let mut new_tags: Vec<String> = Vec::new();
+                                while matches!(self.peek(), Some(Token::Quoted(_)) | Some(Token::TextBlock(_))) {
+                                    if let Some(t) = self.consume_string() {
+                                        for part in t.split(',') {
+                                            let p = part.trim().to_string();
+                                            if !p.is_empty() { new_tags.push(p); }
+                                        }
+                                    }
+                                }
+                                if !new_tags.is_empty() {
+                                    let extra = new_tags.join(",");
+                                    port.tags = Some(match port.tags.take() {
+                                        Some(base) => format!("{},{}", base, extra),
+                                        None => extra,
+                                    });
+                                }
+                            }
+                            "properties" => {
+                                self.advance();
+                                let props = self.parse_properties_block_body()?;
+                                port.properties.get_or_insert_with(HashMap::new).extend(props);
+                            }
+                            "perspective" => {
+                                self.advance();
+                                let p = self.parse_one_perspective();
+                                port.perspectives.get_or_insert_with(Vec::new).push(p);
+                            }
+                            _ => {
+                                self.advance();
+                                self.skip_optional_block_or_value();
+                            }
+                        }
+                    }
+                    Some(Token::Directive(_)) => {
+                        self.advance();
+                        self.skip_directive_args();
+                    }
+                    _ => {
+                        self.advance();
+                    }
+                }
+            }
+            self.expect_close_brace()?;
+        }
+
+        Ok((ident, port))
+    }
+
+    /// Parse a `RelationshipKind` value word from the current position.
+    fn parse_relationship_kind_value(&mut self) -> Result<RelationshipKind, ParseError> {
+        let (line, col) = self.current_pos();
+        let word = self.consume_bare_word_or_string().unwrap_or_default();
+        match word.to_lowercase().as_str() {
+            "sync"        => Ok(RelationshipKind::Sync),
+            "async"       => Ok(RelationshipKind::Async),
+            "publish"     => Ok(RelationshipKind::Publish),
+            "subscribe"   => Ok(RelationshipKind::Subscribe),
+            "dataflow"    => Ok(RelationshipKind::Dataflow),
+            "dependency"  => Ok(RelationshipKind::Dependency),
+            "deploy"      => Ok(RelationshipKind::Deploy),
+            other => Err(ParseError::syntax(line, col, format!("unknown relationship kind: {}", other))),
+        }
+    }
+
+    /// Return the source line of the last consumed token.
+    fn last_consumed_line(&self) -> usize {
+        self.tokens
+            .get(self.pos.saturating_sub(1))
+            .map(|s| s.pos.line)
+            .unwrap_or(0)
+    }
+
+    /// Consume the next quoted/textblock string token only if it lies on the same
+    /// source line as the previously consumed token.  This lets `parse_one_perspective`
+    /// distinguish between `"name" "description"` (same line = description) and a
+    /// `"name"` that starts the *next* perspective entry (different line = stop).
+    fn consume_string_if_same_line(&mut self) -> Option<String> {
+        let last_line = self.last_consumed_line();
+        let next_line = self.tokens.get(self.pos).map(|s| s.pos.line).unwrap_or(usize::MAX);
+        if next_line != last_line {
+            return None;
+        }
+        match self.peek() {
+            Some(Token::Quoted(_)) | Some(Token::TextBlock(_)) => self.consume_string(),
+            _ => None,
+        }
+    }
+
+    /// Parse a single perspective entry: `name ["description" ["value"]]`.
+    /// Name can be a bare word or quoted string.
+    /// Description and value are only consumed when they appear on the same source
+    /// line as the name — this prevents consuming the next entry's name as the
+    /// current entry's description when names are quoted strings inside a block.
+    fn parse_one_perspective(&mut self) -> Perspective {
+        let name        = self.consume_bare_word_or_string().unwrap_or_default();
+        let description = self.consume_string_if_same_line();
+        let value       = self.consume_string_if_same_line();
+        Perspective { name, description, value }
+    }
+
+    /// Parse a `properties { key value ... }` block and return the map.
+    fn parse_properties_block_body(&mut self) -> Result<HashMap<String, String>, ParseError> {
+        let mut props = HashMap::new();
+        self.expect_open_brace()?;
+        while !self.peek_close_brace() && self.peek().is_some() {
+            let key   = self.consume_bare_word_or_string().unwrap_or_default();
+            let value = self.consume_string().unwrap_or_default();
+            if !key.is_empty() {
+                props.insert(key, value);
+            }
+        }
+        self.expect_close_brace()?;
+        Ok(props)
+    }
+
+    /// Parse the body of a relationship block `{ ... }` and fill `rel`.
+    fn parse_relationship_body(&mut self, rel: &mut Relationship) -> Result<(), ParseError> {
+        self.expect_open_brace()?;
+        while !self.peek_close_brace() && self.peek().is_some() {
+            match self.peek() {
+                Some(Token::Word(w)) => {
+                    let w = w.to_lowercase();
+                    match w.as_str() {
+                        "kind" => {
+                            self.advance();
+                            rel.kind = Some(self.parse_relationship_kind_value()?);
+                        }
+                        "status" => {
+                            self.advance();
+                            rel.status = Some(self.parse_status_value()?);
+                        }
+                        "introduced" => {
+                            self.advance();
+                            rel.introduced = self.consume_bare_word_or_string();
+                        }
+                        "retired" => {
+                            self.advance();
+                            rel.retired = self.consume_bare_word_or_string();
+                        }
+                        "perspective" => {
+                            self.advance();
+                            let p = self.parse_one_perspective();
+                            rel.perspectives.get_or_insert_with(Vec::new).push(p);
+                        }
+                        "description" => {
+                            self.advance();
+                            rel.description = self.consume_string();
+                        }
+                        "technology" => {
+                            self.advance();
+                            rel.technology = self.consume_string();
+                        }
+                        "url" => {
+                            self.advance();
+                            rel.url = self.consume_string();
+                        }
+                        "tags" => {
+                            self.advance();
+                            let mut new_tags: Vec<String> = Vec::new();
+                            // Accept multiple quoted/textblock strings, each optionally comma-separated.
+                            while matches!(self.peek(), Some(Token::Quoted(_)) | Some(Token::TextBlock(_))) {
+                                if let Some(t) = self.consume_string() {
+                                    for part in t.split(',') {
+                                        let p = part.trim().to_string();
+                                        if !p.is_empty() { new_tags.push(p); }
+                                    }
+                                }
+                            }
+                            if !new_tags.is_empty() {
+                                let extra = new_tags.join(",");
+                                let base  = rel.tags.as_deref().unwrap_or("Relationship");
+                                rel.tags  = Some(format!("{},{}", base, extra));
+                            }
+                        }
+                        "properties" => {
+                            self.advance();
+                            let props = self.parse_properties_block_body()?;
+                            let existing = rel.properties.get_or_insert_with(HashMap::new);
+                            existing.extend(props);
+                        }
+                        _ => {
+                            // lenient: skip unknown keyword + optional value/block
+                            self.advance();
+                            self.skip_optional_block_or_value();
+                        }
+                    }
+                }
+                Some(Token::Directive(_)) => {
+                    self.advance();
+                    self.skip_directive_args();
+                }
+                _ => {
+                    self.advance();
+                }
+            }
+        }
+        self.expect_close_brace()?;
+        Ok(())
+    }
+
+    /// Try to consume a common element-level attribute keyword into `extras`.
+    /// Returns `true` if a keyword was consumed, `false` if the current token
+    /// did not match (caller should fall through to its existing logic).
+    ///
+    /// `element_id` and `ident_paths` identify the element whose body is being
+    /// parsed; they are used to register ports as soon as they are declared so
+    /// that later relationships can reference `<element>.<port>`.
+    fn try_parse_common_element_keyword(
+        &mut self,
+        extras: &mut ElementExtras,
+        element_id: &str,
+        ident_paths: &[String],
+    ) -> Result<bool, ParseError> {
+        match self.peek() {
+            Some(Token::Word(w)) => {
+                let w = w.to_lowercase();
+                match w.as_str() {
+                    "port" => {
+                        self.advance();
+                        let (port_ident, port) = self.parse_port()?;
+                        if !port_ident.is_empty() {
+                            for path in ident_paths {
+                                if path.is_empty() {
+                                    continue;
+                                }
+                                self.port_register.insert(
+                                    format!("{}.{}", path, port_ident).to_lowercase(),
+                                    (element_id.to_string(), port.id.clone()),
+                                );
+                            }
+                        }
+                        extras.ports.push((port_ident, port));
+                        Ok(true)
+                    }
+                    "status" => {
+                        self.advance();
+                        extras.status = Some(self.parse_status_value()?);
+                        Ok(true)
+                    }
+                    "description" => {
+                        self.advance();
+                        extras.description = self.consume_string();
+                        Ok(true)
+                    }
+                    "technology" => {
+                        self.advance();
+                        extras.technology = self.consume_string();
+                        Ok(true)
+                    }
+                    "url" => {
+                        self.advance();
+                        extras.url = self.consume_string();
+                        Ok(true)
+                    }
+                    "tags" => {
+                        self.advance();
+                        while matches!(self.peek(), Some(Token::Quoted(_)) | Some(Token::TextBlock(_))) {
+                            if let Some(t) = self.consume_string() {
+                                for part in t.split(',') {
+                                    let p = part.trim().to_string();
+                                    if !p.is_empty() { extras.tags_extra.push(p); }
+                                }
+                            }
+                        }
+                        Ok(true)
+                    }
+                    "introduced" => {
+                        self.advance();
+                        extras.introduced = self.consume_bare_word_or_string();
+                        Ok(true)
+                    }
+                    "retired" => {
+                        self.advance();
+                        extras.retired = self.consume_bare_word_or_string();
+                        Ok(true)
+                    }
+                    "perspective" => {
+                        self.advance();
+                        let p = self.parse_one_perspective();
+                        extras.perspectives.push(p);
+                        Ok(true)
+                    }
+                    "perspectives" => {
+                        // Block form: `perspectives { "name" ["desc" ["value"]] ... }`
+                        self.advance();
+                        self.expect_open_brace()?;
+                        while !self.peek_close_brace() && self.peek().is_some() {
+                            let p = self.parse_one_perspective();
+                            extras.perspectives.push(p);
+                        }
+                        self.expect_close_brace()?;
+                        Ok(true)
+                    }
+                    _ => Ok(false),
+                }
+            }
+            _ => Ok(false),
+        }
+    }
+}
+
+/// Merge a kind alias's tags into `tags` and record the alias name in the
+/// element's `kind` property.
+fn apply_alias_to_tags_props(
+    alias_name: &str,
+    alias: &KindAlias,
+    tags: &mut Option<String>,
+    properties: &mut Option<HashMap<String, String>>,
+) {
+    if let Some(alias_tags) = &alias.tags {
+        *tags = Some(match tags.take() {
+            Some(t) => format!("{},{}", t, alias_tags),
+            None => alias_tags.clone(),
+        });
+    }
+    properties
+        .get_or_insert_with(HashMap::new)
+        .insert("kind".to_string(), alias_name.to_string());
 }
 
 #[allow(dead_code)]
@@ -2567,7 +3442,6 @@ fn is_view_block_keyword(w: &str) -> bool {
     matches!(
         w.to_lowercase().as_str(),
         "autolayout"
-            | "autolayout"
             | "exclude"
             | "animation"
             | "title"

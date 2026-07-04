@@ -14,6 +14,7 @@ pub enum ElementType {
     CustomElement,
     DeploymentEnvironment,
     Group,
+    Relationship,
 }
 
 /// Registry of identifier → element id mappings.
