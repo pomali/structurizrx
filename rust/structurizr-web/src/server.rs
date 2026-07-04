@@ -36,12 +36,21 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/workspace/{name}/decisions", get(api_decisions_handler))
         .route("/api/workspace/{name}/decisions/{id}", get(api_decision_handler))
         .route("/api/workspace/{name}/diagram/{key}/svg", get(api_diagram_svg_handler))
+        .route("/llms.txt", get(llms_txt_handler))
         .route("/static/{*path}", get(static_handler))
         .route("/ws", get(ws_handler))
         .with_state(state)
 }
 
 // ---- Page handlers ----
+
+/// The one-page DSL extension cheat sheet (spec §9.4), for agents and humans.
+async fn llms_txt_handler() -> ([(axum::http::HeaderName, &'static str); 1], &'static str) {
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        include_str!("../../../llms.txt"),
+    )
+}
 
 async fn index_handler() -> Html<&'static str> {
     Html(INDEX_HTML)

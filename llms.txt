@@ -1,0 +1,81 @@
+# StructurizrX DSL — extension cheat sheet
+
+StructurizrX reads standard Structurizr DSL (workspace/model/views, person,
+softwareSystem, container, component, group, deployment, styles, !docs, !adrs,
+!include) plus the extensions below. Full design: docs/SPEC.md.
+
+## Sketch mode (vague ideas)
+A file with no `workspace` block is a sketch — just write arrows; unknown names
+become placeholder systems, `?` marks uncertainty, one landscape view is
+generated:
+    customer -> shop "buys things"
+    shop -> billing "somehow charges" ?
+Inside a full workspace, add `!sketch` to opt into placeholder auto-creation
+(default is strict: unknown identifier = error).
+
+## Element extras (in any element body)
+    api = container "API" {
+        status idea                  // idea|draft|specified|implemented|deprecated
+        introduced billingSplit      // milestone name (see milestones)
+        retired target
+        perspective "security" "rate-limited"   // quality-attribute note
+        port rest "Customer REST API" {          // named interaction point
+            protocol "HTTPS/JSON"
+            direction in             // in|out|inout (default)
+        }
+        technology "Rust"  description "..."  tags "Core"  url "..."
+    }
+
+## Relationships
+    web -> api.rest "calls"                    // attach to a port via dot
+    orderFlow = api -> billing "OrderPlaced" { // named; body is optional
+        kind async        // sync|async|publish|subscribe|dataflow|dependency|deploy
+        status specified
+        introduced billingSplit
+        perspective "reliability" "at-least-once"
+        tags "Critical"  technology "Kafka"  properties { owner "team-x" }
+    }
+    a -> b "maybe" ?                           // uncertain relationship
+
+## Workspace-level blocks
+    milestones {                       // ordered; dates are optional labels
+        mvp "2026-08"
+        billingSplit "2026-12" "Billing extracted"
+    }
+    perspectives { security "STRIDE-reviewed"  performance }   // registry
+    specification {                    // vocabulary aliases (sugar over C4)
+        kind queue container { tags "Queue,Connector" technology "Kafka" }
+    }
+    // then: orders = queue "Order queue"
+
+## Generated views (views block)
+    views {
+        auto                                  // zoom set: landscape + context/
+                                              // container/component per element
+        auto focus api { depth 2 direction in splitBy kind asof mvp }
+        auto perspective "security"           // or: auto perspective *
+        auto layer "domain"                   // group name or layer property
+        auto slice element.status==idea       // any selector expression
+        auto paths user db                    // everything on any user→db path
+        auto asof billingSplit                // model at a milestone
+        auto delta now billingSplit           // migration view (adds/removes)
+        auto lint                             // placeholders, orphans, unbound ports
+    }
+No `views` block at all = the `auto` zoom set.
+
+## Selector expressions (views `slice`, CLI query)
+    element.tag==Database   element.kind==queue      element.status==idea
+    element.layer==domain   element.parent==shop     element.parent^==shop
+    element.name==API       element.technology==Kafka
+    element.perspective==security   element.property.owner==team-x
+    relationship.kind==async        relationship.tag==critical
+    ->api->        ->api->2         *        a && b   a || b   !a   ( )
+Well-known properties: `owner`, `layer`.
+
+## CLI
+    structurizrx validate ws.dsl              # machine-fixable errors
+    structurizrx digest ws.dsl                # compact model summary for LLMs
+    structurizrx query ws.dsl "->api->2"      # run a selector, list matches
+    structurizrx render ws.dsl --format svg|mermaid|plantuml|dot --output out/
+    structurizrx export ws.dsl                # JSON (superset of Structurizr)
+    structurizrx serve ws.dsl --port 3000     # live-reload web viewer
