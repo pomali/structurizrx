@@ -198,10 +198,32 @@ fn emit_rel(rel: &Relationship, out: &mut String) {
     let dst = safe_alias(&rel.destination_id);
     let desc = rel.description.as_deref().unwrap_or("");
     let tech = rel.technology.as_deref().unwrap_or("");
-    if tech.is_empty() {
+    // C4-PlantUML has no dotted Rel variant; surface the kind in the
+    // technology slot instead (spec §5.2 → PlantUML mapping).
+    let kind = rel.kind.map(kind_label);
+    let tech_full = match (tech.is_empty(), kind) {
+        (true, None) => String::new(),
+        (true, Some(k)) => k.to_string(),
+        (false, None) => tech.to_string(),
+        (false, Some(k)) => format!("{}, {}", tech, k),
+    };
+    if tech_full.is_empty() {
         out.push_str(&format!("Rel({}, {}, \"{}\")\n", src, dst, desc));
     } else {
-        out.push_str(&format!("Rel({}, {}, \"{}\", \"{}\")\n", src, dst, desc, tech));
+        out.push_str(&format!("Rel({}, {}, \"{}\", \"{}\")\n", src, dst, desc, tech_full));
+    }
+}
+
+fn kind_label(k: structurizr_model::RelationshipKind) -> &'static str {
+    use structurizr_model::RelationshipKind::*;
+    match k {
+        Sync => "sync",
+        Async => "async",
+        Publish => "publish",
+        Subscribe => "subscribe",
+        Dataflow => "dataflow",
+        Dependency => "dependency",
+        Deploy => "deploy",
     }
 }
 

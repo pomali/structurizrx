@@ -41,6 +41,8 @@ struct Node {
     is_person: bool,
     x: i32,
     y: i32,
+    /// stroke-dasharray for sketchy/uncertain elements (spec §4.2 theming).
+    dash: Option<&'static str>,
 }
 
 impl Node {
@@ -58,6 +60,34 @@ struct Edge {
     dst_id: String,
     label: String,
     technology: String,
+    /// stroke-dasharray: async-family kinds and uncertain relationships render dashed.
+    dash: Option<&'static str>,
+}
+
+/// Default dash theming: ideas/drafts and placeholders render sketchy (spec §4.2).
+fn dash_for(status: Option<structurizr_model::Status>, tags: Option<&str>) -> Option<&'static str> {
+    let has_tag = |t: &str| {
+        tags.map(|ts| ts.split(',').any(|x| x.trim() == t)).unwrap_or(false)
+    };
+    if has_tag("Placeholder") || has_tag("Uncertain") {
+        return Some("3,4");
+    }
+    match status {
+        Some(structurizr_model::Status::Idea) | Some(structurizr_model::Status::Draft) => Some("8,5"),
+        _ => None,
+    }
+}
+
+/// Async-family relationship kinds render dashed, matching common C4 practice.
+fn edge_dash(rel: &Relationship) -> Option<&'static str> {
+    if rel.tags.as_deref().map(|ts| ts.split(',').any(|x| x.trim() == "Uncertain")).unwrap_or(false) {
+        return Some("3,4");
+    }
+    use structurizr_model::RelationshipKind::*;
+    match rel.kind {
+        Some(Async) | Some(Publish) | Some(Subscribe) | Some(Dataflow) => Some("7,5"),
+        _ => None,
+    }
 }
 
 // ── Public exporter ──────────────────────────────────────────────────────────
@@ -126,6 +156,7 @@ fn render_landscape(title: &str, view: &SystemLandscapeView, workspace: &Workspa
                 is_person: true,
                 x: 0,
                 y: 0,
+                dash: dash_for(p.status, p.tags.as_deref()),
             });
         }
     }
@@ -146,6 +177,7 @@ fn render_landscape(title: &str, view: &SystemLandscapeView, workspace: &Workspa
                 is_person: false,
                 x: 0,
                 y: 0,
+                dash: dash_for(ss.status, ss.tags.as_deref()),
             });
         }
     }
@@ -187,6 +219,7 @@ fn render_system_context(title: &str, view: &SystemContextView, workspace: &Work
                 is_person: true,
                 x: 0,
                 y: 0,
+                dash: dash_for(p.status, p.tags.as_deref()),
             });
         }
     }
@@ -208,6 +241,7 @@ fn render_system_context(title: &str, view: &SystemContextView, workspace: &Work
                     is_person: false,
                     x: 0,
                     y: 0,
+                    dash: dash_for(ss.status, ss.tags.as_deref()),
                 });
             } else {
                 let s = resolve_node_style(ss.tags.as_deref(), "Software System", styles, COLOR_SYSTEM_EXT, COLOR_TEXT_LIGHT);
@@ -221,6 +255,7 @@ fn render_system_context(title: &str, view: &SystemContextView, workspace: &Work
                     is_person: false,
                     x: 0,
                     y: 0,
+                    dash: dash_for(ss.status, ss.tags.as_deref()),
                 });
             }
         }
@@ -268,6 +303,7 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
                 is_person: true,
                 x: 0,
                 y: 0,
+                dash: dash_for(p.status, p.tags.as_deref()),
             });
         }
     }
@@ -298,6 +334,7 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
                             is_person: false,
                             x: 0,
                             y: 0,
+                            dash: dash_for(c.status, c.tags.as_deref()),
                         });
                     }
                 }
@@ -316,6 +353,7 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
                     is_person: false,
                     x: 0,
                     y: 0,
+                    dash: dash_for(ss.status, ss.tags.as_deref()),
                 });
             }
         }
@@ -531,6 +569,7 @@ fn collect_rels(rels: &Option<Vec<Relationship>>, edges: &mut Vec<Edge>, rel_fil
                 dst_id: r.destination_id.clone(),
                 label: r.description.clone().unwrap_or_default(),
                 technology: r.technology.clone().unwrap_or_default(),
+                dash: edge_dash(r),
             });
         }
     }
@@ -718,10 +757,14 @@ fn render_svg(
         let (x1, y1) = edge_point(src.cx(), src.cy(), dst.cx(), dst.cy());
         let (x2, y2) = edge_point(dst.cx(), dst.cy(), src.cx(), src.cy());
 
+        let dash_attr = edge
+            .dash
+            .map(|d| format!(r#" stroke-dasharray="{}""#, d))
+            .unwrap_or_default();
         svg.push_str(&format!(
-            r##"    <line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+            r##"    <line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="1.5"{} marker-end="url(#arrowhead)"/>
 "##,
-            x1, y1, x2, y2, COLOR_ARROW
+            x1, y1, x2, y2, COLOR_ARROW, dash_attr
         ));
 
         // Edge label
@@ -764,10 +807,14 @@ fn render_node(svg: &mut String, node: &Node) {
     if node.is_person {
         render_person_shape(svg, node);
     } else {
+        let dash_attr = node
+            .dash
+            .map(|d| format!(r#" stroke-dasharray="{}""#, d))
+            .unwrap_or_default();
         svg.push_str(&format!(
-            r##"    <rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}" stroke-width="1.5" rx="4"/>
+            r##"    <rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}" stroke-width="1.5"{} rx="4"/>
 "##,
-            x, y, BOX_W, BOX_H, node.fill, node.stroke
+            x, y, BOX_W, BOX_H, node.fill, node.stroke, dash_attr
         ));
     }
 

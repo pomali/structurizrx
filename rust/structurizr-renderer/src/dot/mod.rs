@@ -109,7 +109,20 @@ fn emit_dot_rel(rel: &Relationship, out: &mut String, styles: Option<&Styles>) {
     let src = safe_alias(&rel.source_id);
     let dst = safe_alias(&rel.destination_id);
     let desc = rel.description.as_deref().unwrap_or("");
-    let edge_attrs = rel_style_attrs(rel.tags.as_deref(), styles);
+    let mut edge_attrs = rel_style_attrs(rel.tags.as_deref(), styles);
+    // Async-family kinds render dashed (spec §5.2 → DOT mapping).
+    {
+        use structurizr_model::RelationshipKind::*;
+        if matches!(rel.kind, Some(Async) | Some(Publish) | Some(Subscribe) | Some(Dataflow))
+            && !edge_attrs.contains("style=")
+        {
+            if edge_attrs.is_empty() {
+                edge_attrs = " [style=dashed]".to_string();
+            } else {
+                edge_attrs = edge_attrs.replacen('[', "[style=dashed, ", 1);
+            }
+        }
+    }
     if desc.is_empty() {
         out.push_str(&format!("    {} -> {}{};\n", src, dst, edge_attrs));
     } else {

@@ -166,10 +166,14 @@ fn emit_mermaid_rel(rel: &Relationship, out: &mut String) {
     let src = safe_alias(&rel.source_id);
     let dst = safe_alias(&rel.destination_id);
     let desc = rel.description.as_deref().unwrap_or("");
+    // Async-family kinds render as dotted arrows (spec §5.2 → mermaid mapping).
+    use structurizr_model::RelationshipKind::*;
+    let dotted = matches!(rel.kind, Some(Async) | Some(Publish) | Some(Subscribe) | Some(Dataflow));
+    let arrow = if dotted { "-.->" } else { "-->" };
     if desc.is_empty() {
-        out.push_str(&format!("    {} --> {}\n", src, dst));
+        out.push_str(&format!("    {} {} {}\n", src, arrow, dst));
     } else {
-        out.push_str(&format!("    {} -->|\"{}\"|{}\n", src, desc, dst));
+        out.push_str(&format!("    {} {}|\"{}\"|{}\n", src, arrow, desc, dst));
     }
 }
 
