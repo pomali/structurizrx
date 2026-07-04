@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>{{WORKSPACE_NAME}} – Canvas demo</title>
+    <link rel="icon" type="image/png" href="/static/img/favicon.png"/>
+    <link rel="stylesheet" href="/static/css/bootstrap-5.3.7.min.css"/>
+    <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr.css"/>
+    <style>
+        #canvas-wrap { padding: 1.5rem; }
+        canvas {
+            display: block;
+            max-width: 100%;
+            border: 1px solid var(--bs-border-color);
+            border-radius: 0.375rem;
+            box-shadow: 0 2px 6px rgba(0,0,0,.08);
+        }
+    </style>
+</head>
+<body>
+
+<!-- Top bar -->
+<nav class="navbar navbar-expand-sm bg-body-tertiary border-bottom px-3 py-1">
+    <a class="navbar-brand fw-semibold text-decoration-none me-3" href="/">
+        <img src="/static/img/structurizr-logo.png" alt="" height="22" class="me-1"/>
+    </a>
+    <a class="btn btn-sm btn-outline-secondary me-2"
+       href="/workspace/{{WORKSPACE_SLUG}}">
+        <i class="bi bi-arrow-left"></i> {{WORKSPACE_NAME}}
+    </a>
+    <span class="navbar-text">
+        Canvas demo &mdash; <code>render_to_canvas</code>
+    </span>
+</nav>
+
+<div id="canvas-wrap">
+    <p id="status" class="text-secondary small mb-3">Loading…</p>
+    <canvas id="diagram-canvas"></canvas>
+</div>
+
+<script type="module">
+const WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
+
+async function render() {
+    const statusEl = document.getElementById('status');
+
+    // ── Load WASM module ──────────────────────────────────────────────────────
+    statusEl.textContent = 'Loading WASM module…';
+    let mod;
+    try {
+        mod = await import('/static/wasm/structurizr_wasm.js');
+        await mod.default();   // initialise the WASM binary
+    } catch (e) {
+        statusEl.innerHTML =
+            '<strong>WASM module not available.</strong><br>' +
+            'Build it once with:<br>' +
+            '<code>wasm-pack build rust/structurizr-wasm --target web ' +
+            '--out-dir rust/structurizr-web/assets/wasm</code><br>' +
+            'Then rebuild and restart the server, and reload this page.<br>' +
+            '<span class="text-danger">(' + e.message + ')</span>';
+        return;
+    }
+
+    // ── Fetch workspace JSON from the API ─────────────────────────────────────
+    statusEl.textContent = 'Fetching workspace…';
+    let workspaceJson;
+    try {
+        const resp = await fetch(
+            '/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG)
+        );
+        if (!resp.ok) {
+            throw new Error('HTTP ' + resp.status + ' – ' + resp.statusText);
+        }
+        workspaceJson = JSON.stringify(await resp.json());
+    } catch (e) {
+        statusEl.textContent = 'Failed to load workspace: ' + e.message;
+        return;
+    }
+
+    // ── Render to canvas ──────────────────────────────────────────────────────
+    statusEl.textContent = 'Rendering…';
+    try {
+        mod.render_to_canvas('diagram-canvas', workspaceJson);
+        statusEl.textContent = 'render_to_canvas completed successfully.';
+    } catch (e) {
+        statusEl.textContent = 'render_to_canvas threw: ' + e;
+    }
+}
+
+render().catch(e => {
+    document.getElementById('status').textContent =
+        'Unexpected error: ' + e.message;
+});
+
+// ── WebSocket live reload ─────────────────────────────────────────────────────
+(function connectWs() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(proto + '://' + location.host + '/ws');
+    ws.onmessage = e => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'reload') render();
+    };
+    ws.onclose = () => setTimeout(connectWs, 2000);
+})();
+</script>
+</body>
+</html>
