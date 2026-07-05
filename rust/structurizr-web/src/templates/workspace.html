@@ -64,8 +64,8 @@
 
         <div class="d-flex align-items-center gap-2 ms-2 flex-shrink-0">
             <span class="badge bg-secondary d-none" id="view-type-badge"></span>
-            <a class="btn btn-sm btn-outline-secondary d-none" id="btnDownloadSvg" title="Download diagram as SVG" download>
-                <i class="bi bi-download"></i>
+            <a class="btn btn-sm btn-outline-secondary d-none" id="btnDownloadSvg" title="Open diagram SVG in a new tab" target="_blank" rel="noopener noreferrer">
+                <i class="bi bi-box-arrow-up-right"></i>
             </a>
             <button class="btn btn-sm btn-outline-secondary" id="btnFitView" title="Fit diagram (F)">
                 <i class="bi bi-fullscreen"></i>
@@ -410,7 +410,6 @@
             setStatus(title + (view.description ? ' – ' + view.description : ''));
             svgBtn.href = '/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG) +
                           '/diagram/' + encodeURIComponent(key) + '/svg';
-            svgBtn.setAttribute('download', key + '.svg');
             svgBtn.classList.remove('d-none');
         } else {
             badge.classList.add('d-none');

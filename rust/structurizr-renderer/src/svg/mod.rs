@@ -7,50 +7,82 @@ use crate::exporter::DiagramExporter;
 
 // ── Layout constants ─────────────────────────────────────────────────────────
 
-const BOX_W: i32 = 160;
-const BOX_H: i32 = 80;
-const H_GAP: i32 = 60;
-const V_GAP: i32 = 100;
-const MARGIN: i32 = 60;
-const COLS: usize = 4;
-const BOUNDARY_LABEL_HEIGHT: i32 = 16;
-const PERSON_HEAD_RADIUS: i32 = 12;
+const NODE_W: i32 = 230;
+const NODE_MIN_H: i32 = 70;
+const PAD_X: f64 = 14.0;
+const H_GAP: i32 = 44;
+const V_GAP: i32 = 96;
+const MARGIN: i32 = 40;
+const TITLE_H: i32 = 48;
+const GRID_COLS: usize = 4;
+const BOUNDARY_PAD: i32 = 26;
+const BOUNDARY_LABEL_HEIGHT: i32 = 18;
+const PERSON_HEAD_RADIUS: i32 = 17;
+/// The head circle centre sits this far above the box top edge.
+const PERSON_HEAD_OVERLAP: i32 = 6;
+/// Perpendicular spacing between parallel edges connecting the same node pair.
+const EDGE_SPREAD: f64 = 30.0;
+/// Maximum pixel width of a wrapped edge-label line.
+const EDGE_LABEL_W: f64 = 180.0;
+
+// Font sizes / line heights (Arial-ish metrics).
+const FS_TITLE: f64 = 18.0;
+const FS_NAME: f64 = 14.0;
+const FS_META: f64 = 11.0;
+const FS_DESC: f64 = 11.0;
+const FS_EDGE: f64 = 10.5;
+const LH_NAME: i32 = 18;
+const LH_SMALL: i32 = 14;
 
 // ── C4 colour palette ────────────────────────────────────────────────────────
 
 const COLOR_PERSON: &str = "#08427B";
 const COLOR_SYSTEM: &str = "#1168BD";
-const COLOR_SYSTEM_EXT: &str = "#666666";
+const COLOR_SYSTEM_EXT: &str = "#999999";
 const COLOR_CONTAINER: &str = "#438DD5";
 const COLOR_TEXT_LIGHT: &str = "#ffffff";
 const COLOR_BOUNDARY_FILL: &str = "#ffffff";
-const COLOR_BOUNDARY_STROKE: &str = "#cccccc";
+const COLOR_BOUNDARY_STROKE: &str = "#bbbbbb";
 const COLOR_ARROW: &str = "#555555";
 const COLOR_TITLE: &str = "#333333";
+const COLOR_BG: &str = "#f8f8f8";
 
 // ── Internal node/edge types ─────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 struct Node {
     id: String,
-    name: String,
-    type_label: String,
     fill: String,
     stroke: String,
     text_color: String,
     is_person: bool,
     x: i32,
     y: i32,
+    w: i32,
+    h: i32,
+    /// Height of the wrapped text block, used to vertically centre it in the box.
+    content_h: i32,
+    name_lines: Vec<String>,
+    meta_lines: Vec<String>,
+    desc_lines: Vec<String>,
     /// stroke-dasharray for sketchy/uncertain elements (spec §4.2 theming).
     dash: Option<&'static str>,
 }
 
 impl Node {
     fn cx(&self) -> i32 {
-        self.x + BOX_W / 2
+        self.x + self.w / 2
     }
     fn cy(&self) -> i32 {
-        self.y + BOX_H / 2
+        self.y + self.h / 2
+    }
+    /// Vertical extent above `y` (person head protrusion).
+    fn top_overhang(&self) -> i32 {
+        if self.is_person {
+            PERSON_HEAD_RADIUS + PERSON_HEAD_OVERLAP
+        } else {
+            0
+        }
     }
 }
 
@@ -98,6 +130,197 @@ fn edge_dash(rel: &Relationship) -> Option<&'static str> {
     }
 }
 
+// ── Text measurement & wrapping ──────────────────────────────────────────────
+
+/// Approximate advance width of a character as a fraction of the font size
+/// (Arial-like proportions — close enough for box sizing and label halos).
+fn char_w(c: char) -> f64 {
+    match c {
+        'i' | 'l' | 'j' | '!' | '\'' | '|' | '.' | ',' | ':' | ';' => 0.30,
+        'f' | 't' | 'r' | 'I' | '(' | ')' | '[' | ']' | '{' | '}' | '/' | '\\' | ' ' => 0.40,
+        'm' | 'w' => 0.82,
+        'M' | 'W' => 0.95,
+        'A'..='Z' => 0.68,
+        '0'..='9' => 0.56,
+        _ => 0.54,
+    }
+}
+
+fn text_width(s: &str, font_size: f64) -> f64 {
+    s.chars().map(char_w).sum::<f64>() * font_size
+}
+
+/// Greedy word wrap to `max_w` pixels; words wider than a line are hard-split.
+fn wrap_text(text: &str, max_w: f64, font_size: f64) -> Vec<String> {
+    // First break oversized words into fragments that fit on a line.
+    let mut words: Vec<String> = Vec::new();
+    for w in text.split_whitespace() {
+        if text_width(w, font_size) <= max_w {
+            words.push(w.to_string());
+            continue;
+        }
+        let mut piece = String::new();
+        for ch in w.chars() {
+            piece.push(ch);
+            if text_width(&piece, font_size) > max_w && piece.chars().count() > 1 {
+                let last = piece.pop().unwrap();
+                words.push(std::mem::take(&mut piece));
+                piece.push(last);
+            }
+        }
+        if !piece.is_empty() {
+            words.push(piece);
+        }
+    }
+
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for w in words {
+        if cur.is_empty() {
+            cur = w;
+            continue;
+        }
+        let cand = format!("{cur} {w}");
+        if text_width(&cand, font_size) <= max_w {
+            cur = cand;
+        } else {
+            lines.push(std::mem::take(&mut cur));
+            cur = w;
+        }
+    }
+    if !cur.is_empty() {
+        lines.push(cur);
+    }
+    lines
+}
+
+/// Truncate to `max` lines, ellipsizing the last kept line.
+fn clamp_lines(mut lines: Vec<String>, max: usize) -> Vec<String> {
+    if lines.len() > max {
+        lines.truncate(max);
+        if let Some(last) = lines.last_mut() {
+            last.push('…');
+        }
+    }
+    lines
+}
+
+// ── Node construction ────────────────────────────────────────────────────────
+
+/// Build a sized node: wrap the name/type/description and derive box height.
+fn make_node(
+    id: &str,
+    name: &str,
+    type_label: &str,
+    description: Option<&str>,
+    style: ResolvedNodeStyle,
+    is_person: bool,
+    dash: Option<&'static str>,
+) -> Node {
+    let inner = NODE_W as f64 - 2.0 * PAD_X;
+    let name_lines = clamp_lines(wrap_text(name, inner, FS_NAME), 3);
+    let meta_lines = clamp_lines(wrap_text(&format!("[{type_label}]"), inner, FS_META), 2);
+    let desc_lines = match description {
+        Some(d) if !d.trim().is_empty() => clamp_lines(wrap_text(d, inner, FS_DESC), 3),
+        _ => Vec::new(),
+    };
+    let mut content_h =
+        name_lines.len() as i32 * LH_NAME + meta_lines.len() as i32 * LH_SMALL;
+    if !desc_lines.is_empty() {
+        content_h += 6 + desc_lines.len() as i32 * LH_SMALL;
+    }
+    let h = (content_h + 26).max(NODE_MIN_H);
+    Node {
+        id: id.to_string(),
+        fill: style.fill,
+        stroke: style.stroke,
+        text_color: style.text_color,
+        is_person,
+        x: 0,
+        y: 0,
+        w: NODE_W,
+        h,
+        content_h,
+        name_lines,
+        meta_lines,
+        desc_lines,
+        dash,
+    }
+}
+
+fn person_node(p: &Person, styles: Option<&Styles>) -> Node {
+    let s = resolve_node_style(p.tags.as_deref(), "Person", styles, COLOR_PERSON, COLOR_TEXT_LIGHT);
+    make_node(
+        &p.id,
+        &p.name,
+        "Person",
+        p.description.as_deref(),
+        s,
+        true,
+        dash_for(p.status, p.tags.as_deref()),
+    )
+}
+
+fn system_node(ss: &SoftwareSystem, styles: Option<&Styles>, default_fill: &str) -> Node {
+    let s = resolve_node_style(ss.tags.as_deref(), "Software System", styles, default_fill, COLOR_TEXT_LIGHT);
+    make_node(
+        &ss.id,
+        &ss.name,
+        "Software System",
+        ss.description.as_deref(),
+        s,
+        false,
+        dash_for(ss.status, ss.tags.as_deref()),
+    )
+}
+
+fn container_node(c: &Container, styles: Option<&Styles>) -> Node {
+    let type_label = match c.technology.as_deref().filter(|t| !t.is_empty()) {
+        Some(t) => format!("Container: {t}"),
+        None => "Container".to_string(),
+    };
+    let s = resolve_node_style(c.tags.as_deref(), "Container", styles, COLOR_CONTAINER, COLOR_TEXT_LIGHT);
+    make_node(
+        &c.id,
+        &c.name,
+        &type_label,
+        c.description.as_deref(),
+        s,
+        false,
+        dash_for(c.status, c.tags.as_deref()),
+    )
+}
+
+fn component_node(comp: &Component, styles: Option<&Styles>) -> Node {
+    let type_label = match comp.technology.as_deref().filter(|t| !t.is_empty()) {
+        Some(t) => format!("Component: {t}"),
+        None => "Component".to_string(),
+    };
+    let s = resolve_node_style(comp.tags.as_deref(), "Component", styles, COLOR_CONTAINER, COLOR_TEXT_LIGHT);
+    make_node(
+        &comp.id,
+        &comp.name,
+        &type_label,
+        comp.description.as_deref(),
+        s,
+        false,
+        dash_for(comp.status, comp.tags.as_deref()),
+    )
+}
+
+fn custom_node(ce: &CustomElement, styles: Option<&Styles>) -> Node {
+    let s = resolve_node_style(ce.tags.as_deref(), "Element", styles, COLOR_SYSTEM_EXT, COLOR_TEXT_LIGHT);
+    make_node(
+        &ce.id,
+        &ce.name,
+        "Element",
+        ce.description.as_deref(),
+        s,
+        false,
+        dash_for(ce.status, ce.tags.as_deref()),
+    )
+}
+
 // ── Public exporter ──────────────────────────────────────────────────────────
 
 /// SVG diagram exporter — produces standalone SVG files with no external tooling required.
@@ -139,6 +362,144 @@ impl DiagramExporter for SvgExporter {
     }
 }
 
+// ── View scoping helpers ─────────────────────────────────────────────────────
+
+/// Every relationship in the model, at any nesting level.
+fn all_relationships(model: &Model) -> Vec<&Relationship> {
+    let mut out = Vec::new();
+    for p in model.people.iter().flatten() {
+        out.extend(p.relationships.iter().flatten());
+    }
+    for ss in model.software_systems.iter().flatten() {
+        out.extend(ss.relationships.iter().flatten());
+        for c in ss.containers.iter().flatten() {
+            out.extend(c.relationships.iter().flatten());
+            for comp in c.components.iter().flatten() {
+                out.extend(comp.relationships.iter().flatten());
+            }
+        }
+    }
+    for ce in model.custom_elements.iter().flatten() {
+        out.extend(ce.relationships.iter().flatten());
+    }
+    out
+}
+
+/// Map every element id to its top-level owner (person / software system / custom element).
+fn top_level_owner(model: &Model) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for p in model.people.iter().flatten() {
+        map.insert(p.id.clone(), p.id.clone());
+    }
+    for ss in model.software_systems.iter().flatten() {
+        map.insert(ss.id.clone(), ss.id.clone());
+        for c in ss.containers.iter().flatten() {
+            map.insert(c.id.clone(), ss.id.clone());
+            for comp in c.components.iter().flatten() {
+                map.insert(comp.id.clone(), ss.id.clone());
+            }
+        }
+    }
+    for ce in model.custom_elements.iter().flatten() {
+        map.insert(ce.id.clone(), ce.id.clone());
+    }
+    map
+}
+
+/// Elements in scope for a system context view without an explicit element list:
+/// the focal system plus every top-level element related to it (directly or via
+/// a relationship involving one of its containers/components).
+fn context_scope(model: &Model, focal_id: &str) -> HashSet<String> {
+    let owner = top_level_owner(model);
+    let mut scope = HashSet::new();
+    scope.insert(focal_id.to_string());
+    for r in all_relationships(model) {
+        if let (Some(src), Some(dst)) = (owner.get(&r.source_id), owner.get(&r.destination_id)) {
+            if src == focal_id && dst != focal_id {
+                scope.insert(dst.clone());
+            } else if dst == focal_id && src != focal_id {
+                scope.insert(src.clone());
+            }
+        }
+    }
+    scope
+}
+
+/// Elements in scope for a container view without an explicit element list:
+/// the focal system's containers plus related people/external systems.
+fn container_scope(model: &Model, focal_id: &str) -> HashSet<String> {
+    let mut scope = context_scope(model, focal_id);
+    scope.remove(focal_id);
+    for ss in model.software_systems.iter().flatten() {
+        if ss.id == focal_id {
+            for c in ss.containers.iter().flatten() {
+                scope.insert(c.id.clone());
+            }
+        }
+    }
+    scope
+}
+
+/// Map each container/component id to its parent (component → container,
+/// container → software system).  Top-level elements have no entry.
+fn child_parent_map(model: &Model) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for ss in model.software_systems.iter().flatten() {
+        for c in ss.containers.iter().flatten() {
+            map.insert(c.id.clone(), ss.id.clone());
+            for comp in c.components.iter().flatten() {
+                map.insert(comp.id.clone(), c.id.clone());
+            }
+        }
+    }
+    map
+}
+
+/// Lift edge endpoints to their nearest **visible** ancestor — the implied
+/// relationships of upstream Structurizr.  A component→system relationship
+/// renders as container→system in a container view, and so on.  Edges whose
+/// endpoints cannot be lifted into the view, or that collapse onto a single
+/// node, are dropped; lifted duplicates (same endpoints, label and technology)
+/// are deduplicated.
+fn lift_edges(edges: Vec<Edge>, model: &Model, visible: &HashSet<String>) -> Vec<Edge> {
+    let parents = child_parent_map(model);
+    let lift = |id: &str| -> Option<String> {
+        let mut cur = id.to_string();
+        loop {
+            if visible.contains(&cur) {
+                return Some(cur);
+            }
+            cur = parents.get(&cur)?.clone();
+        }
+    };
+    let mut out = Vec::new();
+    let mut seen: HashSet<(String, String, String, String)> = HashSet::new();
+    for mut e in edges {
+        let (Some(src), Some(dst)) = (lift(&e.src_id), lift(&e.dst_id)) else {
+            continue;
+        };
+        if src == dst {
+            continue;
+        }
+        if !seen.insert((src.clone(), dst.clone(), e.label.clone(), e.technology.clone())) {
+            continue;
+        }
+        // A lifted endpoint is no longer the element the port belongs to.
+        if src != e.src_id {
+            e.src_port_id = None;
+            e.src_port_name = None;
+        }
+        if dst != e.dst_id {
+            e.dst_port_id = None;
+            e.dst_port_name = None;
+        }
+        e.src_id = src;
+        e.dst_id = dst;
+        out.push(e);
+    }
+    out
+}
+
 // ── Per-view renderers ────────────────────────────────────────────────────────
 
 fn render_landscape(title: &str, view: &SystemLandscapeView, workspace: &Workspace) -> String {
@@ -148,45 +509,14 @@ fn render_landscape(title: &str, view: &SystemLandscapeView, workspace: &Workspa
     let rel_filter = build_rel_filter(view.relationship_views.as_deref());
     let mut nodes: Vec<Node> = Vec::new();
 
-    if let Some(people) = &model.people {
-        for p in people {
-            if !elem_allowed(&elem_filter, &p.id) {
-                continue;
-            }
-            let s = resolve_node_style(p.tags.as_deref(), "Person", styles, COLOR_PERSON, COLOR_TEXT_LIGHT);
-            nodes.push(Node {
-                id: p.id.clone(),
-                name: p.name.clone(),
-                type_label: "Person".to_string(),
-                fill: s.fill,
-                stroke: s.stroke,
-                text_color: s.text_color,
-                is_person: true,
-                x: 0,
-                y: 0,
-                dash: dash_for(p.status, p.tags.as_deref()),
-            });
+    for p in model.people.iter().flatten() {
+        if elem_allowed(&elem_filter, &p.id) {
+            nodes.push(person_node(p, styles));
         }
     }
-
-    if let Some(systems) = &model.software_systems {
-        for ss in systems {
-            if !elem_allowed(&elem_filter, &ss.id) {
-                continue;
-            }
-            let s = resolve_node_style(ss.tags.as_deref(), "Software System", styles, COLOR_SYSTEM, COLOR_TEXT_LIGHT);
-            nodes.push(Node {
-                id: ss.id.clone(),
-                name: ss.name.clone(),
-                type_label: "Software System".to_string(),
-                fill: s.fill,
-                stroke: s.stroke,
-                text_color: s.text_color,
-                is_person: false,
-                x: 0,
-                y: 0,
-                dash: dash_for(ss.status, ss.tags.as_deref()),
-            });
+    for ss in model.software_systems.iter().flatten() {
+        if elem_allowed(&elem_filter, &ss.id) {
+            nodes.push(system_node(ss, styles, COLOR_SYSTEM));
         }
     }
 
@@ -195,74 +525,39 @@ fn render_landscape(title: &str, view: &SystemLandscapeView, workspace: &Workspa
     // an explicit element list, include those too; without a filter the
     // landscape keeps its classic people+systems scope.
     if elem_filter.is_some() {
-        if let Some(systems) = &model.software_systems {
-            for ss in systems {
-                for c in ss.containers.iter().flatten() {
-                    if elem_allowed(&elem_filter, &c.id) {
-                        let s = resolve_node_style(c.tags.as_deref(), "Container", styles, COLOR_CONTAINER, COLOR_TEXT_LIGHT);
-                        nodes.push(Node {
-                            id: c.id.clone(),
-                            name: c.name.clone(),
-                            type_label: "Container".to_string(),
-                            fill: s.fill,
-                            stroke: s.stroke,
-                            text_color: s.text_color,
-                            is_person: false,
-                            x: 0,
-                            y: 0,
-                            dash: dash_for(c.status, c.tags.as_deref()),
-                        });
-                    }
-                    for comp in c.components.iter().flatten() {
-                        if elem_allowed(&elem_filter, &comp.id) {
-                            let s = resolve_node_style(comp.tags.as_deref(), "Component", styles, COLOR_CONTAINER, COLOR_TEXT_LIGHT);
-                            nodes.push(Node {
-                                id: comp.id.clone(),
-                                name: comp.name.clone(),
-                                type_label: "Component".to_string(),
-                                fill: s.fill,
-                                stroke: s.stroke,
-                                text_color: s.text_color,
-                                is_person: false,
-                                x: 0,
-                                y: 0,
-                                dash: dash_for(comp.status, comp.tags.as_deref()),
-                            });
-                        }
+        for ss in model.software_systems.iter().flatten() {
+            for c in ss.containers.iter().flatten() {
+                if elem_allowed(&elem_filter, &c.id) {
+                    nodes.push(container_node(c, styles));
+                }
+                for comp in c.components.iter().flatten() {
+                    if elem_allowed(&elem_filter, &comp.id) {
+                        nodes.push(component_node(comp, styles));
                     }
                 }
             }
         }
         for ce in model.custom_elements.iter().flatten() {
             if elem_allowed(&elem_filter, &ce.id) {
-                let s = resolve_node_style(ce.tags.as_deref(), "Element", styles, COLOR_SYSTEM_EXT, COLOR_TEXT_LIGHT);
-                nodes.push(Node {
-                    id: ce.id.clone(),
-                    name: ce.name.clone(),
-                    type_label: "Element".to_string(),
-                    fill: s.fill,
-                    stroke: s.stroke,
-                    text_color: s.text_color,
-                    is_person: false,
-                    x: 0,
-                    y: 0,
-                    dash: dash_for(ce.status, ce.tags.as_deref()),
-                });
+                nodes.push(custom_node(ce, styles));
             }
         }
     }
 
-    // Only use auto-layout when no stored positions are available.  Running layout
-    // when some nodes already have explicit coordinates would overwrite those values.
-    let mut edges = if elem_filter.is_some() {
+    let edges = if elem_filter.is_some() {
         collect_all_edges_with_containers(model, rel_filter.as_ref())
     } else {
         collect_all_edges(model, rel_filter.as_ref())
     };
+    let visible: HashSet<String> = nodes.iter().map(|n| n.id.clone()).collect();
+    let mut edges = lift_edges(edges, model, &visible);
     apply_delta_styling(view.properties.as_ref(), &mut nodes, &mut edges);
+
+    // Only use auto-layout when no stored positions are available.  Running layout
+    // when some nodes already have explicit coordinates would overwrite those values.
     let positioned = apply_stored_positions(&mut nodes, &elem_pos);
     if positioned == 0 {
-        layout_hierarchical(&mut nodes, &edges);
+        layout(&mut nodes, &edges, None);
     }
     render_svg(title, &nodes, &edges, None)
 }
@@ -271,81 +566,36 @@ fn render_system_context(title: &str, view: &SystemContextView, workspace: &Work
     let model = &workspace.model;
     let styles = get_styles(workspace);
     let focal_id = &view.software_system_id;
-    let (elem_filter, elem_pos) = build_element_filter(view.element_views.as_deref());
+    let (mut elem_filter, elem_pos) = build_element_filter(view.element_views.as_deref());
     let rel_filter = build_rel_filter(view.relationship_views.as_deref());
 
-    let mut people_nodes: Vec<Node> = Vec::new();
-    let mut focal_node: Option<Node> = None;
-    let mut ext_nodes: Vec<Node> = Vec::new();
+    // Without an explicit element list, scope the view to the focal system and
+    // its direct neighbours rather than dumping the whole model in.
+    if elem_filter.is_none() {
+        elem_filter = Some(context_scope(model, focal_id));
+    }
 
-    if let Some(people) = &model.people {
-        for p in people {
-            if !elem_allowed(&elem_filter, &p.id) {
-                continue;
-            }
-            let s = resolve_node_style(p.tags.as_deref(), "Person", styles, COLOR_PERSON, COLOR_TEXT_LIGHT);
-            people_nodes.push(Node {
-                id: p.id.clone(),
-                name: p.name.clone(),
-                type_label: "Person".to_string(),
-                fill: s.fill,
-                stroke: s.stroke,
-                text_color: s.text_color,
-                is_person: true,
-                x: 0,
-                y: 0,
-                dash: dash_for(p.status, p.tags.as_deref()),
-            });
+    let mut nodes: Vec<Node> = Vec::new();
+    for p in model.people.iter().flatten() {
+        if elem_allowed(&elem_filter, &p.id) {
+            nodes.push(person_node(p, styles));
         }
     }
-
-    if let Some(systems) = &model.software_systems {
-        for ss in systems {
-            if !elem_allowed(&elem_filter, &ss.id) {
-                continue;
-            }
-            if &ss.id == focal_id {
-                let s = resolve_node_style(ss.tags.as_deref(), "Software System", styles, COLOR_SYSTEM, COLOR_TEXT_LIGHT);
-                focal_node = Some(Node {
-                    id: ss.id.clone(),
-                    name: ss.name.clone(),
-                    type_label: "Software System".to_string(),
-                    fill: s.fill,
-                    stroke: s.stroke,
-                    text_color: s.text_color,
-                    is_person: false,
-                    x: 0,
-                    y: 0,
-                    dash: dash_for(ss.status, ss.tags.as_deref()),
-                });
-            } else {
-                let s = resolve_node_style(ss.tags.as_deref(), "Software System", styles, COLOR_SYSTEM_EXT, COLOR_TEXT_LIGHT);
-                ext_nodes.push(Node {
-                    id: ss.id.clone(),
-                    name: ss.name.clone(),
-                    type_label: "Software System".to_string(),
-                    fill: s.fill,
-                    stroke: s.stroke,
-                    text_color: s.text_color,
-                    is_person: false,
-                    x: 0,
-                    y: 0,
-                    dash: dash_for(ss.status, ss.tags.as_deref()),
-                });
-            }
+    for ss in model.software_systems.iter().flatten() {
+        if !elem_allowed(&elem_filter, &ss.id) {
+            continue;
         }
+        let fill = if &ss.id == focal_id { COLOR_SYSTEM } else { COLOR_SYSTEM_EXT };
+        nodes.push(system_node(ss, styles, fill));
     }
 
-    let mut nodes: Vec<Node> = people_nodes;
-    if let Some(fn_) = focal_node {
-        nodes.push(fn_);
-    }
-    nodes.extend(ext_nodes);
-
-    let edges = collect_all_edges(model, rel_filter.as_ref());
+    let edges = collect_all_edges_with_containers(model, rel_filter.as_ref());
+    let visible: HashSet<String> = nodes.iter().map(|n| n.id.clone()).collect();
+    let mut edges = lift_edges(edges, model, &visible);
+    apply_delta_styling(view.properties.as_ref(), &mut nodes, &mut edges);
     let positioned = apply_stored_positions(&mut nodes, &elem_pos);
     if positioned == 0 {
-        layout_hierarchical(&mut nodes, &edges);
+        layout(&mut nodes, &edges, None);
     }
     render_svg(title, &nodes, &edges, None)
 }
@@ -354,244 +604,326 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
     let model = &workspace.model;
     let styles = get_styles(workspace);
     let focal_id = &view.software_system_id;
-    let (elem_filter, elem_pos) = build_element_filter(view.element_views.as_deref());
+    let (mut elem_filter, elem_pos) = build_element_filter(view.element_views.as_deref());
     let rel_filter = build_rel_filter(view.relationship_views.as_deref());
 
-    let mut people_nodes: Vec<Node> = Vec::new();
-    let mut container_nodes: Vec<Node> = Vec::new();
-    let mut ext_nodes: Vec<Node> = Vec::new();
+    if elem_filter.is_none() {
+        elem_filter = Some(container_scope(model, focal_id));
+    }
+
+    let mut nodes: Vec<Node> = Vec::new();
+    let mut container_ids: HashSet<String> = HashSet::new();
     let mut focal_system_name = String::new();
 
-    if let Some(people) = &model.people {
-        for p in people {
-            if !elem_allowed(&elem_filter, &p.id) {
-                continue;
-            }
-            let s = resolve_node_style(p.tags.as_deref(), "Person", styles, COLOR_PERSON, COLOR_TEXT_LIGHT);
-            people_nodes.push(Node {
-                id: p.id.clone(),
-                name: p.name.clone(),
-                type_label: "Person".to_string(),
-                fill: s.fill,
-                stroke: s.stroke,
-                text_color: s.text_color,
-                is_person: true,
-                x: 0,
-                y: 0,
-                dash: dash_for(p.status, p.tags.as_deref()),
-            });
+    for p in model.people.iter().flatten() {
+        if elem_allowed(&elem_filter, &p.id) {
+            nodes.push(person_node(p, styles));
         }
     }
-
-    if let Some(systems) = &model.software_systems {
-        for ss in systems {
-            if &ss.id == focal_id {
-                focal_system_name = ss.name.clone();
-                if let Some(containers) = &ss.containers {
-                    for c in containers {
-                        if !elem_allowed(&elem_filter, &c.id) {
-                            continue;
-                        }
-                        let tech = c.technology.as_deref().unwrap_or("").to_string();
-                        let type_label = if tech.is_empty() {
-                            "Container".to_string()
-                        } else {
-                            format!("Container: {}", tech)
-                        };
-                        let s = resolve_node_style(c.tags.as_deref(), "Container", styles, COLOR_CONTAINER, COLOR_TEXT_LIGHT);
-                        container_nodes.push(Node {
-                            id: c.id.clone(),
-                            name: c.name.clone(),
-                            type_label,
-                            fill: s.fill,
-                            stroke: s.stroke,
-                            text_color: s.text_color,
-                            is_person: false,
-                            x: 0,
-                            y: 0,
-                            dash: dash_for(c.status, c.tags.as_deref()),
-                        });
-                    }
+    for ss in model.software_systems.iter().flatten() {
+        if &ss.id == focal_id {
+            focal_system_name = ss.name.clone();
+            for c in ss.containers.iter().flatten() {
+                if elem_allowed(&elem_filter, &c.id) {
+                    container_ids.insert(c.id.clone());
+                    nodes.push(container_node(c, styles));
                 }
-            } else {
-                if !elem_allowed(&elem_filter, &ss.id) {
-                    continue;
-                }
-                let s = resolve_node_style(ss.tags.as_deref(), "Software System", styles, COLOR_SYSTEM_EXT, COLOR_TEXT_LIGHT);
-                ext_nodes.push(Node {
-                    id: ss.id.clone(),
-                    name: ss.name.clone(),
-                    type_label: "Software System".to_string(),
-                    fill: s.fill,
-                    stroke: s.stroke,
-                    text_color: s.text_color,
-                    is_person: false,
-                    x: 0,
-                    y: 0,
-                    dash: dash_for(ss.status, ss.tags.as_deref()),
-                });
             }
+        } else if elem_allowed(&elem_filter, &ss.id) {
+            nodes.push(system_node(ss, styles, COLOR_SYSTEM_EXT));
         }
     }
-
-    // Layout: people in top row, then containers, then external systems
-    let mut all_nodes: Vec<Node> = people_nodes;
-    let people_count = all_nodes.len();
-    all_nodes.extend(container_nodes);
-    let container_end = all_nodes.len();
-    all_nodes.extend(ext_nodes);
 
     let edges = collect_all_edges_with_containers(model, rel_filter.as_ref());
-    let positioned = apply_stored_positions(&mut all_nodes, &elem_pos);
+    let visible: HashSet<String> = nodes.iter().map(|n| n.id.clone()).collect();
+    let mut edges = lift_edges(edges, model, &visible);
+    apply_delta_styling(view.properties.as_ref(), &mut nodes, &mut edges);
+    let positioned = apply_stored_positions(&mut nodes, &elem_pos);
     if positioned == 0 {
-        layout_hierarchical(&mut all_nodes, &edges);
+        layout(&mut nodes, &edges, Some(&container_ids));
     }
 
-    // Compute the bounding box around container nodes for the system boundary
-    let boundary = if container_end > people_count {
-        let c_nodes = &all_nodes[people_count..container_end];
-        Some(boundary_rect(c_nodes, &focal_system_name))
-    } else {
+    let boundary = if container_ids.is_empty() {
         None
+    } else {
+        let c_nodes: Vec<&Node> = nodes.iter().filter(|n| container_ids.contains(&n.id)).collect();
+        Some(boundary_rect(&c_nodes, &focal_system_name))
     };
 
-    render_svg(title, &all_nodes, &edges, boundary.as_ref())
+    render_svg(title, &nodes, &edges, boundary.as_ref())
 }
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 
-/// Assign x/y positions using a **hierarchical (layered) layout**.
+/// Effective height including the person head protrusion.
+fn eff_h(n: &Node) -> i32 {
+    n.h + n.top_overhang()
+}
+
+/// Total width of a horizontal run of nodes, including gaps.
+fn group_w(nodes: &[Node], idxs: &[usize]) -> i32 {
+    if idxs.is_empty() {
+        return 0;
+    }
+    idxs.iter().map(|&i| nodes[i].w).sum::<i32>() + (idxs.len() as i32 - 1) * H_GAP
+}
+
+/// Place a run of nodes left-to-right starting at `start_x`, vertically centred
+/// in a row of height `row_h` whose top edge is at `top_y`.
+fn place_row(nodes: &mut [Node], idxs: &[usize], start_x: i32, top_y: i32, row_h: i32) {
+    let mut x = start_x;
+    for &i in idxs {
+        let overhang = nodes[i].top_overhang();
+        let eh = eff_h(&nodes[i]);
+        nodes[i].x = x;
+        nodes[i].y = top_y + (row_h - eh) / 2 + overhang;
+        x += nodes[i].w + H_GAP;
+    }
+}
+
+/// Find back edges via iterative DFS so cycles can be ignored during layering.
+fn find_back_edges(n: usize, adj: &[Vec<usize>]) -> HashSet<(usize, usize)> {
+    let mut state = vec![0u8; n]; // 0 = unvisited, 1 = on stack, 2 = done
+    let mut back = HashSet::new();
+    for start in 0..n {
+        if state[start] != 0 {
+            continue;
+        }
+        let mut stack: Vec<(usize, usize)> = vec![(start, 0)];
+        state[start] = 1;
+        while let Some(&(u, i)) = stack.last() {
+            if i < adj[u].len() {
+                stack.last_mut().unwrap().1 += 1;
+                let v = adj[u][i];
+                match state[v] {
+                    0 => {
+                        state[v] = 1;
+                        stack.push((v, 0));
+                    }
+                    1 => {
+                        back.insert((u, v));
+                    }
+                    _ => {}
+                }
+            } else {
+                state[u] = 2;
+                stack.pop();
+            }
+        }
+    }
+    back
+}
+
+/// Assign x/y positions using a **hierarchical (layered) layout**:
 ///
-/// The algorithm mirrors the first two phases of Sugiyama's framework:
+/// 1. **Cycle breaking** — back edges found by DFS are ignored for layering,
+///    so bidirectional relationships cannot inflate layer numbers.
+/// 2. **Longest-path layering** over the remaining DAG.
+/// 3. **Barycentric ordering** — alternating down/up sweeps reduce crossings.
+/// 4. **Coordinate assignment** — rows are vertically stacked (row height =
+///    tallest node) and horizontally centred on a common axis.  When
+///    `boundary_ids` is given (container views), boundary members are grouped
+///    contiguously per row and non-members that share a row with them are
+///    pushed to the right of the boundary box.
 ///
-/// 1. **Longest-path layering** — propagate layer numbers through the directed
-///    graph so that every edge goes from a lower layer to a higher one.
-/// 2. **Barycentric ordering** — reorder nodes within each layer by the
-///    average position of their predecessors to reduce edge crossings.
-/// 3. **Coordinate assignment** — centre each layer horizontally relative to
-///    the widest layer.
-///
-/// Falls back to a simple COLS-wide grid when no edges connect any of the
-/// supplied nodes (isolated-node diagrams look better in a compact grid).
-fn layout_hierarchical(nodes: &mut Vec<Node>, edges: &[Edge]) {
-    if nodes.is_empty() {
+/// Nodes without any visible edge are laid out in a grid below the layered part.
+fn layout(nodes: &mut [Node], edges: &[Edge], boundary_ids: Option<&HashSet<String>>) {
+    let n = nodes.len();
+    if n == 0 {
         return;
     }
 
-    // Build node-id → index map (only for nodes that are in this diagram)
     let id_to_idx: HashMap<&str, usize> = nodes
         .iter()
         .enumerate()
-        .map(|(i, n)| (n.id.as_str(), i))
+        .map(|(i, node)| (node.id.as_str(), i))
         .collect();
 
-    // Check whether any edges connect two visible nodes.
-    let has_local_edges = edges.iter().any(|e| {
-        id_to_idx.contains_key(e.src_id.as_str())
-            && id_to_idx.contains_key(e.dst_id.as_str())
-    });
-
-    if !has_local_edges {
-        layout_grid(nodes, COLS);
-        return;
-    }
-
-    let n = nodes.len();
-
-    // ── 1. Longest-path layering ──────────────────────────────────────────────
-    let mut layer = vec![0usize; n];
-    // Iterate n times so that longest paths of any length are propagated.
-    for _ in 0..n {
-        for edge in edges {
-            if let (Some(&src), Some(&dst)) = (
-                id_to_idx.get(edge.src_id.as_str()),
-                id_to_idx.get(edge.dst_id.as_str()),
-            ) {
-                if layer[src] + 1 > layer[dst] {
-                    layer[dst] = layer[src] + 1;
-                }
+    // Deduplicated directed pairs between visible nodes (self-loops excluded).
+    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    let mut seen: HashSet<(usize, usize)> = HashSet::new();
+    for e in edges {
+        if let (Some(&s), Some(&d)) = (id_to_idx.get(e.src_id.as_str()), id_to_idx.get(e.dst_id.as_str())) {
+            if s != d && seen.insert((s, d)) {
+                pairs.push((s, d));
             }
         }
     }
 
-    // ── 2. Group nodes by layer ───────────────────────────────────────────────
-    let num_layers = layer.iter().max().copied().unwrap_or(0) + 1;
+    if pairs.is_empty() {
+        layout_grid(nodes, GRID_COLS);
+        return;
+    }
+
+    let mut connected = vec![false; n];
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for &(s, d) in &pairs {
+        connected[s] = true;
+        connected[d] = true;
+        adj[s].push(d);
+    }
+
+    // 1. Cycle breaking + 2. longest-path layering over the DAG edges.
+    let back = find_back_edges(n, &adj);
+    let dag: Vec<(usize, usize)> = pairs.iter().copied().filter(|p| !back.contains(p)).collect();
+    let mut layer = vec![0usize; n];
+    for _ in 0..n {
+        for &(s, d) in &dag {
+            if layer[s] + 1 > layer[d] {
+                layer[d] = layer[s] + 1;
+            }
+        }
+    }
+
+    let num_layers = (0..n)
+        .filter(|&i| connected[i])
+        .map(|i| layer[i])
+        .max()
+        .unwrap_or(0)
+        + 1;
     let mut layers: Vec<Vec<usize>> = vec![Vec::new(); num_layers];
-    for (i, &l) in layer.iter().enumerate() {
-        layers[l].push(i);
-    }
-
-    // ── 3. Barycentric ordering (one downward sweep) ─────────────────────────
-    // Track the position-within-layer of each node for barycentre calculation.
-    let mut pos_in_layer = vec![0usize; n];
-    for layer_nodes in &layers {
-        for (pos, &idx) in layer_nodes.iter().enumerate() {
-            pos_in_layer[idx] = pos;
+    for i in 0..n {
+        if connected[i] {
+            layers[layer[i]].push(i);
         }
     }
 
-    // Build predecessor lists (for nodes in this diagram only).
-    let mut predecessors: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for edge in edges {
-        if let (Some(&src), Some(&dst)) = (
-            id_to_idx.get(edge.src_id.as_str()),
-            id_to_idx.get(edge.dst_id.as_str()),
-        ) {
-            predecessors[dst].push(src);
+    // 3. Barycentric ordering: alternating down (predecessor) / up (successor) sweeps.
+    let mut pos = vec![0usize; n];
+    for row in &layers {
+        for (p, &i) in row.iter().enumerate() {
+            pos[i] = p;
+        }
+    }
+    let mut preds: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut succs: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for &(s, d) in &pairs {
+        preds[d].push(s);
+        succs[s].push(d);
+    }
+    for sweep in 0..4 {
+        let down = sweep % 2 == 0;
+        let rows: Vec<usize> = if down {
+            (1..num_layers).collect()
+        } else {
+            (0..num_layers.saturating_sub(1)).rev().collect()
+        };
+        for r in rows {
+            if layers[r].len() <= 1 {
+                continue;
+            }
+            let neighbours = if down { &preds } else { &succs };
+            let mut scored: Vec<(usize, f64)> = layers[r]
+                .iter()
+                .map(|&i| {
+                    let ns = &neighbours[i];
+                    let score = if ns.is_empty() {
+                        pos[i] as f64
+                    } else {
+                        ns.iter().map(|&p| pos[p] as f64).sum::<f64>() / ns.len() as f64
+                    };
+                    (i, score)
+                })
+                .collect();
+            scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+            layers[r] = scored.into_iter().map(|(i, _)| i).collect();
+            for (p, &i) in layers[r].iter().enumerate() {
+                pos[i] = p;
+            }
         }
     }
 
-    for row in 1..num_layers {
-        if layers[row].len() <= 1 {
-            continue;
-        }
-        let mut bary: Vec<(usize, f64)> = layers[row]
+    // 4. Coordinate assignment.
+    let row_h: Vec<i32> = layers
+        .iter()
+        .map(|row| row.iter().map(|&i| eff_h(&nodes[i])).max().unwrap_or(0))
+        .collect();
+    let mut row_y = Vec::with_capacity(num_layers);
+    let mut acc = 0;
+    for &h in &row_h {
+        row_y.push(acc);
+        acc += h + V_GAP;
+    }
+
+    let has_boundary_nodes = boundary_ids
+        .map(|b| layers.iter().flatten().any(|&i| b.contains(&nodes[i].id)))
+        .unwrap_or(false);
+
+    let axis_w = if has_boundary_nodes {
+        let bids = boundary_ids.unwrap();
+        let parts: Vec<(Vec<usize>, Vec<usize>)> = layers
             .iter()
-            .map(|&idx| {
-                let preds = &predecessors[idx];
-                let score = if preds.is_empty() {
-                    pos_in_layer[idx] as f64
-                } else {
-                    preds.iter().map(|&p| pos_in_layer[p] as f64).sum::<f64>()
-                        / preds.len() as f64
-                };
-                (idx, score)
-            })
+            .map(|row| row.iter().copied().partition(|&i| bids.contains(&nodes[i].id)))
             .collect();
-        bary.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-        layers[row] = bary.iter().map(|(idx, _)| *idx).collect();
-        for (pos, &idx) in layers[row].iter().enumerate() {
-            pos_in_layer[idx] = pos;
-        }
-    }
+        let b_max = parts.iter().map(|(b, _)| group_w(nodes, b)).max().unwrap_or(0);
 
-    // ── 4. Coordinate assignment ─────────────────────────────────────────────
-    let max_per_layer = layers.iter().map(|l| l.len()).max().unwrap_or(1).max(1);
-    let canvas_w = max_per_layer as i32 * (BOX_W + H_GAP) - H_GAP + 2 * MARGIN;
-
-    for (row, layer_nodes) in layers.iter().enumerate() {
-        let count = layer_nodes.len() as i32;
-        if count == 0 {
-            continue;
+        // Place boundary members centred on a common axis; remember the box extent.
+        let mut b_right = 0;
+        let mut first_b_row = usize::MAX;
+        let mut last_b_row = 0;
+        for (r, (b, _)) in parts.iter().enumerate() {
+            if b.is_empty() {
+                continue;
+            }
+            first_b_row = first_b_row.min(r);
+            last_b_row = last_b_row.max(r);
+            let bw = group_w(nodes, b);
+            let start = (b_max - bw) / 2;
+            place_row(nodes, b, start, row_y[r], row_h[r]);
+            b_right = b_right.max(start + bw);
         }
-        let layer_w = count * BOX_W + (count - 1).max(0) * H_GAP;
-        let start_x = (canvas_w - layer_w) / 2;
-        for (col, &node_idx) in layer_nodes.iter().enumerate() {
-            nodes[node_idx].x = start_x + col as i32 * (BOX_W + H_GAP);
-            nodes[node_idx].y = MARGIN + row as i32 * (BOX_H + V_GAP);
+
+        // Non-members: rows that overlap the boundary vertically go to its right;
+        // rows fully above/below it stay centred on the same axis.
+        for (r, (_, ext)) in parts.iter().enumerate() {
+            if ext.is_empty() {
+                continue;
+            }
+            let start = if r >= first_b_row && r <= last_b_row {
+                b_right + 2 * BOUNDARY_PAD + H_GAP
+            } else {
+                (b_max - group_w(nodes, ext)) / 2
+            };
+            place_row(nodes, ext, start, row_y[r], row_h[r]);
+        }
+        b_max
+    } else {
+        let max_w = layers.iter().map(|row| group_w(nodes, row)).max().unwrap_or(0);
+        for (r, row) in layers.iter().enumerate() {
+            let lw = group_w(nodes, row);
+            place_row(nodes, row, (max_w - lw) / 2, row_y[r], row_h[r]);
+        }
+        max_w
+    };
+
+    // Isolated nodes: grid rows below the layered part, centred on the same
+    // axis.  Boundary members come first so that externals end up below the
+    // boundary box instead of inside it.
+    let isolated: Vec<usize> = (0..n).filter(|&i| !connected[i]).collect();
+    let (iso_boundary, iso_external): (Vec<usize>, Vec<usize>) = match boundary_ids {
+        Some(bids) => isolated.iter().copied().partition(|&i| bids.contains(&nodes[i].id)),
+        None => (Vec::new(), isolated),
+    };
+    let mut y = acc;
+    for group in [iso_boundary, iso_external] {
+        for chunk in group.chunks(GRID_COLS) {
+            let ch = chunk.iter().map(|&i| eff_h(&nodes[i])).max().unwrap_or(0);
+            let cw = group_w(nodes, chunk);
+            place_row(nodes, chunk, (axis_w - cw) / 2, y, ch);
+            y += ch + V_GAP;
         }
     }
 }
 
-/// Assign x/y positions in a left-to-right, top-to-bottom grid.
-/// Used as the fallback when no edges exist between the diagram's nodes.
-fn layout_grid(nodes: &mut Vec<Node>, cols: usize) {
-    let cols = cols.max(1);
-    for (i, node) in nodes.iter_mut().enumerate() {
-        let col = (i % cols) as i32;
-        let row = (i / cols) as i32;
-        node.x = MARGIN + col * (BOX_W + H_GAP);
-        node.y = MARGIN + row * (BOX_H + V_GAP);
+/// Left-to-right, top-to-bottom grid — the fallback when no edges connect
+/// any of the diagram's nodes.
+fn layout_grid(nodes: &mut [Node], cols: usize) {
+    let idxs: Vec<usize> = (0..nodes.len()).collect();
+    let mut y = 0;
+    for chunk in idxs.chunks(cols.max(1)) {
+        let ch = chunk.iter().map(|&i| eff_h(&nodes[i])).max().unwrap_or(0);
+        place_row(nodes, chunk, 0, y, ch);
+        y += ch + V_GAP;
     }
 }
 
@@ -802,12 +1134,13 @@ struct BoundaryRect {
     label: String,
 }
 
-fn boundary_rect(nodes: &[Node], label: &str) -> BoundaryRect {
-    let padding = 20;
-    let min_x = nodes.iter().map(|n| n.x).min().unwrap_or(0) - padding;
-    let min_y = nodes.iter().map(|n| n.y).min().unwrap_or(0) - padding - BOUNDARY_LABEL_HEIGHT; // extra for label
-    let max_x = nodes.iter().map(|n| n.x + BOX_W).max().unwrap_or(0) + padding;
-    let max_y = nodes.iter().map(|n| n.y + BOX_H).max().unwrap_or(0) + padding;
+fn boundary_rect(nodes: &[&Node], label: &str) -> BoundaryRect {
+    let min_x = nodes.iter().map(|n| n.x).min().unwrap_or(0) - BOUNDARY_PAD;
+    let min_y = nodes.iter().map(|n| n.y - n.top_overhang()).min().unwrap_or(0)
+        - BOUNDARY_PAD
+        - BOUNDARY_LABEL_HEIGHT;
+    let max_x = nodes.iter().map(|n| n.x + n.w).max().unwrap_or(0) + BOUNDARY_PAD;
+    let max_y = nodes.iter().map(|n| n.y + n.h).max().unwrap_or(0) + BOUNDARY_PAD;
     BoundaryRect {
         x: min_x,
         y: min_y,
@@ -819,158 +1152,215 @@ fn boundary_rect(nodes: &[Node], label: &str) -> BoundaryRect {
 
 // ── SVG renderer ──────────────────────────────────────────────────────────────
 
+fn marker_for(color: &str) -> &'static str {
+    match color {
+        COLOR_DELTA_ADDED => "arrow-added",
+        COLOR_DELTA_REMOVED => "arrow-removed",
+        _ => "arrow",
+    }
+}
+
 fn render_svg(
     title: &str,
     nodes: &[Node],
     edges: &[Edge],
     boundary: Option<&BoundaryRect>,
 ) -> String {
-    // Build lookup for quick position access
     let pos: HashMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
-    // Compute canvas size from node positions.
-    // Person nodes have a head that protrudes PERSON_HEAD_RADIUS px above their y coordinate.
-    // We clamp `top` to at most 0: a positive minimum means everything is already below the
-    // origin and no extra padding is needed; a negative value means some element extends
-    // above y=0 and we must enlarge the canvas to avoid clipping.
-    let top = nodes.iter().map(|n| {
-        if n.is_person { n.y - PERSON_HEAD_RADIUS } else { n.y }
-    }).min().unwrap_or(0).min(0);
-    let right = nodes.iter().map(|n| n.x + BOX_W).max().unwrap_or(200);
-    let bottom = nodes.iter().map(|n| n.y + BOX_H).max().unwrap_or(200);
-    let title_h = 40;
-    // Extra top padding so that person heads that protrude above y=0 are not clipped.
-    let extra_top = if top < 0 { -top } else { 0 };
-    let width = right + MARGIN;
-    let height = bottom + MARGIN + title_h + extra_top;
+    // Bounding box over nodes (including person head overhang) and the boundary.
+    let mut min_x = i32::MAX;
+    let mut min_y = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut max_y = i32::MIN;
+    for n in nodes {
+        min_x = min_x.min(n.x);
+        min_y = min_y.min(n.y - n.top_overhang());
+        max_x = max_x.max(n.x + n.w);
+        max_y = max_y.max(n.y + n.h);
+    }
+    if let Some(b) = boundary {
+        min_x = min_x.min(b.x);
+        min_y = min_y.min(b.y);
+        max_x = max_x.max(b.x + b.w);
+        max_y = max_y.max(b.y + b.h);
+    }
+    if nodes.is_empty() {
+        min_x = 0;
+        min_y = 0;
+        max_x = 200;
+        max_y = 100;
+    }
+
+    // Shift everything so content starts at (MARGIN, MARGIN) below the title.
+    let dx = MARGIN - min_x;
+    let dy = MARGIN - min_y;
+    let mut width = max_x + dx + MARGIN;
+    let height = max_y + dy + MARGIN + TITLE_H;
+    width = width.max(text_width(title, FS_TITLE) as i32 + 2 * MARGIN);
 
     let mut svg = String::new();
 
     svg.push_str(&format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">"##,
-        width = width,
-        height = height
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="Arial, sans-serif">"##,
     ));
     svg.push('\n');
 
-    // Defs: arrowhead marker
-    svg.push_str(
-        r##"  <defs>
-    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#555555"/>
-    </marker>
-  </defs>
+    // Defs: arrowhead markers (default + delta colours).
+    svg.push_str("  <defs>\n");
+    for (id, color) in [
+        ("arrow", COLOR_ARROW),
+        ("arrow-added", COLOR_DELTA_ADDED),
+        ("arrow-removed", COLOR_DELTA_REMOVED),
+    ] {
+        svg.push_str(&format!(
+            r##"    <marker id="{id}" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="{color}"/></marker>
 "##,
-    );
+        ));
+    }
+    svg.push_str("  </defs>\n");
 
     // Background
     svg.push_str(&format!(
-        r##"  <rect width="{}" height="{}" fill="#f8f8f8"/>
-"##,
-        width, height
+        "  <rect width=\"{width}\" height=\"{height}\" fill=\"{COLOR_BG}\"/>\n",
     ));
 
     // Title
     svg.push_str(&format!(
-        r##"  <text x="{}" y="28" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="{}" text-anchor="middle">{}</text>
+        r##"  <text x="{}" y="30" font-size="{FS_TITLE}" font-weight="bold" fill="{COLOR_TITLE}" text-anchor="middle">{}</text>
 "##,
         width / 2,
-        COLOR_TITLE,
         xml_escape(title)
     ));
 
-    // Translate remaining elements downward by title_h + extra_top so that person
-    // heads that protrude above their y coordinate are not clipped by the title area.
-    svg.push_str(&format!(r##"  <g transform="translate(0,{})">"##, title_h + extra_top));
-    svg.push('\n');
+    svg.push_str(&format!("  <g transform=\"translate({dx},{})\">\n", dy + TITLE_H));
 
     // System boundary (if any)
     if let Some(b) = boundary {
         svg.push_str(&format!(
-            r##"    <rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}" stroke-width="1" stroke-dasharray="6,4" rx="4"/>
+            r##"    <rect x="{}" y="{}" width="{}" height="{}" fill="{COLOR_BOUNDARY_FILL}" stroke="{COLOR_BOUNDARY_STROKE}" stroke-width="1" stroke-dasharray="6,4" rx="6"/>
 "##,
-            b.x, b.y, b.w, b.h, COLOR_BOUNDARY_FILL, COLOR_BOUNDARY_STROKE
+            b.x, b.y, b.w, b.h
         ));
         svg.push_str(&format!(
-            r##"    <text x="{}" y="{}" font-family="Arial, sans-serif" font-size="11" fill="{}" font-style="italic">{}</text>
+            r##"    <text x="{}" y="{}" font-size="11" fill="#888888" font-style="italic">{}</text>
 "##,
-            b.x + 6,
-            b.y + 13,
-            COLOR_SYSTEM_EXT,
+            b.x + 10,
+            b.y + 16,
             xml_escape(&b.label)
         ));
     }
 
-    // Edges (drawn before nodes so nodes appear on top)
+    // Edges (drawn before nodes so nodes appear on top).
+    // Parallel edges between the same pair of nodes are spread perpendicular
+    // to the connecting line so they do not overlap.
+    let mut pair_count: HashMap<(&str, &str), usize> = HashMap::new();
+    for e in edges {
+        if pos.contains_key(e.src_id.as_str()) && pos.contains_key(e.dst_id.as_str()) {
+            *pair_count.entry(canon_pair(&e.src_id, &e.dst_id)).or_insert(0) += 1;
+        }
+    }
+    let mut pair_used: HashMap<(&str, &str), usize> = HashMap::new();
+
+    // Labels and port glyphs are buffered and emitted after the nodes so a box
+    // can never hide them.
+    let mut overlay = String::new();
+
     for edge in edges {
         let src = match pos.get(edge.src_id.as_str()) {
-            Some(n) => n,
+            Some(n) => *n,
             None => continue,
         };
         let dst = match pos.get(edge.dst_id.as_str()) {
-            Some(n) => n,
+            Some(n) => *n,
             None => continue,
         };
 
-        let (x1, y1) = edge_point(src.cx(), src.cy(), dst.cx(), dst.cy());
-        let (x2, y2) = edge_point(dst.cx(), dst.cy(), src.cx(), src.cy());
-
+        let stroke = edge.color.as_deref().unwrap_or(COLOR_ARROW);
+        let marker = marker_for(stroke);
         let dash_attr = edge
             .dash
             .map(|d| format!(r#" stroke-dasharray="{}""#, d))
             .unwrap_or_default();
-        let stroke = edge.color.as_deref().unwrap_or(COLOR_ARROW);
-        svg.push_str(&format!(
-            r##"    <line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="1.5"{} marker-end="url(#arrowhead)"/>
+
+        // Self-loop: a small arc on the right side of the node.
+        if src.id == dst.id {
+            let x0 = (src.x + src.w) as f64;
+            let cy = src.cy() as f64;
+            svg.push_str(&format!(
+                r##"    <path d="M {x0} {} C {} {}, {} {}, {x0} {}" fill="none" stroke="{stroke}" stroke-width="1.4"{dash_attr} marker-end="url(#{marker})"/>
 "##,
-            x1, y1, x2, y2, stroke, dash_attr
+                cy - 14.0,
+                x0 + 52.0,
+                cy - 20.0,
+                x0 + 52.0,
+                cy + 20.0,
+                cy + 14.0,
+            ));
+            draw_edge_label(&mut overlay, edge, x0 + 46.0, cy, stroke);
+            continue;
+        }
+
+        let key = canon_pair(&edge.src_id, &edge.dst_id);
+        let count = pair_count.get(&key).copied().unwrap_or(1);
+        let slot = pair_used.entry(key).or_insert(0);
+        let idx = *slot;
+        *slot += 1;
+
+        let mut off = (idx as f64 - (count as f64 - 1.0) / 2.0) * EDGE_SPREAD;
+        let lim = (src.w.min(src.h).min(dst.w).min(dst.h) as f64) / 2.0 - 10.0;
+        off = off.clamp(-lim.max(0.0), lim.max(0.0));
+
+        // Perpendicular computed from the canonical direction so that an A→B
+        // edge and its B→A counterpart land on distinct parallel lines.
+        let (a, b) = if src.id.as_str() <= dst.id.as_str() { (src, dst) } else { (dst, src) };
+        let vx = (b.cx() - a.cx()) as f64;
+        let vy = (b.cy() - a.cy()) as f64;
+        let len = (vx * vx + vy * vy).sqrt().max(1.0);
+        let (px, py) = (-vy / len, vx / len);
+
+        let scx = src.cx() as f64 + px * off;
+        let scy = src.cy() as f64 + py * off;
+        let dcx = dst.cx() as f64 + px * off;
+        let dcy = dst.cy() as f64 + py * off;
+
+        let (x1, y1) = rect_exit_point(src, scx, scy, dcx, dcy);
+        let (x2, y2) = rect_exit_point(dst, dcx, dcy, scx, scy);
+
+        svg.push_str(&format!(
+            r##"    <line x1="{x1:.1}" y1="{y1:.1}" x2="{x2:.1}" y2="{y2:.1}" stroke="{stroke}" stroke-width="1.4"{dash_attr} marker-end="url(#{marker})"/>
+"##,
         ));
 
         // Port glyphs: a small square on the element border where the
         // relationship attaches through a declared port (spec §5.1).
-        for (px, py, pname) in [
+        for (gx, gy, pname) in [
             (x1, y1, edge.src_port_name.as_deref()),
             (x2, y2, edge.dst_port_name.as_deref()),
         ] {
             if let Some(pname) = pname {
-                svg.push_str(&format!(
-                    r##"    <rect x="{}" y="{}" width="8" height="8" fill="#ffffff" stroke="{}" stroke-width="1.2"/>
+                overlay.push_str(&format!(
+                    r##"    <rect x="{:.1}" y="{:.1}" width="8" height="8" fill="#ffffff" stroke="{stroke}" stroke-width="1.2"/>
 "##,
-                    px - 4,
-                    py - 4,
-                    stroke
+                    gx - 4.0,
+                    gy - 4.0,
                 ));
-                svg.push_str(&format!(
-                    r##"    <text x="{}" y="{}" font-family="Arial, sans-serif" font-size="8" fill="{}" text-anchor="middle">{}</text>
+                overlay.push_str(&format!(
+                    r##"    <text x="{:.1}" y="{:.1}" font-size="8" fill="{stroke}" text-anchor="middle">{}</text>
 "##,
-                    px,
-                    py - 7,
-                    stroke,
+                    gx,
+                    gy - 7.0,
                     xml_escape(pname)
                 ));
             }
         }
 
-        // Edge label
-        let lx = (x1 + x2) / 2;
-        let ly = (y1 + y2) / 2;
-        if !edge.label.is_empty() || !edge.technology.is_empty() {
-            let label_text = if edge.technology.is_empty() {
-                edge.label.clone()
-            } else if edge.label.is_empty() {
-                format!("[{}]", edge.technology)
-            } else {
-                format!("{} [{}]", edge.label, edge.technology)
-            };
-            svg.push_str(&format!(
-                r##"    <text x="{}" y="{}" font-family="Arial, sans-serif" font-size="10" fill="{}" text-anchor="middle" dy="-3">{}</text>
-"##,
-                lx,
-                ly,
-                stroke,
-                xml_escape(&label_text)
-            ));
-        }
+        // Edge label at the midpoint, nudged along the same perpendicular so
+        // parallel edges keep their labels apart.
+        let extra = if count > 1 { off.signum() * 10.0 } else { 0.0 };
+        let lx = (x1 + x2) / 2.0 + px * extra;
+        let ly = (y1 + y2) / 2.0 + py * extra;
+        draw_edge_label(&mut overlay, edge, lx, ly, stroke);
     }
 
     // Nodes
@@ -978,102 +1368,152 @@ fn render_svg(
         render_node(&mut svg, node);
     }
 
+    svg.push_str(&overlay);
     svg.push_str("  </g>\n");
     svg.push_str("</svg>\n");
     svg
 }
 
-/// Render a single node box (person or system/container).
+fn canon_pair<'a>(a: &'a str, b: &'a str) -> (&'a str, &'a str) {
+    if a <= b { (a, b) } else { (b, a) }
+}
+
+/// Draw a wrapped edge label centred at (lx, ly) with a background halo so it
+/// stays readable where it crosses lines.
+fn draw_edge_label(svg: &mut String, edge: &Edge, lx: f64, ly: f64, color: &str) {
+    if edge.label.is_empty() && edge.technology.is_empty() {
+        return;
+    }
+    let label_text = if edge.technology.is_empty() {
+        edge.label.clone()
+    } else if edge.label.is_empty() {
+        format!("[{}]", edge.technology)
+    } else {
+        format!("{} [{}]", edge.label, edge.technology)
+    };
+    let lines = clamp_lines(wrap_text(&label_text, EDGE_LABEL_W, FS_EDGE), 3);
+    let line_h = 13.0;
+    let first_baseline = ly - (lines.len() as f64 - 1.0) * line_h / 2.0 + 3.5;
+    for (i, line) in lines.iter().enumerate() {
+        let baseline = first_baseline + i as f64 * line_h;
+        let bw = text_width(line, FS_EDGE) + 8.0;
+        svg.push_str(&format!(
+            r##"    <rect x="{:.1}" y="{:.1}" width="{:.1}" height="{line_h}" fill="{COLOR_BG}" opacity="0.88"/>
+"##,
+            lx - bw / 2.0,
+            baseline - 10.0,
+            bw,
+        ));
+        svg.push_str(&format!(
+            r##"    <text x="{lx:.1}" y="{baseline:.1}" font-size="{FS_EDGE}" fill="{color}" text-anchor="middle">{}</text>
+"##,
+            xml_escape(line)
+        ));
+    }
+}
+
+/// Render a single node box (person or system/container/component).
 fn render_node(svg: &mut String, node: &Node) {
-    let x = node.x;
-    let y = node.y;
+    let dash_attr = node
+        .dash
+        .map(|d| format!(r#" stroke-dasharray="{}""#, d))
+        .unwrap_or_default();
 
     if node.is_person {
-        render_person_shape(svg, node);
-    } else {
-        let dash_attr = node
-            .dash
-            .map(|d| format!(r#" stroke-dasharray="{}""#, d))
-            .unwrap_or_default();
+        // Head circle drawn first so the box covers its lower part — the
+        // classic C4 person glyph.  Its centre sits PERSON_HEAD_OVERLAP above
+        // the box top edge.
         svg.push_str(&format!(
-            r##"    <rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}" stroke-width="1.5"{} rx="4"/>
+            r##"    <circle cx="{}" cy="{}" r="{}" fill="{}" stroke="{}" stroke-width="1.5"{dash_attr}/>
 "##,
-            x, y, BOX_W, BOX_H, node.fill, node.stroke, dash_attr
+            node.cx(),
+            node.y - PERSON_HEAD_OVERLAP,
+            PERSON_HEAD_RADIUS,
+            node.fill,
+            node.stroke,
         ));
     }
 
-    // Name text — centred inside the box for both person and non-person nodes.
-    // For person nodes the head protrudes above y, so the box interior still starts at y.
-    let text_x = x + BOX_W / 2;
-    let name_y = y + BOX_H / 2 - 6;
-
     svg.push_str(&format!(
-        r##"    <text x="{}" y="{}" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="{}" text-anchor="middle">{}</text>
+        r##"    <rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}" stroke-width="1.5"{dash_attr} rx="{}"/>
 "##,
-        text_x,
-        name_y,
-        node.text_color,
-        xml_escape(&node.name)
+        node.x,
+        node.y,
+        node.w,
+        node.h,
+        node.fill,
+        node.stroke,
+        if node.is_person { 12 } else { 4 },
     ));
 
-    // Type label
-    svg.push_str(&format!(
-        r##"    <text x="{}" y="{}" font-family="Arial, sans-serif" font-size="10" fill="{}" text-anchor="middle" font-style="italic">[{}]</text>
+    // Text block, vertically centred inside the box.
+    let cx = node.cx();
+    let mut cursor = node.y + (node.h - node.content_h) / 2;
+    for line in &node.name_lines {
+        svg.push_str(&format!(
+            r##"    <text x="{cx}" y="{}" font-size="{FS_NAME}" font-weight="bold" fill="{}" text-anchor="middle">{}</text>
 "##,
-        text_x,
-        name_y + 15,
-        node.text_color,
-        xml_escape(&node.type_label)
-    ));
-}
-
-/// Render a person shape: a circle (head) above the box, in the classic C4 style.
-fn render_person_shape(svg: &mut String, node: &Node) {
-    let x = node.x;
-    let y = node.y;
-    let cx = x + BOX_W / 2;
-
-    // Draw background box (body)
-    svg.push_str(&format!(
-        r##"    <rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}" stroke-width="1.5" rx="4"/>
+            cursor + 13,
+            node.text_color,
+            xml_escape(line)
+        ));
+        cursor += LH_NAME;
+    }
+    for line in &node.meta_lines {
+        svg.push_str(&format!(
+            r##"    <text x="{cx}" y="{}" font-size="{FS_META}" font-style="italic" fill="{}" opacity="0.85" text-anchor="middle">{}</text>
 "##,
-        x, y, BOX_W, BOX_H, node.fill, node.stroke
-    ));
-
-    // Head circle centred just above the box top — classic C4 person glyph.
-    // The circle centre is at y - head_r so the circle bottom edge touches the box top.
-    let head_r = PERSON_HEAD_RADIUS;
-    let head_cy = y - head_r;
-    svg.push_str(&format!(
-        r##"    <circle cx="{}" cy="{}" r="{}" fill="{}" stroke="{}" stroke-width="1.5"/>
+            cursor + 10,
+            node.text_color,
+            xml_escape(line)
+        ));
+        cursor += LH_SMALL;
+    }
+    if !node.desc_lines.is_empty() {
+        cursor += 6;
+        for line in &node.desc_lines {
+            svg.push_str(&format!(
+                r##"    <text x="{cx}" y="{}" font-size="{FS_DESC}" fill="{}" opacity="0.9" text-anchor="middle">{}</text>
 "##,
-        cx, head_cy, head_r, node.fill, node.stroke
-    ));
+                cursor + 10,
+                node.text_color,
+                xml_escape(line)
+            ));
+            cursor += LH_SMALL;
+        }
+    }
 }
 
 // ── Geometry helpers ──────────────────────────────────────────────────────────
 
-/// Returns the point on the edge of a BOX_W×BOX_H box centred at (cx, cy)
-/// in the direction of (tx, ty).
-fn edge_point(cx: i32, cy: i32, tx: i32, ty: i32) -> (i32, i32) {
-    let dx = tx - cx;
-    let dy = ty - cy;
-    if dx == 0 && dy == 0 {
-        return (cx, cy);
+/// Point where the ray from (px, py) toward (tx, ty) exits `node`'s box.
+/// (px, py) is expected to be inside the box; if the ray never exits (degenerate
+/// direction), (px, py) itself is returned.
+fn rect_exit_point(node: &Node, px: f64, py: f64, tx: f64, ty: f64) -> (f64, f64) {
+    let dx = tx - px;
+    let dy = ty - py;
+    if dx == 0.0 && dy == 0.0 {
+        return (px, py);
     }
-    let hw = BOX_W as f64 / 2.0;
-    let hh = BOX_H as f64 / 2.0;
-    let fdx = dx as f64;
-    let fdy = dy as f64;
-    // Scale factor so the point lies exactly on the box boundary
-    let scale = if fdx.abs() * hh > fdy.abs() * hw {
-        hw / fdx.abs()
-    } else {
-        hh / fdy.abs()
-    };
-    let ex = cx as f64 + fdx * scale;
-    let ey = cy as f64 + fdy * scale;
-    (ex.round() as i32, ey.round() as i32)
+    let x0 = node.x as f64;
+    let y0 = node.y as f64;
+    let x1 = (node.x + node.w) as f64;
+    let y1 = (node.y + node.h) as f64;
+    let mut t = f64::INFINITY;
+    if dx > 0.0 {
+        t = t.min((x1 - px) / dx);
+    } else if dx < 0.0 {
+        t = t.min((x0 - px) / dx);
+    }
+    if dy > 0.0 {
+        t = t.min((y1 - py) / dy);
+    } else if dy < 0.0 {
+        t = t.min((y0 - py) / dy);
+    }
+    if !t.is_finite() || t < 0.0 {
+        return (px, py);
+    }
+    (px + dx * t, py + dy * t)
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────
@@ -1223,6 +1663,14 @@ mod tests {
     #[test]
     fn svg_exporter_system_context() {
         let mut workspace = basic_workspace();
+        // Relate Alice to the system so context scoping includes her.
+        workspace.model.people.as_mut().unwrap()[0].relationships = Some(vec![Relationship {
+            id: "r1".to_string(),
+            source_id: "1".to_string(),
+            destination_id: "2".to_string(),
+            description: Some("Uses".to_string()),
+            ..Default::default()
+        }]);
         workspace.views.system_context_views = Some(vec![SystemContextView {
             software_system_id: "2".to_string(),
             key: Some("Context".to_string()),
@@ -1235,9 +1683,35 @@ mod tests {
         let svg = &diagrams[0].content;
         assert!(svg.contains("Alice"));
         assert!(svg.contains("My System"));
-        // Focal system should use the primary blue; external grey should not appear for a
-        // single-system workspace.
+        // Focal system should use the primary blue.
         assert!(svg.contains(COLOR_SYSTEM));
+    }
+
+    #[test]
+    fn system_context_scopes_to_related_elements() {
+        // An unrelated system must not appear in the context view.
+        let mut workspace = basic_workspace();
+        workspace.model.people.as_mut().unwrap()[0].relationships = Some(vec![Relationship {
+            id: "r1".to_string(),
+            source_id: "1".to_string(),
+            destination_id: "2".to_string(),
+            ..Default::default()
+        }]);
+        workspace.model.software_systems.as_mut().unwrap().push(SoftwareSystem {
+            id: "99".to_string(),
+            name: "Unrelated".to_string(),
+            ..Default::default()
+        });
+        workspace.views.system_context_views = Some(vec![SystemContextView {
+            software_system_id: "2".to_string(),
+            key: Some("Context".to_string()),
+            ..Default::default()
+        }]);
+
+        let diagrams = SvgExporter.export_workspace(&workspace);
+        let svg = &diagrams[0].content;
+        assert!(svg.contains("Alice"));
+        assert!(!svg.contains("Unrelated"), "unrelated system must be scoped out");
     }
 
     #[test]
@@ -1271,6 +1745,7 @@ mod tests {
         assert!(svg.contains("API"));
         assert!(svg.contains("Rust"));
         assert!(svg.contains(COLOR_CONTAINER));
+        assert!(svg.contains("My System"), "boundary label should carry the system name");
     }
 
     #[test]
@@ -1307,7 +1782,54 @@ mod tests {
         let diagrams = exporter.export_workspace(&workspace);
         let svg = &diagrams[0].content;
         assert!(svg.contains("Uses"), "relationship label should appear in SVG");
-        assert!(svg.contains("arrowhead"), "arrowhead marker should be present");
+        assert!(svg.contains("url(#arrow)"), "arrowhead marker should be present");
+    }
+
+    #[test]
+    fn bidirectional_relationships_do_not_explode_layout() {
+        // A ↔ B used to escalate longest-path layering until every node sat in
+        // a distant layer, producing a huge, mostly blank canvas.
+        let mut workspace = Workspace::default();
+        workspace.name = "CycleTest".to_string();
+        workspace.model.software_systems = Some(vec![
+            SoftwareSystem {
+                id: "1".to_string(),
+                name: "Alpha".to_string(),
+                relationships: Some(vec![Relationship {
+                    id: "r1".to_string(),
+                    source_id: "1".to_string(),
+                    destination_id: "2".to_string(),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            },
+            SoftwareSystem {
+                id: "2".to_string(),
+                name: "Beta".to_string(),
+                relationships: Some(vec![Relationship {
+                    id: "r2".to_string(),
+                    source_id: "2".to_string(),
+                    destination_id: "1".to_string(),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            },
+        ]);
+        workspace.views.system_landscape_views = Some(vec![SystemLandscapeView {
+            key: Some("Landscape".to_string()),
+            ..Default::default()
+        }]);
+
+        let diagrams = SvgExporter.export_workspace(&workspace);
+        let svg = &diagrams[0].content;
+        let height: i32 = svg
+            .split("height=\"")
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .and_then(|s| s.parse().ok())
+            .unwrap();
+        // Two layers of ~90px nodes plus gaps/margins/title — far below 600.
+        assert!(height < 600, "cycle must not inflate the canvas (height={height})");
     }
 
     #[test]
@@ -1316,18 +1838,43 @@ mod tests {
     }
 
     #[test]
-    fn edge_point_horizontal() {
-        // Node centred at (100, 100), target to the right at (300, 100)
-        let (ex, ey) = edge_point(100, 100, 300, 100);
-        assert_eq!(ex, 100 + BOX_W / 2);
-        assert_eq!(ey, 100);
+    fn rect_exit_point_horizontal() {
+        let node = Node {
+            id: "n".to_string(),
+            fill: String::new(),
+            stroke: String::new(),
+            text_color: String::new(),
+            is_person: false,
+            x: 0,
+            y: 60,
+            w: 200,
+            h: 80,
+            content_h: 0,
+            name_lines: vec![],
+            meta_lines: vec![],
+            desc_lines: vec![],
+            dash: None,
+        };
+        // Ray from the centre straight right exits at the right edge.
+        let (ex, ey) = rect_exit_point(&node, 100.0, 100.0, 500.0, 100.0);
+        assert_eq!(ex, 200.0);
+        assert_eq!(ey, 100.0);
+        // Straight down exits at the bottom edge.
+        let (ex, ey) = rect_exit_point(&node, 100.0, 100.0, 100.0, 500.0);
+        assert_eq!(ex, 100.0);
+        assert_eq!(ey, 140.0);
     }
 
     #[test]
-    fn edge_point_vertical() {
-        let (ex, ey) = edge_point(100, 100, 100, 300);
-        assert_eq!(ex, 100);
-        assert_eq!(ey, 100 + BOX_H / 2);
+    fn wrap_text_wraps_and_clamps() {
+        let lines = wrap_text("Personal Banking Customer of the bank", 100.0, 14.0);
+        assert!(lines.len() > 1, "long text must wrap");
+        for l in &lines {
+            assert!(text_width(l, 14.0) <= 100.0 + 1e-6, "line too wide: {l}");
+        }
+        let clamped = clamp_lines(lines, 2);
+        assert_eq!(clamped.len(), 2);
+        assert!(clamped[1].ends_with('…'));
     }
 
     #[test]
@@ -1432,16 +1979,21 @@ mod tests {
     }
 
     #[test]
-    fn stored_positions_used_when_present() {
-        // View provides explicit x/y — auto-layout must NOT be used.
+    fn stored_positions_preserved_relatively() {
+        // Two nodes with stored x/y 300px apart must stay 300px apart in the
+        // output (the canvas is normalised, so only relative offsets survive).
         let mut workspace = Workspace::default();
         workspace.name = "PosTest".to_string();
         workspace.model.software_systems = Some(vec![
-            SoftwareSystem { id: "1".to_string(), name: "Sys".to_string(), ..Default::default() },
+            SoftwareSystem { id: "1".to_string(), name: "SysA".to_string(), ..Default::default() },
+            SoftwareSystem { id: "2".to_string(), name: "SysB".to_string(), ..Default::default() },
         ]);
         workspace.views.system_landscape_views = Some(vec![SystemLandscapeView {
             key: Some("Landscape".to_string()),
-            element_views: Some(vec![ElementView { id: "1".to_string(), x: Some(500), y: Some(300) }]),
+            element_views: Some(vec![
+                ElementView { id: "1".to_string(), x: Some(100), y: Some(100) },
+                ElementView { id: "2".to_string(), x: Some(400), y: Some(100) },
+            ]),
             ..Default::default()
         }]);
 
@@ -1449,16 +2001,14 @@ mod tests {
         let diagrams = exporter.export_workspace(&workspace);
         let svg = &diagrams[0].content;
 
-        // The stored coordinates must appear in the rect element.
-        assert!(svg.contains(r#"x="500""#), "stored x=500 should be in SVG");
-        assert!(svg.contains(r#"y="300""#), "stored y=300 should be in SVG");
+        // Stored coordinates are kept on the boxes; the outer <g> transform
+        // normalises the canvas.  The 300px horizontal offset must survive.
+        assert!(svg.contains(r#"x="100""#), "first box keeps stored x=100");
+        assert!(svg.contains(r#"x="400""#), "second box keeps stored x=400");
     }
 
     #[test]
     fn person_head_circle_above_box() {
-        // With the fix, head_cy = node.y - PERSON_HEAD_RADIUS.
-        // For a single person laid out by the grid: node.y = MARGIN = 60.
-        // Expected: head_cy = 60 - 12 = 48, rect y = 60 (48 < 60 ⇒ head is above box).
         let mut workspace = Workspace::default();
         workspace.name = "PersonTest".to_string();
         workspace.model.people = Some(vec![
@@ -1474,17 +2024,24 @@ mod tests {
         let svg = &diagrams[0].content;
 
         assert!(svg.contains("<circle"), "person shape must include a circle");
-        // Head circle centre must be above the box top: cy = MARGIN - PERSON_HEAD_RADIUS = 48.
-        assert!(
-            svg.contains(r#"cy="48""#),
-            "head circle cy should be {} (MARGIN - PERSON_HEAD_RADIUS)",
-            MARGIN - PERSON_HEAD_RADIUS
-        );
-        // The person box rect must have y = MARGIN = 60 (strictly greater than cy=48).
-        assert!(
-            svg.contains(r#"y="60""#),
-            "person box rect y should be MARGIN = {}", MARGIN
-        );
+        // Extract the head circle centre and the person box top edge and check
+        // the head sits above the box.
+        let cy: f64 = svg
+            .split("cy=\"")
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .and_then(|s| s.parse().ok())
+            .expect("circle cy");
+        let circle_pos = svg.find("<circle").unwrap();
+        let rect_after = &svg[circle_pos..];
+        let y: f64 = rect_after
+            .split("<rect")
+            .nth(1)
+            .and_then(|s| s.split("y=\"").nth(1))
+            .and_then(|s| s.split('"').next())
+            .and_then(|s| s.parse().ok())
+            .expect("person rect y");
+        assert!(cy < y, "head circle centre (cy={cy}) must be above the box top (y={y})");
     }
 
     #[test]
