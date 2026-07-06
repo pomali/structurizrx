@@ -17,9 +17,9 @@ const TITLE_H: i32 = 48;
 const GRID_COLS: usize = 4;
 const BOUNDARY_PAD: i32 = 26;
 const BOUNDARY_LABEL_HEIGHT: i32 = 18;
-const PERSON_HEAD_RADIUS: i32 = 17;
+const PERSON_HEAD_RADIUS: i32 = 30;
 /// The head circle centre sits this far above the box top edge.
-const PERSON_HEAD_OVERLAP: i32 = 6;
+const PERSON_HEAD_OVERLAP: i32 = 28;
 /// Perpendicular spacing between parallel edges connecting the same node pair.
 const EDGE_SPREAD: f64 = 30.0;
 /// Maximum pixel width of a wrapped edge-label line.
@@ -49,13 +49,68 @@ const COLOR_BG: &str = "#f8f8f8";
 
 // ── Internal node/edge types ─────────────────────────────────────────────────
 
+/// Element glyph, mirroring the `structurizr.shapes` set in the JS viewer
+/// (`structurizr-web/assets/js/structurizr-diagram.js`). Each variant is drawn
+/// to fit the node's computed bounding box in `render_node`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum NodeShape {
+    Box,
+    RoundedBox,
+    Circle,
+    Ellipse,
+    Hexagon,
+    Diamond,
+    Cylinder,
+    Pipe,
+    Person,
+    Robot,
+    Folder,
+    Component,
+    WebBrowser,
+    Window,
+    MobileDevicePortrait,
+    MobileDeviceLandscape,
+}
+
+impl NodeShape {
+    /// Parse a Structurizr element-style `shape` string (case-insensitive),
+    /// matching the variant names used in the DSL / JSON schema.
+    fn parse(s: &str) -> Option<NodeShape> {
+        Some(match s.trim().to_ascii_lowercase().as_str() {
+            "box" => NodeShape::Box,
+            "roundedbox" => NodeShape::RoundedBox,
+            "circle" => NodeShape::Circle,
+            "ellipse" => NodeShape::Ellipse,
+            "hexagon" => NodeShape::Hexagon,
+            "diamond" => NodeShape::Diamond,
+            "cylinder" => NodeShape::Cylinder,
+            "pipe" => NodeShape::Pipe,
+            "person" => NodeShape::Person,
+            "robot" => NodeShape::Robot,
+            "folder" => NodeShape::Folder,
+            "component" => NodeShape::Component,
+            "webbrowser" => NodeShape::WebBrowser,
+            "window" => NodeShape::Window,
+            "mobiledeviceportrait" => NodeShape::MobileDevicePortrait,
+            "mobiledevicelandscape" => NodeShape::MobileDeviceLandscape,
+            _ => return None,
+        })
+    }
+
+    /// Person and Robot draw a head glyph above the body box; layout reserves
+    /// vertical space for it via [`Node::top_overhang`].
+    fn has_head(self) -> bool {
+        matches!(self, NodeShape::Person | NodeShape::Robot)
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Node {
     id: String,
     fill: String,
     stroke: String,
     text_color: String,
-    is_person: bool,
+    shape: NodeShape,
     x: i32,
     y: i32,
     w: i32,
@@ -76,9 +131,9 @@ impl Node {
     fn cy(&self) -> i32 {
         self.y + self.h / 2
     }
-    /// Vertical extent above `y` (person head protrusion).
+    /// Vertical extent above `y` (person/robot head protrusion).
     fn top_overhang(&self) -> i32 {
-        if self.is_person {
+        if self.shape.has_head() {
             PERSON_HEAD_RADIUS + PERSON_HEAD_OVERLAP
         } else {
             0
@@ -214,9 +269,15 @@ fn make_node(
     type_label: &str,
     description: Option<&str>,
     style: ResolvedNodeStyle,
-    is_person: bool,
+    default_shape: NodeShape,
     dash: Option<&'static str>,
 ) -> Node {
+    // An explicit `shape` in the element style overrides the type default.
+    let shape = style
+        .shape
+        .as_deref()
+        .and_then(NodeShape::parse)
+        .unwrap_or(default_shape);
     let inner = NODE_W as f64 - 2.0 * PAD_X;
     let name_lines = clamp_lines(wrap_text(name, inner, FS_NAME), 3);
     let meta_lines = clamp_lines(wrap_text(&format!("[{type_label}]"), inner, FS_META), 2);
@@ -235,7 +296,7 @@ fn make_node(
         fill: style.fill,
         stroke: style.stroke,
         text_color: style.text_color,
-        is_person,
+        shape,
         x: 0,
         y: 0,
         w: NODE_W,
@@ -256,7 +317,7 @@ fn person_node(p: &Person, styles: Option<&Styles>) -> Node {
         "Person",
         p.description.as_deref(),
         s,
-        true,
+        NodeShape::Person,
         dash_for(p.status, p.tags.as_deref()),
     )
 }
@@ -269,7 +330,7 @@ fn system_node(ss: &SoftwareSystem, styles: Option<&Styles>, default_fill: &str)
         "Software System",
         ss.description.as_deref(),
         s,
-        false,
+        NodeShape::Box,
         dash_for(ss.status, ss.tags.as_deref()),
     )
 }
@@ -286,7 +347,7 @@ fn container_node(c: &Container, styles: Option<&Styles>) -> Node {
         &type_label,
         c.description.as_deref(),
         s,
-        false,
+        NodeShape::Box,
         dash_for(c.status, c.tags.as_deref()),
     )
 }
@@ -303,7 +364,7 @@ fn component_node(comp: &Component, styles: Option<&Styles>) -> Node {
         &type_label,
         comp.description.as_deref(),
         s,
-        false,
+        NodeShape::Box,
         dash_for(comp.status, comp.tags.as_deref()),
     )
 }
@@ -316,7 +377,7 @@ fn custom_node(ce: &CustomElement, styles: Option<&Styles>) -> Node {
         "Element",
         ce.description.as_deref(),
         s,
-        false,
+        NodeShape::Box,
         dash_for(ce.status, ce.tags.as_deref()),
     )
 }
@@ -1525,43 +1586,225 @@ fn draw_edge_label(svg: &mut String, edge: &Edge, lx: f64, ly: f64, color: &str)
     }
 }
 
-/// Render a single node box (person or system/container/component).
+/// Region within a node where the text block is centred. Shapes with caps,
+/// tabs or window-controls narrow this so text does not collide with the glyph.
+struct TextRegion {
+    /// Absolute y of the top of the region.
+    top: i32,
+    /// Height available for vertical centring.
+    height: i32,
+    /// Horizontal centre for `text-anchor="middle"`.
+    cx: i32,
+}
+
+impl TextRegion {
+    /// The full box, used by simple shapes with no intrusions.
+    fn full(node: &Node) -> TextRegion {
+        TextRegion { top: node.y, height: node.h, cx: node.cx() }
+    }
+}
+
+// SVG element helpers used by the shape renderers. `stroke`/`dash` may be
+// `"none"` / `""` for filled sub-parts (window buttons, panels, …).
+
+/// Format a coordinate, trimming a trailing `.0` so whole numbers stay integers
+/// (keeps output tidy and stored integer positions byte-stable).
+fn n(v: f64) -> String {
+    if (v - v.round()).abs() < 0.05 {
+        format!("{}", v.round() as i64)
+    } else {
+        format!("{v:.1}")
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // geometric primitive: position + size + paint
+fn el_rect(svg: &mut String, x: f64, y: f64, w: f64, h: f64, rx: f64, fill: &str, stroke: &str, dash: &str) {
+    svg.push_str(&format!(
+        "    <rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{}\" ry=\"{}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"1.5\"{dash}/>\n",
+        n(x), n(y), n(w), n(h), n(rx), n(rx)
+    ));
+}
+
+#[allow(clippy::too_many_arguments)] // geometric primitive: centre + radii + paint
+fn el_ellipse(svg: &mut String, cx: f64, cy: f64, rx: f64, ry: f64, fill: &str, stroke: &str, dash: &str) {
+    svg.push_str(&format!(
+        "    <ellipse cx=\"{}\" cy=\"{}\" rx=\"{}\" ry=\"{}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"1.5\"{dash}/>\n",
+        n(cx), n(cy), n(rx), n(ry)
+    ));
+}
+
+fn el_polygon(svg: &mut String, points: &str, fill: &str, stroke: &str, dash: &str) {
+    svg.push_str(&format!(
+        "    <polygon points=\"{points}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"1.5\"{dash}/>\n"
+    ));
+}
+
+fn el_path(svg: &mut String, d: &str, fill: &str, stroke: &str, dash: &str) {
+    svg.push_str(&format!(
+        "    <path d=\"{d}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"1.5\"{dash}/>\n"
+    ));
+}
+
+fn el_line(svg: &mut String, x1: f64, y1: f64, x2: f64, y2: f64, stroke: &str) {
+    svg.push_str(&format!(
+        "    <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{stroke}\" stroke-width=\"2\"/>\n",
+        n(x1), n(y1), n(x2), n(y2)
+    ));
+}
+
+/// Draw the glyph outline for `node` and return the region its text sits in.
+/// Geometry mirrors `structurizr.shapes` in the JS viewer, scaled to fit the
+/// node's computed bounding box.
+fn draw_shape(svg: &mut String, node: &Node, dash: &str) -> TextRegion {
+    let (x, y, w, h) = (node.x as f64, node.y as f64, node.w as f64, node.h as f64);
+    let fill = node.fill.as_str();
+    let stroke = node.stroke.as_str();
+    let cx = node.cx();
+
+    match node.shape {
+        NodeShape::Box => {
+            el_rect(svg, x, y, w, h, 4.0, fill, stroke, dash);
+            TextRegion::full(node)
+        }
+        NodeShape::RoundedBox => {
+            el_rect(svg, x, y, w, h, 14.0, fill, stroke, dash);
+            TextRegion::full(node)
+        }
+        NodeShape::Circle | NodeShape::Ellipse => {
+            el_ellipse(svg, x + w / 2.0, y + h / 2.0, w / 2.0, h / 2.0, fill, stroke, dash);
+            TextRegion::full(node)
+        }
+        NodeShape::Hexagon => {
+            let points = format!(
+                "{:.1},{y:.1} {:.1},{y:.1} {:.1},{:.1} {:.1},{:.1} {:.1},{:.1} {x:.1},{:.1}",
+                x + w / 4.0, x + 3.0 * w / 4.0,
+                x + w, y + h / 2.0,
+                x + 3.0 * w / 4.0, y + h,
+                x + w / 4.0, y + h,
+                y + h / 2.0,
+            );
+            el_polygon(svg, &points, fill, stroke, dash);
+            TextRegion::full(node)
+        }
+        NodeShape::Diamond => {
+            let points = format!(
+                "{:.1},{y:.1} {:.1},{:.1} {:.1},{:.1} {x:.1},{:.1}",
+                x + w / 2.0,
+                x + w, y + h / 2.0,
+                x + w / 2.0, y + h,
+                y + h / 2.0,
+            );
+            el_polygon(svg, &points, fill, stroke, dash);
+            TextRegion::full(node)
+        }
+        NodeShape::Cylinder => {
+            // Vertical radius of the top/bottom elliptical caps.
+            let c = (h * 0.14).clamp(8.0, 26.0);
+            let rx = w / 2.0;
+            let top = y + c;
+            let body = h - 2.0 * c;
+            let d = format!(
+                "M {x:.1},{top:.1} a {rx:.1},{c:.1} 0,0,0 {w:.1} 0 a {rx:.1},{c:.1} 0,0,0 -{w:.1} 0 l 0,{body:.1} a {rx:.1},{c:.1} 0,0,0 {w:.1} 0 l 0,-{body:.1}"
+            );
+            el_path(svg, &d, fill, stroke, dash);
+            TextRegion {
+                top: (y + 2.0 * c).round() as i32,
+                height: (h - 3.0 * c).round() as i32,
+                cx,
+            }
+        }
+        NodeShape::Pipe => {
+            // Horizontal radius of the left/right elliptical caps.
+            let c = (w * 0.14).clamp(8.0, 26.0);
+            let ry = h / 2.0;
+            let left = x + c;
+            let body = w - 2.0 * c;
+            let d = format!(
+                "M {left:.1},{y:.1} a {c:.1},{ry:.1} 0,0,1 0 {h:.1} a {c:.1},{ry:.1} 0,0,1 0 -{h:.1} l {body:.1},0 a {c:.1},{ry:.1} 0,0,1 0 {h:.1} l -{body:.1},0"
+            );
+            el_path(svg, &d, fill, stroke, dash);
+            TextRegion { top: node.y, height: node.h, cx: cx + c.round() as i32 }
+        }
+        NodeShape::Person => {
+            // Head circle first so the body box overlaps its lower half — the
+            // classic C4 person glyph, protruding above the box top edge.
+            svg.push_str(&format!(
+                r##"    <circle cx="{}" cy="{}" r="{}" fill="{fill}" stroke="{stroke}" stroke-width="1.5"{dash}/>
+"##,
+                cx,
+                node.y - PERSON_HEAD_OVERLAP,
+                PERSON_HEAD_RADIUS,
+            ));
+            el_rect(svg, x, y, w, h, 14.0, fill, stroke, dash);
+            TextRegion::full(node)
+        }
+        NodeShape::Robot => {
+            // Square head above the body box, mirroring the person glyph.
+            let r = PERSON_HEAD_RADIUS as f64;
+            let hy = node.y as f64 - PERSON_HEAD_OVERLAP as f64 - r;
+            el_rect(svg, x + w / 2.0 - r, hy, 2.0 * r, 2.0 * r, 4.0, fill, stroke, dash);
+            el_rect(svg, x, y, w, h, 8.0, fill, stroke, dash);
+            TextRegion::full(node)
+        }
+        NodeShape::Folder => {
+            let tab_h = h / 8.0;
+            let tab_w = w / 3.0;
+            el_rect(svg, x + 10.0, y, tab_w, tab_h * 2.0, 8.0, fill, stroke, dash);
+            el_rect(svg, x, y + tab_h, w, h - tab_h, 6.0, fill, stroke, dash);
+            TextRegion { top: (y + tab_h).round() as i32, height: (h - tab_h).round() as i32, cx }
+        }
+        NodeShape::Component => {
+            let block_w = w / 6.0;
+            let block_h = h / 8.0;
+            el_rect(svg, x + block_w / 2.0, y, w - block_w / 2.0, h, 10.0, fill, stroke, dash);
+            el_rect(svg, x, y + block_h * 0.6, block_w, block_h, 4.0, fill, stroke, dash);
+            el_rect(svg, x, y + block_h * 2.0, block_w, block_h, 4.0, fill, stroke, dash);
+            TextRegion { top: node.y, height: node.h, cx: cx + (block_w / 4.0).round() as i32 }
+        }
+        NodeShape::WebBrowser | NodeShape::Window => {
+            // Outer frame filled with the stroke colour, panel with the fill.
+            let ctrl_h = (h * 0.22).clamp(16.0, 40.0);
+            el_rect(svg, x, y, w, h, 10.0, stroke, stroke, dash);
+            el_rect(svg, x + 2.0, y + ctrl_h, w - 4.0, h - ctrl_h - 2.0, 8.0, fill, stroke, "");
+            let bcy = y + ctrl_h / 2.0;
+            for i in 0..3 {
+                el_ellipse(svg, x + 12.0 + i as f64 * 18.0, bcy, 5.0, 5.0, fill, "none", "");
+            }
+            if node.shape == NodeShape::WebBrowser {
+                el_rect(svg, x + 64.0, bcy - 6.0, (w - 74.0).max(10.0), 12.0, 6.0, fill, "none", "");
+            }
+            TextRegion { top: (y + ctrl_h).round() as i32, height: (h - ctrl_h).round() as i32, cx }
+        }
+        NodeShape::MobileDevicePortrait => {
+            el_rect(svg, x, y, w, h, 16.0, stroke, stroke, dash);
+            el_line(svg, cx as f64 - 15.0, y + 10.0, cx as f64 + 15.0, y + 10.0, fill);
+            el_rect(svg, x + 8.0, y + 20.0, w - 16.0, h - 40.0, 4.0, fill, stroke, "");
+            el_ellipse(svg, cx as f64, y + h - 10.0, 5.0, 5.0, fill, "none", "");
+            TextRegion { top: (y + 20.0).round() as i32, height: (h - 40.0).round() as i32, cx }
+        }
+        NodeShape::MobileDeviceLandscape => {
+            el_rect(svg, x, y, w, h, 16.0, stroke, stroke, dash);
+            let mcy = y + h / 2.0;
+            el_ellipse(svg, x + 12.0, mcy, 5.0, 5.0, fill, "none", "");
+            el_line(svg, x + w - 12.0, mcy - 15.0, x + w - 12.0, mcy + 15.0, fill);
+            el_rect(svg, x + 24.0, y + 8.0, w - 48.0, h - 16.0, 4.0, fill, stroke, "");
+            TextRegion { top: (y + 8.0).round() as i32, height: (h - 16.0).round() as i32, cx }
+        }
+    }
+}
+
+/// Render a single node: its shape glyph plus the centred text block.
 fn render_node(svg: &mut String, node: &Node) {
     let dash_attr = node
         .dash
         .map(|d| format!(r#" stroke-dasharray="{}""#, d))
         .unwrap_or_default();
 
-    if node.is_person {
-        // Head circle drawn first so the box covers its lower part — the
-        // classic C4 person glyph.  Its centre sits PERSON_HEAD_OVERLAP above
-        // the box top edge.
-        svg.push_str(&format!(
-            r##"    <circle cx="{}" cy="{}" r="{}" fill="{}" stroke="{}" stroke-width="1.5"{dash_attr}/>
-"##,
-            node.cx(),
-            node.y - PERSON_HEAD_OVERLAP,
-            PERSON_HEAD_RADIUS,
-            node.fill,
-            node.stroke,
-        ));
-    }
+    let region = draw_shape(svg, node, &dash_attr);
 
-    svg.push_str(&format!(
-        r##"    <rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}" stroke-width="1.5"{dash_attr} rx="{}"/>
-"##,
-        node.x,
-        node.y,
-        node.w,
-        node.h,
-        node.fill,
-        node.stroke,
-        if node.is_person { 12 } else { 4 },
-    ));
-
-    // Text block, vertically centred inside the box.
-    let cx = node.cx();
-    let mut cursor = node.y + (node.h - node.content_h) / 2;
+    // Text block, vertically centred inside the shape's text region.
+    let cx = region.cx;
+    let mut cursor = region.top + (region.height - node.content_h) / 2;
     for line in &node.name_lines {
         svg.push_str(&format!(
             r##"    <text x="{cx}" y="{}" font-size="{FS_NAME}" font-weight="bold" fill="{}" text-anchor="middle">{}</text>
@@ -1664,11 +1907,13 @@ fn get_styles(workspace: &Workspace) -> Option<&Styles> {
     workspace.views.configuration.as_ref()?.styles.as_ref()
 }
 
-/// Resolved fill / stroke / text colours for a single node.
+/// Resolved fill / stroke / text colours and glyph shape for a single node.
 struct ResolvedNodeStyle {
     fill: String,
     stroke: String,
     text_color: String,
+    /// `shape` from the highest-priority matching element style, if any.
+    shape: Option<String>,
 }
 
 /// Compute the effective colours for a node by walking its comma-separated tag
@@ -1684,6 +1929,7 @@ fn resolve_node_style(
     let mut fill = default_fill.to_string();
     let mut text_color = default_text.to_string();
     let mut stroke: Option<String> = None;
+    let mut shape: Option<String> = None;
 
     if let Some(styles) = styles {
         if let Some(element_styles) = &styles.elements {
@@ -1707,6 +1953,9 @@ fn resolve_node_style(
                         if let Some(s) = &style.stroke {
                             stroke = Some(s.clone());
                         }
+                        if let Some(sh) = &style.shape {
+                            shape = Some(sh.clone());
+                        }
                     }
                 }
             }
@@ -1714,7 +1963,7 @@ fn resolve_node_style(
     }
 
     let stroke = stroke.unwrap_or_else(|| darken(&fill));
-    ResolvedNodeStyle { fill, stroke, text_color }
+    ResolvedNodeStyle { fill, stroke, text_color, shape }
 }
 
 fn xml_escape(s: &str) -> String {
@@ -2017,7 +2266,7 @@ mod tests {
             fill: String::new(),
             stroke: String::new(),
             text_color: String::new(),
-            is_person: false,
+            shape: NodeShape::Box,
             x: 0,
             y: 60,
             w: 200,
@@ -2215,6 +2464,52 @@ mod tests {
             .and_then(|s| s.parse().ok())
             .expect("person rect y");
         assert!(cy < y, "head circle centre (cy={cy}) must be above the box top (y={y})");
+    }
+
+    #[test]
+    fn element_style_shape_selects_glyph() {
+        // A `shape` in the element style should switch the rendered glyph away
+        // from the default box, matching the `structurizr.shapes` set.
+        use structurizr_model::{Container, ElementStyle, Styles, ViewConfiguration};
+
+        fn svg_for(shape: &str) -> String {
+            let mut workspace = Workspace::default();
+            workspace.name = "ShapeTest".to_string();
+            workspace.model.software_systems = Some(vec![SoftwareSystem {
+                id: "1".to_string(),
+                name: "Sys".to_string(),
+                containers: Some(vec![Container {
+                    id: "2".to_string(),
+                    name: "Store".to_string(),
+                    tags: Some("Element,Container,Store".to_string()),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            }]);
+            workspace.views.container_views = Some(vec![ContainerView {
+                key: Some("Containers".to_string()),
+                software_system_id: "1".to_string(),
+                ..Default::default()
+            }]);
+            workspace.views.configuration = Some(ViewConfiguration {
+                styles: Some(Styles {
+                    elements: Some(vec![ElementStyle {
+                        tag: "Store".to_string(),
+                        shape: Some(shape.to_string()),
+                        ..Default::default()
+                    }]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            });
+            SvgExporter.export_workspace(&workspace)[0].content.clone()
+        }
+
+        // Cylinder emits a <path> arc; Hexagon a <polygon>; Folder two rects
+        // (a tab) — each distinct from the default plain box.
+        assert!(svg_for("Cylinder").contains("<path d=\"M "), "cylinder must draw a path");
+        assert!(svg_for("Hexagon").matches("<polygon").count() >= 2, "hexagon must draw a polygon");
+        assert!(svg_for("Cylinder") != svg_for("Box"), "cylinder differs from box");
     }
 
     #[test]
