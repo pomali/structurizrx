@@ -80,6 +80,83 @@ workspace "Hello" {
 }
 
 #[test]
+fn container_view_lifts_component_relationships() {
+    // A relationship declared at the component level (web -> api's component)
+    // must surface in the container view collapsed to the container level
+    // (web -> api), mirroring upstream Structurizr's implied relationships.
+    let dsl = r#"
+workspace "Implied" {
+    model {
+        s = softwareSystem "System" {
+            web = container "Web"
+            api = container "API" {
+                controller = component "Controller"
+            }
+            web -> controller "Calls"
+        }
+    }
+    views {
+        container s "Containers" {
+            include *
+            autolayout
+        }
+    }
+}
+"#;
+    let ws = parse_str(dsl).expect("should parse");
+    let web_id = &find_container(&ws, "Web").id;
+    let api_id = &find_container(&ws, "API").id;
+
+    let view = &ws.views.container_views.as_ref().unwrap()[0];
+    // The container view element set includes both containers but not the component.
+    let elems: std::collections::HashSet<&str> = view
+        .element_views
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|e| e.id.as_str())
+        .collect();
+    assert!(elems.contains(web_id.as_str()) && elems.contains(api_id.as_str()));
+
+    // The lifted web -> api relationship must be present in the view.
+    let rel_ids: std::collections::HashSet<&str> = view
+        .relationship_views
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|r| r.id.as_str())
+        .collect();
+    let mut all_rels = Vec::new();
+    for s in ws.model.software_systems.iter().flatten() {
+        all_rels.extend(s.relationships.iter().flatten());
+        for c in s.containers.iter().flatten() {
+            all_rels.extend(c.relationships.iter().flatten());
+            for comp in c.components.iter().flatten() {
+                all_rels.extend(comp.relationships.iter().flatten());
+            }
+        }
+    }
+    let lifted = all_rels
+        .iter()
+        .find(|r| rel_ids.contains(r.id.as_str()))
+        .expect("container view should contain a lifted relationship");
+    assert_eq!(&lifted.source_id, web_id);
+    // The stored relationship still points at the component; the view lifts it.
+    assert_ne!(&lifted.destination_id, api_id);
+}
+
+fn find_container<'a>(ws: &'a structurizr_model::Workspace, name: &str) -> &'a structurizr_model::Container {
+    ws.model
+        .software_systems
+        .as_ref()
+        .unwrap()
+        .iter()
+        .flat_map(|s| s.containers.iter().flatten())
+        .find(|c| c.name == name)
+        .expect("container not found")
+}
+
+#[test]
 fn parse_avisi_adrs() {
     let path = examples_path("avisi/workspace.dsl");
     let ws = parse_file(&path).expect("should parse avisi workspace.dsl");

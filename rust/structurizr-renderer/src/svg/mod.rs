@@ -358,6 +358,15 @@ impl DiagramExporter for SvgExporter {
             }
         }
 
+        if let Some(cv) = &views.component_views {
+            for v in cv {
+                let key = v.key.clone().unwrap_or_else(|| "Component".to_string());
+                let title = v.title.as_deref().unwrap_or(&key);
+                let content = render_component_view(title, v, workspace);
+                diagrams.push(Diagram::new(key, content, DiagramFormat::Svg));
+            }
+        }
+
         diagrams
     }
 }
@@ -435,6 +444,50 @@ fn container_scope(model: &Model, focal_id: &str) -> HashSet<String> {
             for c in ss.containers.iter().flatten() {
                 scope.insert(c.id.clone());
             }
+        }
+    }
+    scope
+}
+
+/// Elements in scope for a component view without an explicit element list:
+/// the focal container's components plus the elements they relate to (sibling
+/// containers collapsed from their components, external systems, people).
+fn component_scope(model: &Model, focal_container_id: &str) -> HashSet<String> {
+    // component id → owning container id
+    let mut comp_container: HashMap<String, String> = HashMap::new();
+    let mut components: HashSet<String> = HashSet::new();
+    for ss in model.software_systems.iter().flatten() {
+        for c in ss.containers.iter().flatten() {
+            for comp in c.components.iter().flatten() {
+                comp_container.insert(comp.id.clone(), c.id.clone());
+                if c.id == focal_container_id {
+                    components.insert(comp.id.clone());
+                }
+            }
+        }
+    }
+
+    // Collapse an endpoint to how it should appear in this component view: a
+    // focal component stays itself; another container's component collapses to
+    // that container; anything else stays as-is.
+    let collapse = |id: &str| -> String {
+        if components.contains(id) {
+            return id.to_string();
+        }
+        match comp_container.get(id) {
+            Some(container) => container.clone(),
+            None => id.to_string(),
+        }
+    };
+
+    let mut scope = components.clone();
+    for r in all_relationships(model) {
+        let s_in = components.contains(&r.source_id);
+        let d_in = components.contains(&r.destination_id);
+        if s_in && !d_in {
+            scope.insert(collapse(&r.destination_id));
+        } else if d_in && !s_in {
+            scope.insert(collapse(&r.source_id));
         }
     }
     scope
@@ -648,6 +701,66 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
     } else {
         let c_nodes: Vec<&Node> = nodes.iter().filter(|n| container_ids.contains(&n.id)).collect();
         Some(boundary_rect(&c_nodes, &focal_system_name))
+    };
+
+    render_svg(title, &nodes, &edges, boundary.as_ref())
+}
+
+fn render_component_view(title: &str, view: &ComponentView, workspace: &Workspace) -> String {
+    let model = &workspace.model;
+    let styles = get_styles(workspace);
+    let focal_id = &view.container_id;
+    let (mut elem_filter, elem_pos) = build_element_filter(view.element_views.as_deref());
+    let rel_filter = build_rel_filter(view.relationship_views.as_deref());
+
+    if elem_filter.is_none() {
+        elem_filter = Some(component_scope(model, focal_id));
+    }
+
+    let mut nodes: Vec<Node> = Vec::new();
+    let mut component_ids: HashSet<String> = HashSet::new();
+    let mut focal_container_name = String::new();
+
+    for p in model.people.iter().flatten() {
+        if elem_allowed(&elem_filter, &p.id) {
+            nodes.push(person_node(p, styles));
+        }
+    }
+    for ss in model.software_systems.iter().flatten() {
+        // Other software systems appear as external nodes; the focal container's
+        // own parent system is the boundary and is not drawn as a node.
+        if elem_allowed(&elem_filter, &ss.id) {
+            nodes.push(system_node(ss, styles, COLOR_SYSTEM_EXT));
+        }
+        for c in ss.containers.iter().flatten() {
+            if &c.id == focal_id {
+                focal_container_name = c.name.clone();
+                for comp in c.components.iter().flatten() {
+                    if elem_allowed(&elem_filter, &comp.id) {
+                        component_ids.insert(comp.id.clone());
+                        nodes.push(component_node(comp, styles));
+                    }
+                }
+            } else if elem_allowed(&elem_filter, &c.id) {
+                nodes.push(container_node(c, styles));
+            }
+        }
+    }
+
+    let edges = collect_all_edges_with_containers(model, rel_filter.as_ref());
+    let visible: HashSet<String> = nodes.iter().map(|n| n.id.clone()).collect();
+    let mut edges = lift_edges(edges, model, &visible);
+    apply_delta_styling(view.properties.as_ref(), &mut nodes, &mut edges);
+    let positioned = apply_stored_positions(&mut nodes, &elem_pos);
+    if positioned == 0 {
+        layout(&mut nodes, &edges, Some(&component_ids));
+    }
+
+    let boundary = if component_ids.is_empty() {
+        None
+    } else {
+        let c_nodes: Vec<&Node> = nodes.iter().filter(|n| component_ids.contains(&n.id)).collect();
+        Some(boundary_rect(&c_nodes, &focal_container_name))
     };
 
     render_svg(title, &nodes, &edges, boundary.as_ref())
@@ -1618,8 +1731,8 @@ fn xml_escape(s: &str) -> String {
 mod tests {
     use super::*;
     use structurizr_model::{
-        Container, ContainerView, Person, SoftwareSystem, SystemContextView, SystemLandscapeView,
-        Workspace,
+        Component, ComponentView, Container, ContainerView, ElementView, Person, RelationshipView,
+        SoftwareSystem, SystemContextView, SystemLandscapeView, Workspace,
     };
 
     fn basic_workspace() -> Workspace {
@@ -1746,6 +1859,66 @@ mod tests {
         assert!(svg.contains("Rust"));
         assert!(svg.contains(COLOR_CONTAINER));
         assert!(svg.contains("My System"), "boundary label should carry the system name");
+    }
+
+    #[test]
+    fn svg_exporter_component_view() {
+        let mut workspace = Workspace::default();
+        workspace.name = "ComponentTest".to_string();
+
+        let component = Component {
+            id: "4".to_string(),
+            name: "Widget".to_string(),
+            technology: Some("Rust".to_string()),
+            relationships: Some(vec![Relationship {
+                id: "r1".to_string(),
+                source_id: "4".to_string(),
+                destination_id: "9".to_string(),
+                description: Some("Reads".to_string()),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+        let container = Container {
+            id: "3".to_string(),
+            name: "API".to_string(),
+            components: Some(vec![component]),
+            ..Default::default()
+        };
+        let system = SoftwareSystem {
+            id: "2".to_string(),
+            name: "My System".to_string(),
+            containers: Some(vec![container]),
+            ..Default::default()
+        };
+        let external = SoftwareSystem {
+            id: "9".to_string(),
+            name: "External".to_string(),
+            ..Default::default()
+        };
+        workspace.model.software_systems = Some(vec![system, external]);
+        workspace.views.component_views = Some(vec![ComponentView {
+            container_id: "3".to_string(),
+            key: Some("Components".to_string()),
+            element_views: Some(vec![
+                ElementView { id: "4".to_string(), ..Default::default() },
+                ElementView { id: "9".to_string(), ..Default::default() },
+            ]),
+            relationship_views: Some(vec![RelationshipView {
+                id: "r1".to_string(),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        }]);
+
+        let diagrams = SvgExporter.export_workspace(&workspace);
+        assert_eq!(diagrams.len(), 1);
+        let svg = &diagrams[0].content;
+        assert!(svg.contains("Widget"), "component should render");
+        assert!(svg.contains("External"), "related external system should render");
+        assert!(svg.contains("API"), "boundary label should carry the container name");
+        // The component→external relationship should produce an arrow.
+        assert!(svg.contains("url(#arrow)"), "component relationship should render an edge");
     }
 
     #[test]

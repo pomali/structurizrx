@@ -2803,92 +2803,115 @@ impl Parser {
         }
     }
 
+    /// Collect the relationships that appear in a view over the element set `ids`.
+    ///
+    /// Two passes:
+    /// 1. Relationships whose endpoints are *both* directly in `ids` — the
+    ///    same-level relationships, exactly as before.
+    /// 2. Implied relationships: every remaining relationship is lifted by
+    ///    replacing each endpoint with its nearest ancestor present in `ids`
+    ///    (component → container → software system). A lifted relationship is
+    ///    added only if the resulting pair is not already connected, so a
+    ///    container view surfaces relationships defined at component level
+    ///    (e.g. a component's `-> otherContainer`) collapsed to the container
+    ///    level, mirroring upstream Structurizr's implied relationships.
     fn collect_relationship_view_ids(&self, model: &Model, ids: &HashSet<String>) -> Vec<RelationshipView> {
-        let mut seen = HashSet::new();
+        let parents = self.build_parent_map(model);
+        let lift = |id: &str| -> Option<String> {
+            let mut cur = id.to_string();
+            loop {
+                if ids.contains(&cur) {
+                    return Some(cur);
+                }
+                cur = parents.get(&cur)?.clone();
+            }
+        };
+
+        // Gather every relationship in the model, at any nesting level.
+        let mut all: Vec<&Relationship> = Vec::new();
+        for p in model.people.iter().flatten() {
+            all.extend(p.relationships.iter().flatten());
+        }
+        for ss in model.software_systems.iter().flatten() {
+            all.extend(ss.relationships.iter().flatten());
+            for c in ss.containers.iter().flatten() {
+                all.extend(c.relationships.iter().flatten());
+                for comp in c.components.iter().flatten() {
+                    all.extend(comp.relationships.iter().flatten());
+                }
+            }
+        }
+        fn walk_node<'a>(node: &'a DeploymentNode, all: &mut Vec<&'a Relationship>) {
+            all.extend(node.relationships.iter().flatten());
+            for ci in node.container_instances.iter().flatten() {
+                all.extend(ci.relationships.iter().flatten());
+            }
+            for ssi in node.software_system_instances.iter().flatten() {
+                all.extend(ssi.relationships.iter().flatten());
+            }
+            for inf in node.infrastructure_nodes.iter().flatten() {
+                all.extend(inf.relationships.iter().flatten());
+            }
+            for child in node.children.iter().flatten() {
+                walk_node(child, all);
+            }
+        }
+        for node in model.deployment_nodes.iter().flatten() {
+            walk_node(node, &mut all);
+        }
+
+        let mut seen_ids: HashSet<String> = HashSet::new();
+        let mut seen_pairs: HashSet<(String, String)> = HashSet::new();
         let mut out = Vec::new();
 
-        fn collect_from_relationships(
-            relationships: &Option<Vec<Relationship>>,
-            ids: &HashSet<String>,
-            seen: &mut HashSet<String>,
-            out: &mut Vec<RelationshipView>,
-        ) {
-            if let Some(rels) = relationships {
-                for rel in rels {
-                    if ids.contains(&rel.source_id)
-                        && ids.contains(&rel.destination_id)
-                        && seen.insert(rel.id.clone())
-                    {
-                        out.push(RelationshipView {
-                            id: rel.id.clone(),
-                            ..Default::default()
-                        });
-                    }
-                }
+        // Pass 1: same-level relationships (both endpoints directly visible).
+        for rel in &all {
+            if ids.contains(&rel.source_id)
+                && ids.contains(&rel.destination_id)
+                && seen_ids.insert(rel.id.clone())
+            {
+                seen_pairs.insert((rel.source_id.clone(), rel.destination_id.clone()));
+                out.push(RelationshipView {
+                    id: rel.id.clone(),
+                    ..Default::default()
+                });
             }
         }
 
-        if let Some(people) = &model.people {
-            for p in people {
-                collect_from_relationships(&p.relationships, ids, &mut seen, &mut out);
+        // Pass 2: implied relationships lifted to the nearest visible ancestor.
+        for rel in &all {
+            if seen_ids.contains(&rel.id) {
+                continue;
             }
-        }
-
-        if let Some(systems) = &model.software_systems {
-            for ss in systems {
-                collect_from_relationships(&ss.relationships, ids, &mut seen, &mut out);
-
-                if let Some(containers) = &ss.containers {
-                    for c in containers {
-                        collect_from_relationships(&c.relationships, ids, &mut seen, &mut out);
-
-                        if let Some(components) = &c.components {
-                            for comp in components {
-                                collect_from_relationships(&comp.relationships, ids, &mut seen, &mut out);
-                            }
-                        }
-                    }
-                }
+            let (Some(src), Some(dst)) = (lift(&rel.source_id), lift(&rel.destination_id)) else {
+                continue;
+            };
+            if src == dst || !seen_pairs.insert((src, dst)) {
+                continue;
             }
-        }
-
-        // Also scan deployment node hierarchies (container instances, infrastructure nodes).
-        fn scan_deployment_node(
-            node: &DeploymentNode,
-            ids: &HashSet<String>,
-            seen: &mut HashSet<String>,
-            out: &mut Vec<RelationshipView>,
-        ) {
-            collect_from_relationships(&node.relationships, ids, seen, out);
-            if let Some(cis) = &node.container_instances {
-                for ci in cis {
-                    collect_from_relationships(&ci.relationships, ids, seen, out);
-                }
-            }
-            if let Some(ssis) = &node.software_system_instances {
-                for ssi in ssis {
-                    collect_from_relationships(&ssi.relationships, ids, seen, out);
-                }
-            }
-            if let Some(infs) = &node.infrastructure_nodes {
-                for inf in infs {
-                    collect_from_relationships(&inf.relationships, ids, seen, out);
-                }
-            }
-            if let Some(children) = &node.children {
-                for child in children {
-                    scan_deployment_node(child, ids, seen, out);
-                }
-            }
-        }
-
-        if let Some(nodes) = &model.deployment_nodes {
-            for node in nodes {
-                scan_deployment_node(node, ids, &mut seen, &mut out);
-            }
+            seen_ids.insert(rel.id.clone());
+            out.push(RelationshipView {
+                id: rel.id.clone(),
+                ..Default::default()
+            });
         }
 
         out
+    }
+
+    /// Map each container/component id to its parent element id
+    /// (component → container, container → software system).
+    fn build_parent_map(&self, model: &Model) -> HashMap<String, String> {
+        let mut map = HashMap::new();
+        for ss in model.software_systems.iter().flatten() {
+            for c in ss.containers.iter().flatten() {
+                map.insert(c.id.clone(), ss.id.clone());
+                for comp in c.components.iter().flatten() {
+                    map.insert(comp.id.clone(), c.id.clone());
+                }
+            }
+        }
+        map
     }
 
     fn populate_system_landscape_view(&self, model: &Model, view: &mut SystemLandscapeView) {
