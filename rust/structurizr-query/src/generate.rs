@@ -752,89 +752,30 @@ fn gen_delta(ws: &mut Workspace, idx: &Index, spec: &AutoViewSpec, generated: &m
 // ---------------------------------------------------------------------------
 
 fn gen_lint(ws: &mut Workspace, idx: &Index, generated: &mut Vec<String>) {
-    let mut flagged: BTreeSet<String> = BTreeSet::new();
-    let mut findings: Vec<String> = Vec::new();
+    let findings = crate::lint::lint(ws);
+    let flagged: BTreeSet<String> = findings.iter().map(|f| f.element_id.clone()).collect();
 
-    let placeholders: Vec<&crate::eval::ElemEntry> = idx
-        .elements
-        .iter()
-        .filter(|e| e.tags.iter().any(|t| t == "Placeholder"))
-        .collect();
-    if !placeholders.is_empty() {
-        findings.push(format!(
-            "placeholders: {}",
-            placeholders.iter().map(|e| e.name.as_str()).collect::<Vec<_>>().join(", ")
-        ));
-        flagged.extend(placeholders.iter().map(|e| e.id.clone()));
-    }
-
-    let uncertain: Vec<&crate::eval::ElemEntry> = idx
-        .elements
-        .iter()
-        .filter(|e| e.tags.iter().any(|t| t == "Uncertain"))
-        .collect();
-    if !uncertain.is_empty() {
-        findings.push(format!(
-            "uncertain: {}",
-            uncertain.iter().map(|e| e.name.as_str()).collect::<Vec<_>>().join(", ")
-        ));
-        flagged.extend(uncertain.iter().map(|e| e.id.clone()));
-    }
-
-    let connected: HashSet<&String> = idx
-        .relationships
-        .iter()
-        .flat_map(|r| [&r.source_id, &r.dest_id])
-        .collect();
-    // Orphans: leaf-level elements with no relationships in either direction
-    // and no children (a bare system with containers is a boundary, not an orphan).
-    let has_children: HashSet<&String> = idx
-        .elements
-        .iter()
-        .filter_map(|e| e.parent_id.as_ref())
-        .collect();
-    let orphans: Vec<&crate::eval::ElemEntry> = idx
-        .elements
-        .iter()
-        .filter(|e| !connected.contains(&e.id) && !has_children.contains(&e.id))
-        .collect();
-    if !orphans.is_empty() {
-        findings.push(format!(
-            "orphans: {}",
-            orphans.iter().map(|e| e.name.as_str()).collect::<Vec<_>>().join(", ")
-        ));
-        flagged.extend(orphans.iter().map(|e| e.id.clone()));
-    }
-
-    // Unbound ports: declared but never referenced by any relationship.
-    let used_ports: HashSet<(String, String)> = idx
-        .relationships
-        .iter()
-        .flat_map(|r| {
-            [
-                r.source_port_id.as_ref().map(|p| (r.source_id.clone(), p.clone())),
-                r.dest_port_id.as_ref().map(|p| (r.dest_id.clone(), p.clone())),
-            ]
-        })
-        .flatten()
-        .collect();
-    let mut unbound: Vec<String> = Vec::new();
-    for e in &idx.elements {
-        for (pid, pname) in &e.ports {
-            if !used_ports.contains(&(e.id.clone(), pid.clone())) {
-                unbound.push(format!("{}.{}", e.name, pname));
-                flagged.insert(e.id.clone());
-            }
+    // Legacy grouped one-line description for the generated view.
+    let mut parts: Vec<String> = Vec::new();
+    for (code, label) in [
+        ("placeholder", "placeholders"),
+        ("uncertain", "uncertain"),
+        ("orphan", "orphans"),
+        ("unbound-port", "unbound ports"),
+    ] {
+        let names: Vec<&str> = findings
+            .iter()
+            .filter(|f| f.code == code)
+            .map(|f| f.name.as_str())
+            .collect();
+        if !names.is_empty() {
+            parts.push(format!("{}: {}", label, names.join(", ")));
         }
     }
-    if !unbound.is_empty() {
-        findings.push(format!("unbound ports: {}", unbound.join(", ")));
-    }
-
-    let description = if findings.is_empty() {
+    let description = if parts.is_empty() {
         "no findings".to_string()
     } else {
-        findings.join("; ")
+        parts.join("; ")
     };
     let rels = induced_rels(idx, &flagged);
     push_generated(

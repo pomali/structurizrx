@@ -21,6 +21,19 @@ pub enum ValidationError {
     UnknownMilestone(String),
 }
 
+impl ValidationError {
+    /// Stable machine-readable code for this error kind.
+    pub fn code(&self) -> &'static str {
+        match self {
+            ValidationError::EmptyName => "empty-name",
+            ValidationError::DuplicateId(_) => "duplicate-id",
+            ValidationError::UnknownElement(_) => "unknown-element",
+            ValidationError::UnknownPort(_) => "unknown-port",
+            ValidationError::UnknownMilestone(_) => "unknown-milestone",
+        }
+    }
+}
+
 fn check_milestone(
     errors: &mut Vec<ValidationError>,
     milestone_names: &HashSet<&str>,

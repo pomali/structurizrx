@@ -26,6 +26,10 @@ enum Commands {
         /// orphans, unbound ports)
         #[arg(long)]
         strict: bool,
+        /// Emit machine-readable JSON (parse/validation errors and lint
+        /// findings with stable codes) instead of text
+        #[arg(long)]
+        json: bool,
     },
     /// Render diagrams from a workspace file
     Render {
@@ -256,40 +260,59 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Validate { file, strict } => {
-            let workspace = load_workspace(&file)?;
-            let errors = validation::validate(&workspace);
-            if !errors.is_empty() {
-                eprintln!("Validation errors:");
-                for e in &errors {
-                    eprintln!("  - {}", e);
-                }
-                std::process::exit(1);
-            }
-            if strict {
-                // Reuse the lint generator: its auto-lint view description
-                // carries the findings summary.
-                let mut ws = workspace.clone();
-                ws.views.auto_views = Some(vec![structurizr_model::AutoViewSpec {
-                    generator: "lint".to_string(),
-                    ..Default::default()
-                }]);
-                structurizr_query::generate_views(&mut ws)
-                    .map_err(|e| anyhow::anyhow!("lint: {}", e))?;
-                let findings = ws
-                    .views
-                    .system_landscape_views
-                    .iter()
-                    .flatten()
-                    .find(|v| v.key.as_deref() == Some("auto-lint"))
-                    .and_then(|v| v.description.clone())
-                    .unwrap_or_default();
-                if findings != "no findings" {
-                    eprintln!("Lint findings: {}", findings);
+        Commands::Validate { file, strict, json } => {
+            let workspace = match load_workspace(&file) {
+                Ok(ws) => ws,
+                Err(e) if json => {
+                    let out = serde_json::json!({
+                        "valid": false,
+                        "errors": [{ "code": "parse", "message": format!("{:#}", e) }],
+                        "lint": [],
+                    });
+                    println!("{}", serde_json::to_string_pretty(&out)?);
                     std::process::exit(1);
                 }
+                Err(e) => return Err(e),
+            };
+            let errors = validation::validate(&workspace);
+            let findings = structurizr_query::lint(&workspace);
+            let failed = !errors.is_empty() || (strict && !findings.is_empty());
+
+            if json {
+                let out = serde_json::json!({
+                    "valid": errors.is_empty(),
+                    "errors": errors.iter().map(|e| serde_json::json!({
+                        "code": e.code(),
+                        "message": e.to_string(),
+                    })).collect::<Vec<_>>(),
+                    "lint": findings.iter().map(|f| serde_json::json!({
+                        "code": f.code,
+                        "elementId": f.element_id,
+                        "name": f.name,
+                        "message": f.message,
+                    })).collect::<Vec<_>>(),
+                });
+                println!("{}", serde_json::to_string_pretty(&out)?);
+            } else {
+                if !errors.is_empty() {
+                    eprintln!("Validation errors:");
+                    for e in &errors {
+                        eprintln!("  - [{}] {}", e.code(), e);
+                    }
+                }
+                if strict && !findings.is_empty() {
+                    eprintln!("Lint findings:");
+                    for f in &findings {
+                        eprintln!("  - [{}] {} (element {})", f.code, f.message, f.element_id);
+                    }
+                }
+                if !failed {
+                    println!("✓ Workspace '{}' is valid", workspace.name);
+                }
             }
-            println!("✓ Workspace '{}' is valid", workspace.name);
+            if failed {
+                std::process::exit(1);
+            }
         }
         Commands::Render { file, format, output } => {
             let mut workspace = load_workspace(&file)?;

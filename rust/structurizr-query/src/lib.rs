@@ -12,11 +12,13 @@ pub mod lexer;
 mod parser;
 mod eval;
 pub mod generate;
+pub mod lint;
 
 use std::collections::BTreeSet;
 use structurizr_model::Workspace;
 
 pub use generate::generate_views;
+pub use lint::{lint, LintFinding};
 
 /// A set of matched elements and relationships in deterministic (BTreeSet) order.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
