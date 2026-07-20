@@ -30,3 +30,11 @@ structurizr-application/extensions
 
 # Ignore Gradle local state folders everywhere
 **/.gradle/
+
+# VS Code extension (editors/vscode) build output and npm deps
+editors/vscode/node_modules/
+editors/vscode/out/
+*.vsix
+
+# The grammar file matches the structurizr-*.json ignore rule above; keep it.
+!editors/vscode/syntaxes/*.json

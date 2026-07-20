@@ -1,0 +1,59 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Structurizr DSL",
+  "scopeName": "source.structurizr-dsl",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#text-blocks" },
+    { "include": "#strings" },
+    { "include": "#directives" },
+    { "include": "#operators" },
+    { "include": "#keywords" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.structurizr-dsl",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.structurizr-dsl",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "text-blocks": {
+      "name": "string.quoted.triple.structurizr-dsl",
+      "begin": "\"\"\"",
+      "end": "\"\"\""
+    },
+    "strings": {
+      "name": "string.quoted.double.structurizr-dsl",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.structurizr-dsl", "match": "\\\\." }
+      ]
+    },
+    "directives": {
+      "name": "keyword.control.directive.structurizr-dsl",
+      "match": "!\\w+"
+    },
+    "operators": {
+      "patterns": [
+        { "name": "keyword.operator.arrow.structurizr-dsl", "match": "->" },
+        { "name": "keyword.operator.assignment.structurizr-dsl", "match": "=" }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.structurizr-dsl",
+          "match": "(?i)\\b(workspace|model|views|configuration|documentation|docs|specification|milestones|name|description|technology|url|tags|group|properties|perspective|perspectives|port|status|introduced|retired|person|softwareSystem|enterprise|deploymentEnvironment|element|container|component|deploymentNode|containerInstance|softwareSystemInstance|infrastructureNode|instanceOf|instances|deploymentGroup|auto|systemLandscape|systemContext|dynamic|deployment|filtered|image|custom|styles|theme|themes|branding|relationship|this)\\b"
+        }
+      ]
+    }
+  }
+}

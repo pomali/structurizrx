@@ -9,6 +9,15 @@ use crate::lexer::{tokenize, Spanned, Token};
 
 /// Parse a DSL file from disk.
 pub fn parse_file(path: impl AsRef<Path>) -> Result<Workspace, ParseError> {
+    parse_file_with_identifiers(path).map(|(workspace, _)| workspace)
+}
+
+/// Parse a DSL file from disk, also returning the identifier register built up
+/// during parsing (DSL identifier → resolved element id/kind). Intended for
+/// tooling (e.g. an LSP) that needs to resolve identifiers back to elements.
+pub fn parse_file_with_identifiers(
+    path: impl AsRef<Path>,
+) -> Result<(Workspace, IdentifierRegister), ParseError> {
     let path = path.as_ref();
     let source = std::fs::read_to_string(path)?;
     let base = path.parent().map(|p| p.to_path_buf());
@@ -24,7 +33,8 @@ pub fn parse_file(path: impl AsRef<Path>) -> Result<Workspace, ParseError> {
     let mut parser = Parser::new(tokens);
     parser.base_path = base;
     parser.source_map = source_map;
-    parser.parse_workspace_toplevel()
+    let workspace = parser.parse_workspace_toplevel()?;
+    Ok((workspace, parser.register))
 }
 
 /// Maps each line of the post-`!include` spliced source back to
@@ -95,9 +105,17 @@ fn preprocess_includes(
 
 /// Parse a DSL string into a Workspace.
 pub fn parse_str(source: &str) -> Result<Workspace, ParseError> {
+    parse_str_with_identifiers(source).map(|(workspace, _)| workspace)
+}
+
+/// Parse a DSL string into a Workspace, also returning the identifier register
+/// built up during parsing (DSL identifier → resolved element id/kind). Intended
+/// for tooling (e.g. an LSP) that needs to resolve identifiers back to elements.
+pub fn parse_str_with_identifiers(source: &str) -> Result<(Workspace, IdentifierRegister), ParseError> {
     let tokens = tokenize(source);
     let mut parser = Parser::new(tokens);
-    parser.parse_workspace_toplevel()
+    let workspace = parser.parse_workspace_toplevel()?;
+    Ok((workspace, parser.register))
 }
 
 struct Parser {
@@ -186,6 +204,21 @@ const VIEWS_KEYWORDS: [&str; 15] = [
     "deployment", "filtered", "image", "custom", "styles", "theme", "themes", "branding",
     "properties",
 ];
+
+/// The parser's canonical keyword sets, keyed by the block they apply within.
+/// Exposed so tooling (e.g. an LSP's completion provider) has a single source
+/// of truth for the grammar's vocabulary instead of hand-duplicating it.
+pub fn keyword_sets() -> &'static [(&'static str, &'static [&'static str])] {
+    &[
+        ("element", &ELEMENT_BODY_KEYWORDS),
+        ("softwareSystem", &SOFTWARE_SYSTEM_BODY_KEYWORDS),
+        ("container", &CONTAINER_BODY_KEYWORDS),
+        ("deploymentNode", &DEPLOYMENT_NODE_BODY_KEYWORDS),
+        ("model", &MODEL_KEYWORDS),
+        ("workspace", &WORKSPACE_KEYWORDS),
+        ("views", &VIEWS_KEYWORDS),
+    ]
+}
 
 /// A vocabulary alias declared in `specification { kind queue container { ... } }`.
 /// Elements declared through an alias are stored as the base kind, with the alias

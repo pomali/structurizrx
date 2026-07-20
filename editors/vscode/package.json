@@ -1,0 +1,60 @@
+{
+  "name": "structurizr-dsl",
+  "displayName": "Structurizr DSL",
+  "description": "Syntax highlighting and language server support (diagnostics, hover, completion, go-to-definition, outline) for the Structurizr DSL, backed by structurizrx.",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:structurizr-dsl"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "structurizr-dsl",
+        "aliases": [
+          "Structurizr DSL"
+        ],
+        "extensions": [
+          ".dsl"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "structurizr-dsl",
+        "scopeName": "source.structurizr-dsl",
+        "path": "./syntaxes/structurizr-dsl.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Structurizr DSL",
+      "properties": {
+        "structurizrDsl.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the structurizrx binary. Leave empty to look it up on PATH (build it with `cargo build -p structurizr-cli` in the repo's rust/ directory)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -w -p ./"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.91.0",
+    "typescript": "^5.5.0"
+  }
+}

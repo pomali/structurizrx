@@ -5,4 +5,5 @@ pub mod parser;
 pub mod suggest;
 
 pub use error::ParseError;
-pub use parser::{parse_file, parse_str};
+pub use identifier_register::{ElementType, IdentifierRegister};
+pub use parser::{keyword_sets, parse_file, parse_file_with_identifiers, parse_str, parse_str_with_identifiers};

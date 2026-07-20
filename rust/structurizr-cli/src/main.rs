@@ -76,6 +76,9 @@ enum Commands {
         #[arg(long)]
         open: bool,
     },
+    /// Run the DSL language server over stdio (for editor integration, e.g.
+    /// the VS Code extension in editors/vscode)
+    Lsp,
 }
 
 fn load_workspace(path: &PathBuf) -> Result<Workspace> {
@@ -293,8 +296,10 @@ async fn main() -> Result<()> {
             })
             .await?;
         }
+        Commands::Lsp => {
+            structurizr_lsp::run_stdio().await?;
+        }
     }
 
     Ok(())
 }
-
