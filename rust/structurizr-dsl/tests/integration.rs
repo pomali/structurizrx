@@ -660,7 +660,7 @@ workspace {
 }
 
 #[test]
-fn unresolved_dotted_port_ref_falls_back_gracefully() {
+fn unresolved_dotted_port_ref_is_an_error() {
     let dsl = r#"
 workspace {
     model {
@@ -672,11 +672,9 @@ workspace {
     }
 }
 "#;
-    // Must not panic; the relationship is still created with the raw identifier.
-    let ws = parse_str(dsl).expect("should parse without panic");
-    let billing = &ws.model.software_systems.as_ref().unwrap()[1];
-    let rels = billing.relationships.as_ref().expect("relationship still created");
-    assert!(rels[0].destination_port_id.is_none());
+    let err = parse_str(dsl).expect_err("unresolved port ref must be an error");
+    let msg = err.to_string();
+    assert!(msg.contains("apiC.nonexistent"), "error names the identifier: {msg}");
 }
 
 // ─── Phase-2c: sketch mode, aliases, named rels, ?, !include ────────────────
@@ -722,7 +720,7 @@ workspace "WS" {
 }
 
 #[test]
-fn strict_workspace_does_not_vivify() {
+fn strict_workspace_rejects_unknown_relationship_target() {
     let dsl = r#"
 workspace {
     model {
@@ -731,9 +729,10 @@ workspace {
     }
 }
 "#;
-    let ws = parse_str(dsl).expect("should parse");
-    let systems = ws.model.software_systems.as_ref().unwrap();
-    assert_eq!(systems.len(), 1, "no vivification without !sketch");
+    let err = parse_str(dsl).expect_err("unknown identifier must error without !sketch");
+    let msg = err.to_string();
+    assert!(msg.contains("billing"), "error names the identifier: {msg}");
+    assert!(msg.contains("line 5"), "error carries the line: {msg}");
 }
 
 #[test]
@@ -950,4 +949,230 @@ workspace {
 }
 "#;
     assert!(parse_str(dsl).is_err());
+}
+
+// ─── Strict parsing: agent-experience guarantees ────────────────────────────
+
+#[test]
+fn typo_in_relationship_target_suggests_closest_identifier() {
+    let dsl = r#"
+workspace {
+    model {
+        user = person "User"
+        shop = softwareSystem "Shop"
+        user -> shoop "uses"
+    }
+}
+"#;
+    let err = parse_str(dsl).expect_err("typo must error");
+    let msg = err.to_string();
+    assert!(msg.contains("shoop"), "names the bad identifier: {msg}");
+    assert!(msg.contains("did you mean 'shop'"), "suggests the fix: {msg}");
+}
+
+#[test]
+fn forward_referenced_relationship_target_resolves() {
+    let dsl = r#"
+workspace {
+    model {
+        user = person "User"
+        user -> shop "uses"
+        shop = softwareSystem "Shop"
+    }
+}
+"#;
+    let ws = parse_str(dsl).expect("forward references are legal");
+    let user = &ws.model.people.as_ref().unwrap()[0];
+    let rels = user.relationships.as_ref().expect("relationship attached to source");
+    let shop_id = &ws.model.software_systems.as_ref().unwrap()[0].id;
+    assert_eq!(&rels[0].destination_id, shop_id, "destination rewritten to real id");
+}
+
+#[test]
+fn multiple_unresolved_identifiers_reported_at_once() {
+    let dsl = r#"
+workspace {
+    model {
+        a = softwareSystem "A"
+        a -> nope1
+        a -> nope2
+    }
+}
+"#;
+    let err = parse_str(dsl).expect_err("must error");
+    let msg = err.to_string();
+    assert!(msg.contains("nope1") && msg.contains("nope2"), "reports both: {msg}");
+}
+
+#[test]
+fn container_at_model_level_gets_pointed_error() {
+    let dsl = r#"
+workspace {
+    model {
+        api = container "API"
+    }
+}
+"#;
+    let err = parse_str(dsl).expect_err("must error");
+    let msg = err.to_string();
+    assert!(msg.contains("softwareSystem"), "tells the user where containers go: {msg}");
+}
+
+#[test]
+fn typo_keyword_in_element_body_suggests_correction() {
+    let dsl = r#"
+workspace {
+    model {
+        s = softwareSystem "S" {
+            api = container "API" {
+                statuss idea
+            }
+        }
+    }
+}
+"#;
+    let err = parse_str(dsl).expect_err("unknown body keyword must error");
+    let msg = err.to_string();
+    assert!(msg.contains("statuss"), "names the keyword: {msg}");
+    assert!(msg.contains("did you mean 'status'"), "suggests the fix: {msg}");
+}
+
+#[test]
+fn unknown_keyword_in_views_errors() {
+    let dsl = r#"
+workspace {
+    model { s = softwareSystem "S" }
+    views {
+        systemContxt s "K" { include * }
+    }
+}
+"#;
+    let err = parse_str(dsl).expect_err("unknown view type must error");
+    assert!(err.to_string().contains("systemContext"), "suggests: {err}");
+}
+
+#[test]
+fn sketch_mode_stays_lenient() {
+    let dsl = r#"
+workspace {
+    !sketch
+    model {
+        shop = softwareSystem "Shop" {
+            wibble "unknown keyword"
+        }
+        shop -> billing
+    }
+}
+"#;
+    let ws = parse_str(dsl).expect("sketch mode tolerates unknowns");
+    assert_eq!(ws.model.software_systems.as_ref().unwrap().len(), 2, "billing vivified");
+}
+
+#[test]
+fn implicit_relationship_in_container_body() {
+    let dsl = r#"
+workspace {
+    model {
+        s = softwareSystem "S" {
+            db = container "DB"
+            api = container "API" {
+                -> db "reads"
+            }
+        }
+    }
+}
+"#;
+    let ws = parse_str(dsl).expect("implicit -> relationship parses");
+    let s = &ws.model.software_systems.as_ref().unwrap()[0];
+    let containers = s.containers.as_ref().unwrap();
+    let api = containers.iter().find(|c| c.name == "API").unwrap();
+    let db = containers.iter().find(|c| c.name == "DB").unwrap();
+    let rels = api.relationships.as_ref().expect("relationship on API");
+    assert_eq!(rels[0].source_id, api.id);
+    assert_eq!(rels[0].destination_id, db.id);
+}
+
+#[test]
+fn this_refers_to_enclosing_element() {
+    let dsl = r#"
+workspace {
+    model {
+        custom = element "Legacy"
+        s = softwareSystem "S" {
+            custom -> this "feeds"
+        }
+    }
+}
+"#;
+    let ws = parse_str(dsl).expect("this parses");
+    let s = &ws.model.software_systems.as_ref().unwrap()[0];
+    let rels = s.relationships.as_ref().unwrap();
+    assert_eq!(rels[0].destination_id, s.id, "this resolves to the software system");
+    let custom = &ws.model.custom_elements.as_ref().unwrap()[0];
+    assert_eq!(rels[0].source_id, custom.id);
+}
+
+#[test]
+fn groups_assign_membership_and_allow_relationships() {
+    let dsl = r#"
+workspace {
+    model {
+        properties { "structurizr.groupSeparator" "/" }
+        group "Org" {
+            s = softwareSystem "S" {
+                group "Service 1" {
+                    api = container "API"
+                    db = container "DB"
+                    api -> db "reads"
+                }
+            }
+        }
+    }
+}
+"#;
+    let ws = parse_str(dsl).expect("groups parse");
+    let s = &ws.model.software_systems.as_ref().unwrap()[0];
+    assert_eq!(s.group.as_deref(), Some("Org"), "model-level group membership");
+    let containers = s.containers.as_ref().unwrap();
+    assert_eq!(containers.len(), 2);
+    assert!(containers.iter().all(|c| c.group.as_deref() == Some("Service 1")));
+    let rels = s.relationships.as_ref().expect("relationship inside group kept");
+    assert_eq!(rels.len(), 1);
+}
+
+#[test]
+fn workspace_properties_are_stored() {
+    let dsl = r#"
+workspace "W" {
+    properties {
+        "owner" "team-x"
+    }
+    model { s = softwareSystem "S" }
+}
+"#;
+    let ws = parse_str(dsl).expect("workspace properties parse");
+    assert_eq!(
+        ws.properties.as_ref().and_then(|p| p.get("owner")).map(String::as_str),
+        Some("team-x")
+    );
+}
+
+#[test]
+fn enterprise_block_elements_are_kept() {
+    let dsl = r#"
+workspace {
+    model {
+        enterprise "Big Corp" {
+            staff = person "Staff"
+        }
+        ext = softwareSystem "External"
+        staff -> ext "uses"
+    }
+}
+"#;
+    let ws = parse_str(dsl).expect("enterprise block parses");
+    assert_eq!(ws.model.enterprise.as_ref().unwrap().name, "Big Corp");
+    let people = ws.model.people.as_ref().expect("person inside enterprise kept");
+    assert_eq!(people[0].name, "Staff");
+    assert!(people[0].relationships.is_some(), "relationship from enterprise person");
 }

@@ -77,7 +77,73 @@ struct Parser {
     /// Sketch mode (spec §4.1): unknown relationship endpoints are auto-created
     /// as placeholder software systems. Set by `!sketch` or a bare sketch file.
     sketch: bool,
+    /// Relationship endpoints that did not resolve when first seen. Retried at
+    /// the end of the model block (forward references legal); anything still
+    /// unresolved is an error outside sketch mode.
+    pending_endpoints: Vec<PendingEndpoint>,
+    /// Model-level relationships whose source element was not yet declared when
+    /// the relationship was parsed; attached to their source in finalize_model.
+    deferred_rels: Vec<Relationship>,
+    /// Separator for nested group names (model property `structurizr.groupSeparator`).
+    group_separator: Option<String>,
+    /// Names of the model-level `group` blocks currently being parsed.
+    model_group_stack: Vec<String>,
+    /// `ident = deploymentGroup "Name"` bindings (lowercased ident → name).
+    deployment_group_names: HashMap<String, String>,
 }
+
+/// A relationship endpoint identifier that had no binding at parse time.
+struct PendingEndpoint {
+    ident: String,
+    rel_id: String,
+    source_side: bool,
+    line: usize,
+    col: usize,
+}
+
+/// Attribute keywords accepted in any element body (person, component, …).
+const ELEMENT_BODY_KEYWORDS: [&str; 12] = [
+    "description", "technology", "url", "tags", "group", "properties", "perspective",
+    "perspectives", "port", "status", "introduced", "retired",
+];
+
+/// Keywords accepted in a `softwareSystem { ... }` body.
+const SOFTWARE_SYSTEM_BODY_KEYWORDS: [&str; 13] = [
+    "container", "group", "description", "technology", "url", "tags", "properties",
+    "perspective", "perspectives", "port", "status", "introduced", "retired",
+];
+
+/// Keywords accepted in a `container { ... }` body.
+const CONTAINER_BODY_KEYWORDS: [&str; 13] = [
+    "component", "group", "description", "technology", "url", "tags", "properties",
+    "perspective", "perspectives", "port", "status", "introduced", "retired",
+];
+
+/// Keywords accepted in a `deploymentNode { ... }` body.
+const DEPLOYMENT_NODE_BODY_KEYWORDS: [&str; 13] = [
+    "deploymentNode", "containerInstance", "softwareSystemInstance", "infrastructureNode",
+    "instanceOf", "instances", "group", "deploymentGroup", "description", "technology",
+    "url", "tags", "properties",
+];
+
+/// Keywords accepted directly inside `model { ... }`.
+const MODEL_KEYWORDS: [&str; 7] = [
+    "person", "softwareSystem", "group", "enterprise", "deploymentEnvironment", "element",
+    "properties",
+];
+
+/// Keywords accepted directly inside `workspace { ... }`.
+const WORKSPACE_KEYWORDS: [&str; 11] = [
+    "name", "description", "model", "views", "configuration", "documentation",
+    "docs", "specification", "milestones", "perspectives", "properties",
+];
+
+/// Keywords accepted directly inside `views { ... }`.
+const VIEWS_KEYWORDS: [&str; 15] = [
+    "auto", "systemLandscape", "systemContext", "container", "component", "dynamic",
+    "deployment", "filtered", "image", "custom", "styles", "theme", "themes", "branding",
+    "properties",
+];
 
 /// A vocabulary alias declared in `specification { kind queue container { ... } }`.
 /// Elements declared through an alias are stored as the base kind, with the alias
@@ -104,6 +170,8 @@ struct ElementExtras {
     /// Extra tags from a `tags` body keyword, comma-split.
     tags_extra: Vec<String>,
     properties: HashMap<String, String>,
+    /// Group membership from a leaf `group "Name"` body keyword.
+    group: Option<String>,
 }
 
 impl Parser {
@@ -119,6 +187,11 @@ impl Parser {
             port_register: HashMap::new(),
             kind_aliases: HashMap::new(),
             sketch: false,
+            pending_endpoints: Vec::new(),
+            deferred_rels: Vec::new(),
+            group_separator: None,
+            model_group_stack: Vec::new(),
+            deployment_group_names: HashMap::new(),
         }
     }
 
@@ -275,6 +348,164 @@ impl Parser {
         (self.resolve_identifier(ident), None)
     }
 
+    /// True if `ident` currently resolves to a declared element or port.
+    fn endpoint_resolves(&self, ident: &str) -> bool {
+        if self.register.resolve_id(ident).is_some() {
+            return true;
+        }
+        if self.register.mode == IdentifierMode::Hierarchical {
+            if let Some(last) = ident.rsplit('.').next() {
+                if self.register.resolve_id(last).is_some() {
+                    return true;
+                }
+            }
+        }
+        ident.contains('.') && self.port_register.contains_key(&ident.to_lowercase())
+    }
+
+    /// Resolve a relationship endpoint, recording it for the end-of-model retry
+    /// when it has no binding yet (forward reference or typo).
+    fn resolve_endpoint_tracked(
+        &mut self,
+        ident: &str,
+        rel_id: &str,
+        source_side: bool,
+        pos: (usize, usize),
+    ) -> (String, Option<String>) {
+        let resolved = self.resolve_endpoint(ident);
+        if !ident.is_empty() && !self.endpoint_resolves(ident) {
+            self.pending_endpoints.push(PendingEndpoint {
+                ident: ident.to_string(),
+                rel_id: rel_id.to_string(),
+                source_side,
+                line: pos.0,
+                col: pos.1,
+            });
+        }
+        resolved
+    }
+
+    /// Build an error for an unknown keyword at the current (unconsumed) token,
+    /// naming the context, the accepted keywords, and a close match if any.
+    fn unknown_keyword_error(&self, context: &str, allowed: &[&str]) -> ParseError {
+        let (line, col) = self.current_pos();
+        let word = match self.peek() {
+            Some(Token::Word(w)) => w.clone(),
+            Some(other) => {
+                return ParseError::syntax(
+                    line,
+                    col,
+                    format!("unexpected {:?} in {}; expected one of: {}", other, context, allowed.join(", ")),
+                )
+            }
+            None => return ParseError::UnexpectedEof,
+        };
+        let mut message = format!(
+            "unknown keyword '{}' in {}; expected one of: {}",
+            word,
+            context,
+            allowed.join(", ")
+        );
+        if let Some(suggestion) = crate::suggest::closest(&word, allowed.iter().copied()) {
+            message.push_str(&format!("; did you mean '{}'?", suggestion));
+        }
+        ParseError::syntax(line, col, message)
+    }
+
+    /// Group membership for elements declared inside model-level `group` blocks:
+    /// the current stack of group names joined by the group separator.
+    fn current_model_group(&self) -> Option<String> {
+        if self.model_group_stack.is_empty() {
+            return None;
+        }
+        let sep = self.group_separator.as_deref().unwrap_or("/");
+        Some(self.model_group_stack.join(sep))
+    }
+
+    /// Build an error for an unknown or misplaced keyword at model level.
+    /// `container`/`component` get a pointed message since declaring them at
+    /// the wrong nesting level is a common mistake.
+    fn unknown_model_keyword_error(&self, word_lower: &str) -> ParseError {
+        let (line, col) = self.current_pos();
+        match word_lower {
+            "container" => ParseError::syntax(
+                line,
+                col,
+                "'container' cannot be declared at model level; declare it inside a softwareSystem block",
+            ),
+            "component" => ParseError::syntax(
+                line,
+                col,
+                "'component' cannot be declared at model level; declare it inside a container block",
+            ),
+            _ => {
+                let alias_names: Vec<&str> = self.kind_aliases.keys().map(|s| s.as_str()).collect();
+                let allowed: Vec<&str> = MODEL_KEYWORDS.iter().copied().chain(alias_names).collect();
+                let mut message = format!(
+                    "unknown keyword '{}' in model; expected one of: {}, or a relationship 'a -> b'",
+                    word_lower,
+                    allowed.join(", ")
+                );
+                if let Some(suggestion) = crate::suggest::closest(word_lower, allowed.iter().copied()) {
+                    message.push_str(&format!("; did you mean '{}'?", suggestion));
+                }
+                ParseError::syntax(line, col, message)
+            }
+        }
+    }
+
+    /// Retry unresolved relationship endpoints against the now-complete
+    /// identifier register, rewrite the affected relationships, attach deferred
+    /// model-level relationships to their source elements, and error (outside
+    /// sketch mode) on anything still unresolved — all occurrences at once.
+    fn finalize_model(&mut self, model: &mut Model) -> Result<(), ParseError> {
+        let pendings = std::mem::take(&mut self.pending_endpoints);
+        let element_ids = collect_element_ids(model);
+        let mut failures: Vec<(usize, String)> = Vec::new();
+        let mut first_pos: Option<(usize, usize)> = None;
+
+        for p in &pendings {
+            if self.endpoint_resolves(&p.ident) {
+                let (id, port) = self.resolve_endpoint(&p.ident);
+                rewrite_rel_endpoint(model, &mut self.deferred_rels, &p.rel_id, p.source_side, &id, port);
+            } else if element_ids.contains(&p.ident) || self.sketch {
+                // Literal element id, or sketch mode (lenient by design).
+            } else {
+                first_pos.get_or_insert((p.line, p.col));
+                let mut msg = format!("unknown element identifier '{}' in relationship", p.ident);
+                let candidates = self
+                    .register
+                    .identifiers
+                    .keys()
+                    .chain(self.port_register.keys())
+                    .map(|s| s.as_str());
+                if let Some(suggestion) = crate::suggest::closest(&p.ident, candidates) {
+                    msg.push_str(&format!(" (did you mean '{}'?)", suggestion));
+                }
+                failures.push((p.line, msg));
+            }
+        }
+
+        if let Some((line, col)) = first_pos {
+            let message = if failures.len() == 1 {
+                failures.remove(0).1
+            } else {
+                let lines: Vec<String> = failures
+                    .into_iter()
+                    .map(|(l, m)| format!("line {}: {}", l, m))
+                    .collect();
+                format!("unresolved identifiers:\n  {}", lines.join("\n  "))
+            };
+            return Err(ParseError::syntax(line, col, message));
+        }
+
+        for rel in std::mem::take(&mut self.deferred_rels) {
+            let source_id = rel.source_id.clone();
+            self.attach_relationship_to_element(model, &source_id, rel);
+        }
+        Ok(())
+    }
+
     fn substitute_vars(&self, s: &str) -> String {
         let mut result = s.to_string();
         for (k, v) in &self.constants {
@@ -355,7 +586,7 @@ impl Parser {
             Ok(entries) => entries
                 .filter_map(|e| e.ok())
                 .map(|e| e.path())
-                .filter(|p| p.is_file() && p.extension().map_or(false, |e| e == "md"))
+                .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "md"))
                 .collect(),
             Err(e) => {
                 eprintln!("Warning: Could not read ADR directory {}: {}", dir.display(), e);
@@ -484,6 +715,7 @@ impl Parser {
             }
             self.parse_model_item(&mut workspace.model, None)?;
         }
+        self.finalize_model(&mut workspace.model)?;
 
         let mut view = SystemLandscapeView {
             key: Some("sketch".to_string()),
@@ -522,7 +754,7 @@ impl Parser {
                 _ => break,
             };
             match dir.as_str() {
-                "const" | "var" => {
+                "const" | "constant" | "var" => {
                     let name = self.consume_string().unwrap_or_default();
                     let value = self.consume_string().unwrap_or_default();
                     self.constants.insert(name, value);
@@ -549,7 +781,7 @@ impl Parser {
             Some(Token::Directive(d)) => {
                 let d = d.clone();
                 match d.to_lowercase().as_str() {
-                    "const" | "var" => {
+                    "const" | "constant" | "var" => {
                         self.advance();
                         let name = self.consume_string().unwrap_or_default();
                         let value = self.consume_string().unwrap_or_default();
@@ -708,7 +940,15 @@ impl Parser {
                         self.expect_close_brace()?;
                         workspace.perspectives = Some(perspectives);
                     }
+                    "properties" => {
+                        self.advance();
+                        let props = self.parse_properties_block_body()?;
+                        workspace.properties.get_or_insert_with(HashMap::new).extend(props);
+                    }
                     _ => {
+                        if !self.sketch {
+                            return Err(self.unknown_keyword_error("workspace", &WORKSPACE_KEYWORDS));
+                        }
                         self.advance();
                         self.skip_optional_block_or_value();
                     }
@@ -752,7 +992,7 @@ impl Parser {
         while !self.peek_close_brace() && self.peek().is_some() {
             self.parse_model_item(model, None)?;
         }
-        Ok(())
+        self.finalize_model(model)
     }
 
     fn parse_model_item(&mut self, model: &mut Model, _parent_env: Option<&str>) -> Result<(), ParseError> {
@@ -790,16 +1030,8 @@ impl Parser {
                         self.advance();
                         let name = self.consume_string().unwrap_or_default();
                         model.enterprise = Some(Enterprise { name });
-                        // Skip optional block
-                        if self.peek_open_brace() {
-                            self.advance();
-                            // Enterprise block can contain elements - skip for now
-                            self.skip_block();
-                        }
-                    }
-                    "group" => {
-                        self.advance();
-                        let _name = self.consume_string().unwrap_or_default();
+                        // Elements declared inside the enterprise block are
+                        // ordinary model items (upstream: "internal" elements).
                         if self.peek_open_brace() {
                             self.advance();
                             while !self.peek_close_brace() && self.peek().is_some() {
@@ -807,6 +1039,35 @@ impl Parser {
                             }
                             self.expect_close_brace()?;
                         }
+                    }
+                    "group" => {
+                        self.advance();
+                        let name = self.consume_string().unwrap_or_default();
+                        if self.peek_open_brace() {
+                            self.advance();
+                            self.model_group_stack.push(name);
+                            let result = (|| {
+                                while !self.peek_close_brace() && self.peek().is_some() {
+                                    self.parse_model_item(model, None)?;
+                                }
+                                self.expect_close_brace()
+                            })();
+                            self.model_group_stack.pop();
+                            result?;
+                        }
+                    }
+                    "element" => {
+                        self.advance();
+                        let ce = self.parse_custom_element(if has_assign { &identifier } else { "" })?;
+                        model.custom_elements.get_or_insert_with(Vec::new).push(ce);
+                    }
+                    "properties" => {
+                        self.advance();
+                        let props = self.parse_properties_block_body()?;
+                        if let Some(sep) = props.get("structurizr.groupSeparator") {
+                            self.group_separator = Some(sep.clone());
+                        }
+                        model.properties.get_or_insert_with(HashMap::new).extend(props);
                     }
                     _ => {
                         if let Some((alias_name, alias)) = self.peek_kind_alias("person") {
@@ -829,6 +1090,8 @@ impl Parser {
                             // peek ahead to see if it's a relationship
                             if self.peek_at_arrow_after_word() {
                                 self.parse_relationship_in_model(model)?;
+                            } else if !self.sketch {
+                                return Err(self.unknown_model_keyword_error(&w));
                             } else {
                                 // skip unknown
                                 self.advance();
@@ -838,6 +1101,8 @@ impl Parser {
                             // Named relationship: `name = a -> b ...`
                             let rel_id = self.parse_relationship_in_model(model)?;
                             self.register.register(&identifier, rel_id, ElementType::Relationship);
+                        } else if !self.sketch {
+                            return Err(self.unknown_model_keyword_error(&w));
                         } else {
                             // has identifier but unknown keyword
                             self.advance();
@@ -850,7 +1115,7 @@ impl Parser {
                 let d = d.clone();
                 self.advance();
                 match d.to_lowercase().as_str() {
-                    "const" | "var" => {
+                    "const" | "constant" | "var" => {
                         let name = self.consume_string().unwrap_or_default();
                         let value = self.consume_string().unwrap_or_default();
                         self.constants.insert(name, value);
@@ -937,7 +1202,11 @@ impl Parser {
             if !extras.properties.is_empty() {
                 person.properties.get_or_insert_with(HashMap::new).extend(extras.properties);
             }
+            if extras.group.is_some() { person.group = extras.group; }
             self.expect_close_brace()?;
+        }
+        if person.group.is_none() {
+            person.group = self.current_model_group();
         }
 
         Ok(person)
@@ -1005,69 +1274,36 @@ impl Parser {
                     containers.push(c);
                 } else if self.peek_word("group") {
                     self.advance();
-                    let _gname = self.consume_string().unwrap_or_default();
-                    // Register the group identifier so neighborhood includes can expand it.
-                    // Groups are registered with a synthetic ID (not a real element ID) that
-                    // is never used directly — only as a prefix key for `children_of`.
-                    let group_ident = if has_ident { ident.as_str() } else { "" };
-                    // Compute the hierarchical path for this group, e.g. "softwareSystem.service1"
-                    let group_hier = if self.register.mode == IdentifierMode::Hierarchical
-                        && !identifier.is_empty()
-                        && !group_ident.is_empty()
-                    {
-                        format!("{}.{}", identifier, group_ident)
-                    } else {
-                        group_ident.to_string()
-                    };
-                    if !group_ident.is_empty() {
-                        let synthetic_id = format!("group:{}", group_hier);
-                        self.register.register(group_ident, synthetic_id.clone(), ElementType::Group);
-                        if !group_hier.is_empty() && group_hier != group_ident {
-                            self.register.register(&group_hier, synthetic_id, ElementType::Group);
-                        }
-                    }
-                    if self.peek_open_brace() {
-                        self.advance();
-                        // parse containers inside group; use the hierarchical group path as
-                        // parent so child containers get a full path like
-                        // `softwareSystem.service1.service1Api`.
-                        let effective_parent = if !group_hier.is_empty() {
-                            group_hier.as_str()
-                        } else {
-                            identifier
-                        };
-                        while !self.peek_close_brace() && self.peek().is_some() {
-                            let (gident, _) = self.peek_assignment();
-                            let has_gi = gident.is_some();
-                            let gident = gident.unwrap_or_default();
-                            if has_gi {
-                                self.advance();
-                                self.advance();
-                            }
-                            if self.peek_word("container") {
-                                self.advance();
-                                let c = self.parse_container(
-                                    if has_gi { &gident } else { "" },
-                                    effective_parent,
-                                )?;
-                                containers.push(c);
-                            } else {
-                                self.advance();
-                                self.skip_optional_block_or_value();
-                            }
-                        }
-                        self.expect_close_brace()?;
+                    if let Some(leaf) = self.parse_ss_group(
+                        if has_ident { &ident } else { "" },
+                        identifier,
+                        "",
+                        &mut containers,
+                        &mut rels,
+                    )? {
+                        ss_extras.group = Some(leaf);
                     }
                 } else if self.peek_at_arrow_after_word() {
+                    let src_pos = self.current_pos();
                     let src  = self.consume_string().unwrap_or_default();
                     self.advance(); // ->
+                    let dst_pos = self.current_pos();
                     let dst  = self.consume_string().unwrap_or_default();
                     let desc = self.consume_string_if_not_brace();
                     let tech = self.consume_string_if_not_brace();
                     let rel_id = self.next_id();
                     let uncertain = self.consume_uncertainty_marker();
-                    let (src_id, src_port) = self.resolve_endpoint(&src);
-                    let (dst_id, dst_port) = self.resolve_endpoint(&dst);
+                    // `this` refers to the enclosing element (upstream DSL).
+                    let (src_id, src_port) = if src.eq_ignore_ascii_case("this") {
+                        (id.clone(), None)
+                    } else {
+                        self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos)
+                    };
+                    let (dst_id, dst_port) = if dst.eq_ignore_ascii_case("this") {
+                        (id.clone(), None)
+                    } else {
+                        self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos)
+                    };
                     let mut rel = Relationship {
                         id: rel_id,
                         source_id: src_id,
@@ -1089,6 +1325,9 @@ impl Parser {
                         });
                     }
                     rels.push(rel);
+                } else if !has_ident && matches!(self.peek(), Some(Token::Arrow)) {
+                    let rel = self.parse_implicit_relationship(&id)?;
+                    rels.push(rel);
                 } else if !has_ident && {
                     let paths = vec![identifier.to_string()];
                     self.try_parse_common_element_keyword(&mut ss_extras, &id, &paths)?
@@ -1104,6 +1343,11 @@ impl Parser {
                 } else if matches!(self.peek(), Some(Token::Directive(_))) {
                     self.advance();
                     self.skip_directive_args();
+                } else if !self.sketch {
+                    return Err(self.unknown_keyword_error(
+                        "softwareSystem body",
+                        &SOFTWARE_SYSTEM_BODY_KEYWORDS,
+                    ));
                 } else {
                     self.advance();
                     if self.peek_open_brace() {
@@ -1142,9 +1386,271 @@ impl Parser {
             if !ss_extras.properties.is_empty() {
                 ss.properties.get_or_insert_with(HashMap::new).extend(ss_extras.properties);
             }
+            if ss_extras.group.is_some() { ss.group = ss_extras.group; }
+        }
+        if ss.group.is_none() {
+            ss.group = self.current_model_group();
         }
 
         Ok(ss)
+    }
+
+    /// Parse a `group` declaration inside a softwareSystem body (the `group`
+    /// keyword is already consumed). Returns `Some(name)` for the leaf form
+    /// (`group "Name"` with no block), which assigns membership to the
+    /// enclosing element. Block members — containers, nested groups,
+    /// relationships — are appended to `containers`/`rels`, with each
+    /// container's `group` set to the joined group path.
+    fn parse_ss_group(
+        &mut self,
+        group_ident: &str,
+        parent_path: &str,
+        display_prefix: &str,
+        containers: &mut Vec<Container>,
+        rels: &mut Vec<Relationship>,
+    ) -> Result<Option<String>, ParseError> {
+        let gname = self.consume_string().unwrap_or_default();
+
+        // Register the group identifier so neighborhood includes can expand it.
+        // Groups are registered with a synthetic ID (not a real element ID) that
+        // is never used directly — only as a prefix key for `children_of`.
+        let group_hier = if self.register.mode == IdentifierMode::Hierarchical
+            && !parent_path.is_empty()
+            && !group_ident.is_empty()
+        {
+            format!("{}.{}", parent_path, group_ident)
+        } else {
+            group_ident.to_string()
+        };
+        if !group_ident.is_empty() {
+            let synthetic_id = format!("group:{}", group_hier);
+            self.register.register(group_ident, synthetic_id.clone(), ElementType::Group);
+            if !group_hier.is_empty() && group_hier != group_ident {
+                self.register.register(&group_hier, synthetic_id, ElementType::Group);
+            }
+        }
+
+        if !self.peek_open_brace() {
+            return Ok(if gname.is_empty() { None } else { Some(gname) });
+        }
+        self.advance();
+
+        let sep = self.group_separator.clone().unwrap_or_else(|| "/".to_string());
+        let display_path = if display_prefix.is_empty() {
+            gname.clone()
+        } else {
+            format!("{}{}{}", display_prefix, sep, gname)
+        };
+        // Containers inside a named group use the group's path as identifier
+        // parent, e.g. `softwareSystem.service1.service1Api`.
+        let effective_parent = if !group_hier.is_empty() {
+            group_hier.clone()
+        } else {
+            parent_path.to_string()
+        };
+
+        while !self.peek_close_brace() && self.peek().is_some() {
+            let (gident, _) = self.peek_assignment();
+            let has_gi = gident.is_some();
+            let gident = gident.unwrap_or_default();
+            if has_gi {
+                self.advance();
+                self.advance();
+            }
+
+            if self.peek_word("container") {
+                self.advance();
+                let mut c = self.parse_container(if has_gi { &gident } else { "" }, &effective_parent)?;
+                c.group = Some(display_path.clone());
+                containers.push(c);
+            } else if let Some((alias_name, alias)) = self.peek_kind_alias("container") {
+                self.advance();
+                let mut c = self.parse_container(if has_gi { &gident } else { "" }, &effective_parent)?;
+                apply_alias_to_tags_props(&alias_name, &alias, &mut c.tags, &mut c.properties);
+                if c.technology.is_none() {
+                    c.technology = alias.technology.clone();
+                }
+                c.group = Some(display_path.clone());
+                containers.push(c);
+            } else if self.peek_word("group") {
+                self.advance();
+                self.parse_ss_group(
+                    if has_gi { &gident } else { "" },
+                    &effective_parent,
+                    &display_path,
+                    containers,
+                    rels,
+                )?;
+            } else if self.peek_at_arrow_after_word() {
+                let src_pos = self.current_pos();
+                let src  = self.consume_string().unwrap_or_default();
+                self.advance(); // ->
+                let dst_pos = self.current_pos();
+                let dst  = self.consume_string().unwrap_or_default();
+                let desc = self.consume_string_if_not_brace();
+                let tech = self.consume_string_if_not_brace();
+                let rel_id = self.next_id();
+                let uncertain = self.consume_uncertainty_marker();
+                let (src_id, src_port) = self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos);
+                let (dst_id, dst_port) = self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos);
+                let mut rel = Relationship {
+                    id: rel_id,
+                    source_id: src_id,
+                    destination_id: dst_id,
+                    source_port_id: src_port,
+                    destination_port_id: dst_port,
+                    description: desc,
+                    technology: tech,
+                    tags: Some("Relationship".to_string()),
+                    ..Default::default()
+                };
+                if self.peek_open_brace() {
+                    self.parse_relationship_body(&mut rel)?;
+                }
+                if uncertain {
+                    rel.tags = Some(match rel.tags.take() {
+                        Some(t) => format!("{},Uncertain", t),
+                        None => "Uncertain".to_string(),
+                    });
+                }
+                rels.push(rel);
+            } else if self.peek_word("url") {
+                // Accepted upstream on groups; not stored in the model.
+                self.advance();
+                let _ = self.consume_string();
+            } else if self.peek_word("properties") {
+                self.advance();
+                let _ = self.parse_properties_block_body()?;
+            } else if matches!(self.peek(), Some(Token::Directive(_))) {
+                self.advance();
+                self.skip_directive_args();
+            } else if !self.sketch {
+                return Err(self.unknown_keyword_error(
+                    "softwareSystem group body",
+                    &["container", "group", "url", "properties"],
+                ));
+            } else {
+                self.advance();
+                self.skip_optional_block_or_value();
+            }
+        }
+        self.expect_close_brace()?;
+        Ok(None)
+    }
+
+    /// Parse a `group` declaration inside a container body (the `group` keyword
+    /// is already consumed). Same contract as [`parse_ss_group`], for components.
+    fn parse_container_group(
+        &mut self,
+        group_ident: &str,
+        display_prefix: &str,
+        components: &mut Vec<Component>,
+        rels: &mut Vec<Relationship>,
+    ) -> Result<Option<String>, ParseError> {
+        let gname = self.consume_string().unwrap_or_default();
+
+        if !group_ident.is_empty() {
+            let synthetic_id = format!("group:{}", group_ident);
+            self.register.register(group_ident, synthetic_id, ElementType::Group);
+        }
+
+        if !self.peek_open_brace() {
+            return Ok(if gname.is_empty() { None } else { Some(gname) });
+        }
+        self.advance();
+
+        let sep = self.group_separator.clone().unwrap_or_else(|| "/".to_string());
+        let display_path = if display_prefix.is_empty() {
+            gname.clone()
+        } else {
+            format!("{}{}{}", display_prefix, sep, gname)
+        };
+
+        while !self.peek_close_brace() && self.peek().is_some() {
+            let (gident, _) = self.peek_assignment();
+            let has_gi = gident.is_some();
+            let gident = gident.unwrap_or_default();
+            if has_gi {
+                self.advance();
+                self.advance();
+            }
+
+            if self.peek_word("component") {
+                self.advance();
+                let mut c = self.parse_component(if has_gi { &gident } else { "" })?;
+                c.group = Some(display_path.clone());
+                components.push(c);
+            } else if let Some((alias_name, alias)) = self.peek_kind_alias("component") {
+                self.advance();
+                let mut c = self.parse_component(if has_gi { &gident } else { "" })?;
+                apply_alias_to_tags_props(&alias_name, &alias, &mut c.tags, &mut c.properties);
+                if c.technology.is_none() {
+                    c.technology = alias.technology.clone();
+                }
+                c.group = Some(display_path.clone());
+                components.push(c);
+            } else if self.peek_word("group") {
+                self.advance();
+                self.parse_container_group(
+                    if has_gi { &gident } else { "" },
+                    &display_path,
+                    components,
+                    rels,
+                )?;
+            } else if self.peek_at_arrow_after_word() {
+                let src_pos = self.current_pos();
+                let src  = self.consume_string().unwrap_or_default();
+                self.advance(); // ->
+                let dst_pos = self.current_pos();
+                let dst  = self.consume_string().unwrap_or_default();
+                let desc = self.consume_string_if_not_brace();
+                let tech = self.consume_string_if_not_brace();
+                let rel_id = self.next_id();
+                let uncertain = self.consume_uncertainty_marker();
+                let (src_id, src_port) = self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos);
+                let (dst_id, dst_port) = self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos);
+                let mut rel = Relationship {
+                    id: rel_id,
+                    source_id: src_id,
+                    destination_id: dst_id,
+                    source_port_id: src_port,
+                    destination_port_id: dst_port,
+                    description: desc,
+                    technology: tech,
+                    tags: Some("Relationship".to_string()),
+                    ..Default::default()
+                };
+                if self.peek_open_brace() {
+                    self.parse_relationship_body(&mut rel)?;
+                }
+                if uncertain {
+                    rel.tags = Some(match rel.tags.take() {
+                        Some(t) => format!("{},Uncertain", t),
+                        None => "Uncertain".to_string(),
+                    });
+                }
+                rels.push(rel);
+            } else if self.peek_word("url") {
+                self.advance();
+                let _ = self.consume_string();
+            } else if self.peek_word("properties") {
+                self.advance();
+                let _ = self.parse_properties_block_body()?;
+            } else if matches!(self.peek(), Some(Token::Directive(_))) {
+                self.advance();
+                self.skip_directive_args();
+            } else if !self.sketch {
+                return Err(self.unknown_keyword_error(
+                    "container group body",
+                    &["component", "group", "url", "properties"],
+                ));
+            } else {
+                self.advance();
+                self.skip_optional_block_or_value();
+            }
+        }
+        self.expect_close_brace()?;
+        Ok(None)
     }
 
     fn parse_container(&mut self, identifier: &str, parent_identifier: &str) -> Result<Container, ParseError> {
@@ -1211,16 +1717,37 @@ impl Parser {
                         c.technology = alias.technology.clone();
                     }
                     components.push(c);
+                } else if self.peek_word("group") {
+                    self.advance();
+                    if let Some(leaf) = self.parse_container_group(
+                        if has_ident { &ident } else { "" },
+                        "",
+                        &mut components,
+                        &mut rels,
+                    )? {
+                        cont_extras.group = Some(leaf);
+                    }
                 } else if self.peek_at_arrow_after_word() {
+                    let src_pos = self.current_pos();
                     let src  = self.consume_string().unwrap_or_default();
                     self.advance(); // ->
+                    let dst_pos = self.current_pos();
                     let dst  = self.consume_string().unwrap_or_default();
                     let desc = self.consume_string_if_not_brace();
                     let tech = self.consume_string_if_not_brace();
                     let rel_id = self.next_id();
                     let uncertain = self.consume_uncertainty_marker();
-                    let (src_id, src_port) = self.resolve_endpoint(&src);
-                    let (dst_id, dst_port) = self.resolve_endpoint(&dst);
+                    // `this` refers to the enclosing element (upstream DSL).
+                    let (src_id, src_port) = if src.eq_ignore_ascii_case("this") {
+                        (id.clone(), None)
+                    } else {
+                        self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos)
+                    };
+                    let (dst_id, dst_port) = if dst.eq_ignore_ascii_case("this") {
+                        (id.clone(), None)
+                    } else {
+                        self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos)
+                    };
                     let mut rel = Relationship {
                         id: rel_id,
                         source_id: src_id,
@@ -1241,6 +1768,9 @@ impl Parser {
                             None => "Uncertain".to_string(),
                         });
                     }
+                    rels.push(rel);
+                } else if !has_ident && matches!(self.peek(), Some(Token::Arrow)) {
+                    let rel = self.parse_implicit_relationship(&id)?;
                     rels.push(rel);
                 } else if !has_ident && {
                     let mut paths = vec![identifier.to_string()];
@@ -1263,6 +1793,8 @@ impl Parser {
                 } else if matches!(self.peek(), Some(Token::Directive(_))) {
                     self.advance();
                     self.skip_directive_args();
+                } else if !self.sketch {
+                    return Err(self.unknown_keyword_error("container body", &CONTAINER_BODY_KEYWORDS));
                 } else {
                     // Consume only one value to avoid eating the next element's identifier.
                     self.advance();
@@ -1303,6 +1835,7 @@ impl Parser {
             if !cont_extras.properties.is_empty() {
                 container.properties.get_or_insert_with(HashMap::new).extend(cont_extras.properties);
             }
+            if cont_extras.group.is_some() { container.group = cont_extras.group; }
         }
 
         Ok(container)
@@ -1365,10 +1898,77 @@ impl Parser {
             if !extras.properties.is_empty() {
                 component.properties.get_or_insert_with(HashMap::new).extend(extras.properties);
             }
+            if extras.group.is_some() { component.group = extras.group; }
             self.expect_close_brace()?;
         }
 
         Ok(component)
+    }
+
+    /// Parse an upstream custom element: `x = element "Name" ["metadata" ["description" ["tags"]]]`.
+    fn parse_custom_element(&mut self, identifier: &str) -> Result<CustomElement, ParseError> {
+        let id = self.next_id();
+        let name = self.consume_string().unwrap_or_else(|| "Element".to_string());
+        let metadata = self.consume_string_if_not_brace();
+        let description = self.consume_string_if_not_brace();
+        let tags = self.consume_string_if_not_brace_or_kw();
+
+        if !identifier.is_empty() {
+            self.register.register(identifier, id.clone(), ElementType::CustomElement);
+        }
+
+        let mut element = CustomElement {
+            id: id.clone(),
+            name,
+            metadata,
+            description,
+            tags: merge_tags("Element", tags),
+            ..Default::default()
+        };
+
+        if self.consume_uncertainty_marker() {
+            element.tags = match element.tags.take() {
+                Some(t) => Some(format!("{},Uncertain", t)),
+                None => Some("Uncertain".to_string()),
+            };
+        }
+
+        if self.peek_open_brace() {
+            self.advance();
+            let paths = vec![identifier.to_string()];
+            let (rels, extras) = self.parse_element_block(&id, &paths)?;
+            if !rels.is_empty() {
+                element.relationships = Some(rels);
+            }
+            if extras.status.is_some()     { element.status     = extras.status; }
+            if extras.introduced.is_some() { element.introduced = extras.introduced; }
+            if extras.retired.is_some()    { element.retired    = extras.retired; }
+            if !extras.perspectives.is_empty() {
+                element.perspectives = Some(extras.perspectives);
+            }
+            if !extras.ports.is_empty() {
+                element.ports = Some(extras.ports.into_iter().map(|(_, p)| p).collect());
+            }
+            if extras.description.is_some() { element.description = extras.description; }
+            if extras.url.is_some()         { element.url         = extras.url; }
+            if !extras.tags_extra.is_empty() {
+                let extra = extras.tags_extra.join(",");
+                element.tags = Some(match element.tags.take() {
+                    Some(t) => format!("{},{}", t, extra),
+                    None => extra,
+                });
+            }
+            if !extras.properties.is_empty() {
+                element.properties.get_or_insert_with(HashMap::new).extend(extras.properties);
+            }
+            if extras.group.is_some() { element.group = extras.group; }
+            self.expect_close_brace()?;
+        }
+        if element.group.is_none() {
+            element.group = self.current_model_group();
+        }
+
+        Ok(element)
     }
 
     fn parse_deployment_environment(&mut self) -> Result<Vec<DeploymentNode>, ParseError> {
@@ -1379,7 +1979,18 @@ impl Parser {
 
         if self.peek_open_brace() {
             self.advance();
-            while !self.peek_close_brace() && self.peek().is_some() {
+            // Depth of `group { ... }` wrappers around nodes; contents are
+            // parsed flattened (node grouping is not modelled).
+            let mut open_groups = 0usize;
+            while self.peek().is_some() {
+                if self.peek_close_brace() {
+                    if open_groups > 0 {
+                        self.advance();
+                        open_groups -= 1;
+                        continue;
+                    }
+                    break;
+                }
                 let (ident, _) = self.peek_assignment();
                 let has_ident = ident.is_some();
                 let ident = ident.unwrap_or_default();
@@ -1389,13 +2000,26 @@ impl Parser {
                     self.advance();
                 }
 
-                if self.peek_word("deploymentnode") {
+                if self.peek_word("group") {
+                    self.advance();
+                    let _ = self.consume_string();
+                    if self.peek_open_brace() {
+                        self.advance();
+                        open_groups += 1;
+                    }
+                } else if self.peek_word("deploymentnode") {
                     self.advance();
                     let node = self.parse_deployment_node(
                         if has_ident { &ident } else { "" },
                         &env_name,
                     )?;
                     nodes.push(node);
+                } else if self.peek_word("deploymentgroup") {
+                    self.advance();
+                    let name = self.consume_string().unwrap_or_default();
+                    if has_ident && !name.is_empty() {
+                        self.deployment_group_names.insert(ident.to_lowercase(), name);
+                    }
                 } else if !has_ident && self.peek_at_arrow_after_word() {
                     // Relationship between deployment nodes at environment level.
                     let src = self.consume_string().unwrap_or_default();
@@ -1418,6 +2042,11 @@ impl Parser {
                 } else if matches!(self.peek(), Some(Token::Directive(_))) {
                     self.advance();
                     self.skip_directive_args();
+                } else if !self.sketch {
+                    return Err(self.unknown_keyword_error(
+                        "deploymentEnvironment body",
+                        &["deploymentNode", "deploymentGroup"],
+                    ));
                 } else {
                     self.advance();
                     self.skip_optional_block_or_value();
@@ -1489,8 +2118,11 @@ impl Parser {
         let description = self.consume_string_if_not_brace();
         let technology = self.consume_string_if_not_brace();
         let tags = self.consume_string_if_not_brace_or_kw();
-        // Optional instances count
-        let instances_str = self.consume_string_if_not_brace_or_kw();
+        // Optional instances count (bare number or quoted)
+        let instances_str = match self.peek() {
+            Some(Token::Word(w)) if w.parse::<i64>().is_ok() => self.consume_string(),
+            _ => self.consume_string_if_not_brace_or_kw(),
+        };
         let instances: Option<serde_json::Value> = instances_str
             .and_then(|s| s.parse::<i64>().ok())
             .map(|n| serde_json::Value::Number(serde_json::Number::from(n)));
@@ -1518,8 +2150,22 @@ impl Parser {
             let mut software_system_instances = Vec::new();
             let mut infrastructure_nodes = Vec::new();
             let mut rels = Vec::new();
+            let mut node_extras = ElementExtras::default();
+            // `deploymentGroup <ref>` statements: groups inherited by the
+            // instances declared after them in this node.
+            let mut inherited_groups: Vec<String> = Vec::new();
+            // Depth of `group { ... }` wrappers; contents parsed flattened.
+            let mut open_groups = 0usize;
 
-            while !self.peek_close_brace() && self.peek().is_some() {
+            while self.peek().is_some() {
+                if self.peek_close_brace() {
+                    if open_groups > 0 {
+                        self.advance();
+                        open_groups -= 1;
+                        continue;
+                    }
+                    break;
+                }
                 let (ident, _) = self.peek_assignment();
                 let has_ident = ident.is_some();
                 let ident = ident.unwrap_or_default();
@@ -1529,7 +2175,24 @@ impl Parser {
                     self.advance();
                 }
 
-                if self.peek_word("deploymentnode") {
+                if self.peek_word("group") {
+                    self.advance();
+                    let _ = self.consume_string();
+                    if self.peek_open_brace() {
+                        self.advance();
+                        open_groups += 1;
+                    }
+                } else if self.peek_word("deploymentgroup") {
+                    self.advance();
+                    if let Some(gref) = self.consume_string() {
+                        let name = self
+                            .deployment_group_names
+                            .get(&gref.to_lowercase())
+                            .cloned()
+                            .unwrap_or(gref);
+                        inherited_groups.push(name);
+                    }
+                } else if self.peek_word("deploymentnode") {
                     self.advance();
                     let child = self.parse_deployment_node(
                         if has_ident { &ident } else { "" },
@@ -1538,45 +2201,130 @@ impl Parser {
                     children.push(child);
                 } else if self.peek_word("containerinstance") {
                     self.advance();
-                    let ci = self.parse_container_instance(if has_ident { &ident } else { "" }, env)?;
+                    let mut ci = self.parse_container_instance(if has_ident { &ident } else { "" }, env)?;
+                    if ci.deployment_groups.is_none() && !inherited_groups.is_empty() {
+                        ci.deployment_groups = Some(inherited_groups.clone());
+                    }
                     container_instances.push(ci);
                 } else if self.peek_word("softwaresysteminstance") {
                     self.advance();
-                    let ssi = self.parse_software_system_instance(if has_ident { &ident } else { "" }, env)?;
+                    let mut ssi = self.parse_software_system_instance(if has_ident { &ident } else { "" }, env)?;
+                    if ssi.deployment_groups.is_none() && !inherited_groups.is_empty() {
+                        ssi.deployment_groups = Some(inherited_groups.clone());
+                    }
                     software_system_instances.push(ssi);
                 } else if self.peek_word("infrastructurenode") {
                     self.advance();
                     let inf = self.parse_infrastructure_node(if has_ident { &ident } else { "" }, env)?;
                     infrastructure_nodes.push(inf);
+                } else if self.peek_word("instanceof") {
+                    // `instanceOf <ref>`: shorthand for containerInstance /
+                    // softwareSystemInstance depending on what the ref names.
+                    self.advance();
+                    let (line, col) = self.current_pos();
+                    let target = self.consume_string().unwrap_or_default();
+                    let resolved = self.register.resolve(&target).cloned().or_else(|| {
+                        target
+                            .rsplit('.')
+                            .next()
+                            .and_then(|last| self.register.resolve(last).cloned())
+                    });
+                    let deployment_groups = self.consume_deployment_groups();
+                    if self.peek_open_brace() {
+                        self.advance();
+                        self.skip_block();
+                    }
+                    match resolved {
+                        Some((eid, ElementType::Container)) => {
+                            let iid = self.next_id();
+                            if has_ident {
+                                self.register.register(&ident, iid.clone(), ElementType::ContainerInstance);
+                            }
+                            container_instances.push(ContainerInstance {
+                                id: iid,
+                                container_id: eid,
+                                environment: Some(env.to_string()),
+                                tags: merge_tags("Container Instance", None),
+                                deployment_groups,
+                                ..Default::default()
+                            });
+                        }
+                        Some((eid, ElementType::SoftwareSystem)) => {
+                            let iid = self.next_id();
+                            if has_ident {
+                                self.register.register(&ident, iid.clone(), ElementType::SoftwareSystemInstance);
+                            }
+                            software_system_instances.push(SoftwareSystemInstance {
+                                id: iid,
+                                software_system_id: eid,
+                                environment: Some(env.to_string()),
+                                tags: merge_tags("Software System Instance", None),
+                                deployment_groups,
+                                ..Default::default()
+                            });
+                        }
+                        _ => {
+                            return Err(ParseError::syntax(
+                                line,
+                                col,
+                                format!(
+                                    "instanceOf target '{}' does not resolve to a container or software system",
+                                    target
+                                ),
+                            ));
+                        }
+                    }
                 } else if self.peek_at_arrow_after_word() {
+                    let src_pos = self.current_pos();
                     let src = self.consume_string().unwrap_or_default();
                     self.advance(); // ->
+                    let dst_pos = self.current_pos();
                     let dst = self.consume_string().unwrap_or_default();
                     let desc = self.consume_string_if_not_brace();
                     let tech = self.consume_string_if_not_brace();
                     let rel_id = self.next_id();
-                    let src_id = self.resolve_identifier(&src);
-                    let dst_id = self.resolve_identifier(&dst);
+                    // `this` refers to the enclosing deployment node.
+                    let (src_id, src_port) = if src.eq_ignore_ascii_case("this") {
+                        (id.clone(), None)
+                    } else {
+                        self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos)
+                    };
+                    let (dst_id, dst_port) = if dst.eq_ignore_ascii_case("this") {
+                        (id.clone(), None)
+                    } else {
+                        self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos)
+                    };
                     rels.push(Relationship {
                         id: rel_id,
                         source_id: src_id,
                         destination_id: dst_id,
+                        source_port_id: src_port,
+                        destination_port_id: dst_port,
                         description: desc,
                         technology: tech,
                         tags: Some("Relationship".to_string()),
                         ..Default::default()
                     });
+                } else if self.peek_word("instances") {
+                    self.advance();
+                    node.instances = self
+                        .consume_string()
+                        .and_then(|s| s.parse::<i64>().ok())
+                        .map(|n| serde_json::Value::Number(serde_json::Number::from(n)));
+                } else if !has_ident && {
+                    let paths = vec![identifier.to_string()];
+                    self.try_parse_common_element_keyword(&mut node_extras, &id, &paths)?
+                } {
+                    // node attribute consumed
                 } else if matches!(self.peek(), Some(Token::Directive(_))) {
                     self.advance();
                     self.skip_directive_args();
+                } else if !self.sketch {
+                    return Err(self.unknown_keyword_error(
+                        "deploymentNode body",
+                        &DEPLOYMENT_NODE_BODY_KEYWORDS,
+                    ));
                 } else {
-                    // Unknown property keyword (e.g. `tags`, `description`, `technology`,
-                    // `url`, `properties`, `perspectives`).  Consume the keyword then
-                    // consume AT MOST ONE following value — using a block skip when the
-                    // next token is `{`, or consuming a single quoted/word value otherwise.
-                    // This prevents the greedy while-loop inside
-                    // `skip_optional_block_or_value` from eating the subsequent line's
-                    // identifier.
                     self.advance(); // the keyword
                     if self.peek_open_brace() {
                         self.advance();
@@ -1588,6 +2336,19 @@ impl Parser {
                 }
             }
             self.expect_close_brace()?;
+            if node_extras.description.is_some() { node.description = node_extras.description; }
+            if node_extras.technology.is_some()  { node.technology  = node_extras.technology; }
+            if node_extras.url.is_some()         { node.url         = node_extras.url; }
+            if !node_extras.tags_extra.is_empty() {
+                let extra = node_extras.tags_extra.join(",");
+                node.tags = Some(match node.tags.take() {
+                    Some(t) => format!("{},{}", t, extra),
+                    None => extra,
+                });
+            }
+            if !node_extras.properties.is_empty() {
+                node.properties.get_or_insert_with(HashMap::new).extend(node_extras.properties);
+            }
 
             if !children.is_empty() {
                 node.children = Some(children);
@@ -1609,10 +2370,25 @@ impl Parser {
         Ok(node)
     }
 
+    /// Consume trailing `deploymentGroup` identifiers on an instance declaration.
+    fn consume_deployment_groups(&mut self) -> Option<Vec<String>> {
+        let mut groups = Vec::new();
+        while let Some(Token::Word(w)) = self.peek() {
+            match self.deployment_group_names.get(&w.to_lowercase()) {
+                Some(name) => {
+                    groups.push(name.clone());
+                    self.advance();
+                }
+                None => break,
+            }
+        }
+        if groups.is_empty() { None } else { Some(groups) }
+    }
+
     fn parse_container_instance(&mut self, identifier: &str, env: &str) -> Result<ContainerInstance, ParseError> {
         let id = self.next_id();
         let container_ref = self.consume_string().unwrap_or_default();
-        let _deployment_groups = self.consume_string_if_not_brace_or_kw();
+        let deployment_groups = self.consume_deployment_groups();
         let tags = self.consume_string_if_not_brace_or_kw();
 
         let container_id = self.register.resolve_id(&container_ref).unwrap_or(container_ref);
@@ -1627,6 +2403,7 @@ impl Parser {
             container_id,
             environment: Some(env.to_string()),
             tags: merge_tags("Container Instance", tags),
+            deployment_groups,
             ..Default::default()
         };
 
@@ -1641,7 +2418,7 @@ impl Parser {
     fn parse_software_system_instance(&mut self, identifier: &str, env: &str) -> Result<SoftwareSystemInstance, ParseError> {
         let id = self.next_id();
         let ss_ref = self.consume_string().unwrap_or_default();
-        let _deployment_groups = self.consume_string_if_not_brace_or_kw();
+        let deployment_groups = self.consume_deployment_groups();
         let tags = self.consume_string_if_not_brace_or_kw();
 
         let ss_id = self.register.resolve_id(&ss_ref).unwrap_or(ss_ref);
@@ -1656,6 +2433,7 @@ impl Parser {
             software_system_id: ss_id,
             environment: Some(env.to_string()),
             tags: merge_tags("Software System Instance", tags),
+            deployment_groups,
             ..Default::default()
         };
 
@@ -1708,15 +2486,26 @@ impl Parser {
         let mut extras = ElementExtras::default();
         while !self.peek_close_brace() && self.peek().is_some() {
             if self.peek_at_arrow_after_word() {
+                let src_pos = self.current_pos();
                 let src  = self.consume_string().unwrap_or_default();
                 self.advance(); // ->
+                let dst_pos = self.current_pos();
                 let dst  = self.consume_string().unwrap_or_default();
                 let desc = self.consume_string_if_not_brace();
                 let tech = self.consume_string_if_not_brace();
                 let rel_id = self.next_id();
                 let uncertain = self.consume_uncertainty_marker();
-                let (src_id, src_port) = self.resolve_endpoint(&src);
-                let (dst_id, dst_port) = self.resolve_endpoint(&dst);
+                // `this` refers to the enclosing element (upstream DSL).
+                let (src_id, src_port) = if src.eq_ignore_ascii_case("this") {
+                    (source_id.to_string(), None)
+                } else {
+                    self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos)
+                };
+                let (dst_id, dst_port) = if dst.eq_ignore_ascii_case("this") {
+                    (source_id.to_string(), None)
+                } else {
+                    self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos)
+                };
                 let mut rel = Relationship {
                     id: rel_id,
                     source_id: src_id,
@@ -1738,6 +2527,9 @@ impl Parser {
                     });
                 }
                 rels.push(rel);
+            } else if matches!(self.peek(), Some(Token::Arrow)) {
+                let rel = self.parse_implicit_relationship(source_id)?;
+                rels.push(rel);
             } else if self.try_parse_common_element_keyword(&mut extras, source_id, ident_paths)? {
                 // element attribute consumed
             } else if matches!(self.peek(), Some(Token::Directive(d)) if d.eq_ignore_ascii_case("adrs") || d.eq_ignore_ascii_case("decisions")) {
@@ -1750,6 +2542,8 @@ impl Parser {
             } else if matches!(self.peek(), Some(Token::Directive(_))) {
                 self.advance();
                 self.skip_directive_args();
+            } else if !self.sketch {
+                return Err(self.unknown_keyword_error("element body", &ELEMENT_BODY_KEYWORDS));
             } else {
                 self.advance();
                 self.skip_optional_block_or_value();
@@ -1759,8 +2553,10 @@ impl Parser {
     }
 
     fn parse_relationship_in_model(&mut self, model: &mut Model) -> Result<String, ParseError> {
+        let src_pos = self.current_pos();
         let src  = self.consume_string().unwrap_or_default();
         self.advance(); // ->
+        let dst_pos = self.current_pos();
         let dst  = self.consume_string().unwrap_or_default();
         let desc = self.consume_string_if_not_brace();
         let tech = self.consume_string_if_not_brace_or_kw();
@@ -1773,8 +2569,9 @@ impl Parser {
         }
         let rel_id = self.next_id();
         let returned_rel_id = rel_id.clone();
-        let (src_id, src_port) = self.resolve_endpoint(&src);
-        let (dst_id, dst_port) = self.resolve_endpoint(&dst);
+        let src_unresolved = !src.is_empty() && !self.endpoint_resolves(&src);
+        let (src_id, src_port) = self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos);
+        let (dst_id, dst_port) = self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos);
 
         let mut rel = Relationship {
             id: rel_id,
@@ -1799,10 +2596,49 @@ impl Parser {
             });
         }
 
-        // Attach relationship to source element
-        self.attach_relationship_to_element(model, &src_id, rel);
+        // Attach to the source element now, or defer until the end of the
+        // model block when the source is a forward reference.
+        if src_unresolved {
+            self.deferred_rels.push(rel);
+        } else {
+            self.attach_relationship_to_element(model, &src_id, rel);
+        }
 
         Ok(returned_rel_id)
+    }
+
+    /// Parse an implicit-source relationship inside an element body:
+    /// `-> destination ["description" ["technology"]] [?] [{ ... }]`.
+    /// The source is the enclosing element. Current token must be the arrow.
+    fn parse_implicit_relationship(&mut self, source_id: &str) -> Result<Relationship, ParseError> {
+        self.advance(); // ->
+        let dst_pos = self.current_pos();
+        let dst = self.consume_string().unwrap_or_default();
+        let desc = self.consume_string_if_not_brace();
+        let tech = self.consume_string_if_not_brace();
+        let rel_id = self.next_id();
+        let uncertain = self.consume_uncertainty_marker();
+        let (dst_id, dst_port) = self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos);
+        let mut rel = Relationship {
+            id: rel_id,
+            source_id: source_id.to_string(),
+            destination_id: dst_id,
+            destination_port_id: dst_port,
+            description: desc,
+            technology: tech,
+            tags: Some("Relationship".to_string()),
+            ..Default::default()
+        };
+        if self.peek_open_brace() {
+            self.parse_relationship_body(&mut rel)?;
+        }
+        if uncertain {
+            rel.tags = Some(match rel.tags.take() {
+                Some(t) => format!("{},Uncertain", t),
+                None => "Uncertain".to_string(),
+            });
+        }
+        Ok(rel)
     }
 
     fn attach_relationship_to_element(&self, model: &mut Model, source_id: &str, rel: Relationship) {
@@ -1838,6 +2674,15 @@ impl Parser {
                             }
                         }
                     }
+                }
+            }
+        }
+        // Try custom elements
+        if let Some(elements) = &mut model.custom_elements {
+            for e in elements.iter_mut() {
+                if e.id == source_id {
+                    e.relationships.get_or_insert_with(Vec::new).push(rel);
+                    return;
                 }
             }
         }
@@ -1899,7 +2744,7 @@ impl Parser {
                                 .get_or_insert_with(ViewConfiguration::default)
                                 .styles = Some(styles);
                         }
-                        "theme" => {
+                        "theme" | "themes" => {
                             self.advance();
                             let mut themes = Vec::new();
                             while matches!(self.peek(), Some(Token::Word(_)) | Some(Token::Quoted(_))) {
@@ -1925,12 +2770,26 @@ impl Parser {
                             self.expect_open_brace()?;
                             self.skip_block();
                         }
-                        _ => {
+                        // Upstream view types we accept but do not render yet:
+                        // consume positional args and an optional block.
+                        "image" | "custom" => {
                             self.advance();
-                            // Consume any remaining word/quoted arguments, then skip
-                            // an optional block. This handles unknown view types like
-                            // `image`, `custom`, etc. that may have multiple positional
-                            // args followed by a `{ ... }` body.
+                            while matches!(
+                                self.peek(),
+                                Some(Token::Word(_)) | Some(Token::Quoted(_)) | Some(Token::TextBlock(_))
+                            ) {
+                                self.advance();
+                            }
+                            if self.peek_open_brace() {
+                                self.advance();
+                                self.skip_block();
+                            }
+                        }
+                        _ => {
+                            if !self.sketch {
+                                return Err(self.unknown_keyword_error("views", &VIEWS_KEYWORDS));
+                            }
+                            self.advance();
                             while matches!(
                                 self.peek(),
                                 Some(Token::Word(_)) | Some(Token::Quoted(_)) | Some(Token::TextBlock(_))
@@ -1944,9 +2803,19 @@ impl Parser {
                         }
                     }
                 }
-                Some(Token::Directive(_)) => {
+                Some(Token::Directive(d)) => {
+                    let d = d.clone();
                     self.advance();
-                    self.skip_optional_block_or_value();
+                    match d.to_lowercase().as_str() {
+                        "const" | "constant" | "var" => {
+                            let name = self.consume_string().unwrap_or_default();
+                            let value = self.consume_string().unwrap_or_default();
+                            self.constants.insert(name, value);
+                        }
+                        _ => {
+                            self.skip_directive_args();
+                        }
+                    }
                 }
                 Some(Token::CloseBrace) => break,
                 _ => {
@@ -2232,14 +3101,29 @@ impl Parser {
         let mut rel_views: Vec<RelationshipView> = Vec::new();
         let mut auto_layout = None;
         let mut order = 1u32;
+        // Depth of anonymous `{ ... }` parallel-sequence groups; their steps
+        // are parsed like any other (ordering nuances are not modelled).
+        let mut parallel_depth = 0usize;
 
         if !self.peek_open_brace() {
             return (Vec::new(), Vec::new(), None);
         }
         self.advance();
 
-        while self.peek().is_some() && !self.peek_close_brace() {
+        while self.peek().is_some() {
+            if self.peek_close_brace() {
+                if parallel_depth > 0 {
+                    self.advance();
+                    parallel_depth -= 1;
+                    continue;
+                }
+                break;
+            }
             match self.peek() {
+                Some(Token::OpenBrace) => {
+                    self.advance();
+                    parallel_depth += 1;
+                }
                 Some(Token::Word(w)) if w.eq_ignore_ascii_case("autolayout") || w.eq_ignore_ascii_case("autoLayout") => {
                     self.advance();
                     let direction = match self.peek() {
@@ -2644,11 +3528,10 @@ impl Parser {
                 if !component_ids.contains(rel_dest) {
                     external_ids.insert(rel_dest.to_string());
                 }
-            } else if internal_ids.contains(rel_dest) && !internal_ids.contains(rel_source) {
-                if !component_ids.contains(rel_source) {
+            } else if internal_ids.contains(rel_dest) && !internal_ids.contains(rel_source)
+                && !component_ids.contains(rel_source) {
                     external_ids.insert(rel_source.to_string());
                 }
-            }
         }
 
         fn scan_rels(
@@ -3094,15 +3977,12 @@ impl Parser {
                         }
                     }
                 }
-                Some(Token::CloseBrace) => {
-                    self.advance();
-                    break;
-                }
                 _ => {
                     self.advance();
                 }
             }
         }
+        self.expect_close_brace()?;
 
         Ok(Styles {
             elements: if elements.is_empty() { None } else { Some(elements) },
@@ -3191,10 +4071,28 @@ impl Parser {
     // ─── Helpers ────────────────────────────────────────────────────────────────
 
     fn consume_string_if_not_brace_or_kw(&mut self) -> Option<String> {
-        // Only consume explicitly quoted or text-block strings.
-        // Bare words are reserved for identifiers / next-element context and must not be consumed.
         match self.peek() {
             Some(Token::Quoted(_)) | Some(Token::TextBlock(_)) => self.consume_string(),
+            // A bare word is a positional value (e.g. an unquoted tag) only when
+            // it cannot be the start of the next statement: not a keyword or
+            // declared alias, not numeric (instance counts), not `?`, and not
+            // followed by `=` or `->`.
+            Some(Token::Word(w)) => {
+                let lower = w.to_lowercase();
+                let identifier_like = w.chars().next().is_some_and(|c| c.is_alphanumeric() || c == '_');
+                let starts_statement = is_reserved_body_word(&lower)
+                    || self.kind_aliases.contains_key(&lower)
+                    || w.parse::<f64>().is_ok()
+                    || matches!(
+                        self.tokens.get(self.pos + 1).map(|s| &s.token),
+                        Some(Token::Equals) | Some(Token::Arrow)
+                    );
+                if identifier_like && !starts_statement {
+                    self.consume_string()
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -3555,7 +4453,7 @@ impl Parser {
                         extras.properties.extend(props);
                         Ok(true)
                     }
-                    "tags" => {
+                    "tags" | "tag" => {
                         self.advance();
                         while matches!(self.peek(), Some(Token::Quoted(_)) | Some(Token::TextBlock(_))) {
                             if let Some(t) = self.consume_string() {
@@ -3564,6 +4462,25 @@ impl Parser {
                                     if !p.is_empty() { extras.tags_extra.push(p); }
                                 }
                             }
+                        }
+                        Ok(true)
+                    }
+                    "group" => {
+                        // Leaf form only: `group "Name"` assigns group membership.
+                        // (Group blocks with child elements are handled by the
+                        // softwareSystem/container body parsers before this.)
+                        self.advance();
+                        let name = self.consume_string().unwrap_or_default();
+                        if self.peek_open_brace() {
+                            let (line, col) = self.current_pos();
+                            return Err(ParseError::syntax(
+                                line,
+                                col,
+                                "a group block with child elements is not allowed in this element body; use a bare `group \"Name\"` for membership",
+                            ));
+                        }
+                        if !name.is_empty() {
+                            extras.group = Some(name);
                         }
                         Ok(true)
                     }
@@ -3602,6 +4519,106 @@ impl Parser {
     }
 }
 
+/// All element ids present in the model, including deployment nodes and instances.
+fn collect_element_ids(model: &Model) -> HashSet<String> {
+    let mut ids = HashSet::new();
+    for p in model.people.iter().flatten() {
+        ids.insert(p.id.clone());
+    }
+    for s in model.software_systems.iter().flatten() {
+        ids.insert(s.id.clone());
+        for c in s.containers.iter().flatten() {
+            ids.insert(c.id.clone());
+            for comp in c.components.iter().flatten() {
+                ids.insert(comp.id.clone());
+            }
+        }
+    }
+    for ce in model.custom_elements.iter().flatten() {
+        ids.insert(ce.id.clone());
+    }
+    fn walk_node(node: &DeploymentNode, ids: &mut HashSet<String>) {
+        ids.insert(node.id.clone());
+        for ci in node.container_instances.iter().flatten() {
+            ids.insert(ci.id.clone());
+        }
+        for ssi in node.software_system_instances.iter().flatten() {
+            ids.insert(ssi.id.clone());
+        }
+        for inf in node.infrastructure_nodes.iter().flatten() {
+            ids.insert(inf.id.clone());
+        }
+        for child in node.children.iter().flatten() {
+            walk_node(child, ids);
+        }
+    }
+    for node in model.deployment_nodes.iter().flatten() {
+        walk_node(node, &mut ids);
+    }
+    ids
+}
+
+/// Apply `f` to every relationship stored anywhere in the model.
+fn for_each_rel_mut(model: &mut Model, f: &mut impl FnMut(&mut Relationship)) {
+    for p in model.people.iter_mut().flatten() {
+        p.relationships.iter_mut().flatten().for_each(&mut *f);
+    }
+    for s in model.software_systems.iter_mut().flatten() {
+        s.relationships.iter_mut().flatten().for_each(&mut *f);
+        for c in s.containers.iter_mut().flatten() {
+            c.relationships.iter_mut().flatten().for_each(&mut *f);
+            for comp in c.components.iter_mut().flatten() {
+                comp.relationships.iter_mut().flatten().for_each(&mut *f);
+            }
+        }
+    }
+    for ce in model.custom_elements.iter_mut().flatten() {
+        ce.relationships.iter_mut().flatten().for_each(&mut *f);
+    }
+    fn walk_node(node: &mut DeploymentNode, f: &mut impl FnMut(&mut Relationship)) {
+        node.relationships.iter_mut().flatten().for_each(&mut *f);
+        for ci in node.container_instances.iter_mut().flatten() {
+            ci.relationships.iter_mut().flatten().for_each(&mut *f);
+        }
+        for child in node.children.iter_mut().flatten() {
+            walk_node(child, f);
+        }
+    }
+    for node in model.deployment_nodes.iter_mut().flatten() {
+        walk_node(node, f);
+    }
+}
+
+/// Rewrite one endpoint of the relationship with id `rel_id`, wherever it lives
+/// (attached in the model or still in the deferred list).
+fn rewrite_rel_endpoint(
+    model: &mut Model,
+    deferred: &mut [Relationship],
+    rel_id: &str,
+    source_side: bool,
+    new_id: &str,
+    new_port: Option<String>,
+) {
+    let mut apply = |rel: &mut Relationship| {
+        if rel.id != rel_id {
+            return;
+        }
+        if source_side {
+            rel.source_id = new_id.to_string();
+            if new_port.is_some() {
+                rel.source_port_id = new_port.clone();
+            }
+        } else {
+            rel.destination_id = new_id.to_string();
+            if new_port.is_some() {
+                rel.destination_port_id = new_port.clone();
+            }
+        }
+    };
+    for_each_rel_mut(model, &mut apply);
+    deferred.iter_mut().for_each(&mut apply);
+}
+
 /// Merge a kind alias's tags into `tags` and record the alias name in the
 /// element's `kind` property.
 fn apply_alias_to_tags_props(
@@ -3619,6 +4636,21 @@ fn apply_alias_to_tags_props(
     properties
         .get_or_insert_with(HashMap::new)
         .insert("kind".to_string(), alias_name.to_string());
+}
+
+/// Words that can start a statement inside a model or element body, and must
+/// therefore never be consumed as a bare positional value (tags etc.).
+fn is_reserved_body_word(lower: &str) -> bool {
+    matches!(
+        lower,
+        "person" | "softwaresystem" | "container" | "component" | "group" | "enterprise"
+            | "deploymentenvironment" | "deploymentnode" | "containerinstance"
+            | "softwaresysteminstance" | "infrastructurenode" | "deploymentgroup" | "element"
+            | "description" | "technology" | "url" | "tags" | "tag" | "properties"
+            | "perspective" | "perspectives" | "port" | "status" | "introduced" | "retired"
+            | "instances" | "instanceof" | "this" | "model" | "views" | "workspace"
+            | "configuration" | "milestones" | "specification" | "auto" | "?"
+    )
 }
 
 #[allow(dead_code)]

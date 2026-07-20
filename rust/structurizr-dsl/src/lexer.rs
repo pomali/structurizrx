@@ -57,6 +57,20 @@ pub fn tokenize(source: &str) -> Vec<Spanned> {
             continue;
         }
 
+        // Line continuation: backslash at end of line joins it with the next.
+        if c == '\\' {
+            let mut j = i + 1;
+            while j < chars.len() && chars[j] != '\n' && chars[j].is_whitespace() {
+                j += 1;
+            }
+            if j < chars.len() && chars[j] == '\n' {
+                i = j + 1;
+                line += 1;
+                col = 1;
+                continue;
+            }
+        }
+
         let pos = Pos { line, col };
 
         // Single-line comment: // or bare #

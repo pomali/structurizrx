@@ -63,6 +63,8 @@ pub struct Model {
     pub deployment_nodes: Option<Vec<DeploymentNode>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_elements: Option<Vec<CustomElement>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<HashMap<String, String>>,
 }
 
 /// Enterprise boundary.

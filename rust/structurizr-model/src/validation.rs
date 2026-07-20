@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use thiserror::Error;
 
-use crate::{Port, Relationship, Workspace};
+use crate::{DeploymentNode, Port, Relationship, Workspace};
 
 /// Validation error.
 #[derive(Error, Debug)]
@@ -66,13 +66,15 @@ pub fn validate(workspace: &Workspace) -> Vec<ValidationError> {
         .map(|ms| ms.iter().map(|m| m.name.as_str()).collect())
         .unwrap_or_default();
 
-    // Walk the element hierarchy once, collecting ports and relationships and
-    // checking element milestone references along the way.
+    // Walk the element hierarchy once, collecting ids, ports and relationships
+    // and checking element milestone references along the way.
     let mut port_map: HashMap<&str, HashSet<&str>> = HashMap::new();
     let mut all_rels: Vec<&Relationship> = Vec::new();
+    let mut element_ids: HashSet<&str> = HashSet::new();
 
     if let Some(people) = &workspace.model.people {
         for person in people {
+            element_ids.insert(&person.id);
             add_ports(&mut port_map, &person.id, &person.ports);
             all_rels.extend(person.relationships.iter().flatten());
             check_milestone(&mut errors, &milestone_names, person.introduced.as_ref(), "person", &person.id);
@@ -82,16 +84,19 @@ pub fn validate(workspace: &Workspace) -> Vec<ValidationError> {
 
     if let Some(systems) = &workspace.model.software_systems {
         for system in systems {
+            element_ids.insert(&system.id);
             add_ports(&mut port_map, &system.id, &system.ports);
             all_rels.extend(system.relationships.iter().flatten());
             check_milestone(&mut errors, &milestone_names, system.introduced.as_ref(), "software system", &system.id);
             check_milestone(&mut errors, &milestone_names, system.retired.as_ref(), "software system", &system.id);
             for container in system.containers.iter().flatten() {
+                element_ids.insert(&container.id);
                 add_ports(&mut port_map, &container.id, &container.ports);
                 all_rels.extend(container.relationships.iter().flatten());
                 check_milestone(&mut errors, &milestone_names, container.introduced.as_ref(), "container", &container.id);
                 check_milestone(&mut errors, &milestone_names, container.retired.as_ref(), "container", &container.id);
                 for component in container.components.iter().flatten() {
+                    element_ids.insert(&component.id);
                     add_ports(&mut port_map, &component.id, &component.ports);
                     all_rels.extend(component.relationships.iter().flatten());
                     check_milestone(&mut errors, &milestone_names, component.introduced.as_ref(), "component", &component.id);
@@ -103,6 +108,7 @@ pub fn validate(workspace: &Workspace) -> Vec<ValidationError> {
 
     if let Some(custom) = &workspace.model.custom_elements {
         for elem in custom {
+            element_ids.insert(&elem.id);
             add_ports(&mut port_map, &elem.id, &elem.ports);
             all_rels.extend(elem.relationships.iter().flatten());
             check_milestone(&mut errors, &milestone_names, elem.introduced.as_ref(), "custom element", &elem.id);
@@ -110,8 +116,44 @@ pub fn validate(workspace: &Workspace) -> Vec<ValidationError> {
         }
     }
 
-    // Check all relationships for port validity and milestone references.
+    fn walk_deployment_node<'a>(
+        node: &'a DeploymentNode,
+        element_ids: &mut HashSet<&'a str>,
+        all_rels: &mut Vec<&'a Relationship>,
+    ) {
+        element_ids.insert(&node.id);
+        all_rels.extend(node.relationships.iter().flatten());
+        for ci in node.container_instances.iter().flatten() {
+            element_ids.insert(&ci.id);
+            all_rels.extend(ci.relationships.iter().flatten());
+        }
+        for ssi in node.software_system_instances.iter().flatten() {
+            element_ids.insert(&ssi.id);
+            all_rels.extend(ssi.relationships.iter().flatten());
+        }
+        for inf in node.infrastructure_nodes.iter().flatten() {
+            element_ids.insert(&inf.id);
+            all_rels.extend(inf.relationships.iter().flatten());
+        }
+        for child in node.children.iter().flatten() {
+            walk_deployment_node(child, element_ids, all_rels);
+        }
+    }
+    for node in workspace.model.deployment_nodes.iter().flatten() {
+        walk_deployment_node(node, &mut element_ids, &mut all_rels);
+    }
+
+    // Check all relationships for endpoint existence, port validity and
+    // milestone references.
     for rel in &all_rels {
+        for (element_id, end) in [(&rel.source_id, "source"), (&rel.destination_id, "destination")] {
+            if !element_ids.contains(element_id.as_str()) {
+                errors.push(ValidationError::UnknownElement(format!(
+                    "{} '{}' of relationship '{}' does not exist in the model",
+                    end, element_id, rel.id
+                )));
+            }
+        }
         for (port_id, element_id, end) in [
             (&rel.source_port_id, &rel.source_id, "source"),
             (&rel.destination_port_id, &rel.destination_id, "destination"),
