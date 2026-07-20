@@ -1,8 +1,11 @@
 # StructurizrX Architecture Description System — Draft Spec
 
-Status: **settled design, ready for implementation**, revision 3 (2026-07-04).
-Nothing here is implemented yet; open questions are resolved (§0, §12) and
-phase 1 of §11 is the next step.
+Status: **implemented**, revision 3 (2026-07-04; status updated 2026-07-20).
+All six phases of §11 are implemented and on `main` (one commit per phase; see
+git history), followed by an agent-experience hardening pass (strict-by-default
+parsing with did-you-mean errors, structured lint, `validate --json`,
+include-aware error locations). Open questions are resolved (§0, §12); new
+questions raised during evolution get added to §12 before being settled.
 
 ## 0. Decisions log
 
@@ -600,26 +603,33 @@ Product features, not language features — they matter as much as the syntax:
 ## 11. Implementation plan
 
 Phases are independently shippable; each ends green (`cargo test`, fixtures
-intact).
+intact). **All six phases are implemented** (kept below as the record of
+scope); remaining known gaps are tracked in the repository README's Status
+section.
 
-1. **Model extensions** (`structurizr-model`): `Port`, `Relationship` gains
+1. **Done.** **Model extensions** (`structurizr-model`): `Port`, `Relationship` gains
    `kind` / port ids / optional identifier, `status`, `introduced`/`retired` +
    `Milestone`, perspective registry, perspectives on relationships/ports.
    JSON round-trip tests.
-2. **DSL extensions** (`structurizr-dsl`): `port` blocks, dotted port refs,
+2. **Done.** **DSL extensions** (`structurizr-dsl`): `port` blocks, dotted port refs,
    `kind` / `status` / `perspective` / `introduced` / `retired` in bodies,
    named relationships, `milestones` block, `specification` kind aliases,
    `!sketch` + bare-sketch-file parsing, `?` markers, `!include`.
-3. **Selector engine** (new `structurizr-query` module/crate): parse + evaluate
+3. **Done.** **Selector engine** (new `structurizr-query` module/crate): parse + evaluate
    §6.2 expressions; wire into `include`/`exclude`; `structurizrx query`.
-4. **View generation**: default set, `focus`, `paths`, `slice` /
+4. **Done.** **View generation**: default set, `focus`, `paths`, `slice` /
    `perspective` / `layer`, `rollup`, `asof` / `delta`, `lint`, `splitBy`,
    `collapse`, deterministic view keys.
-5. **LLM affordances**: `digest`, validation/lint upgrades, `llms.txt` cheat
+5. **Done.** **LLM affordances**: `digest`, validation/lint upgrades, `llms.txt` cheat
    sheet, deterministic-ordering audit.
-6. **Rendering**: port glyphs in SVG, kind→arrow-style mapping in all
+6. **Done.** **Rendering**: port glyphs in SVG, kind→arrow-style mapping in all
    exporters, status theming, delta styling, web viewer index grouped by
    generator/perspective/milestone.
+
+Beyond this original plan, an agent-experience hardening pass (2026-07-20)
+made the parser strict by default with did-you-mean errors and include-aware
+locations, added a structured lint API and `validate --json`, and exposed
+`digest`/`query` over the web server's JSON API.
 
 ## 12. Open questions
 
