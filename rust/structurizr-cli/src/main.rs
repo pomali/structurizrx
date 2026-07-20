@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 use structurizr_dsl::parse_file;
-use structurizr_model::{validation, Workspace};
+use structurizr_model::{validation, ViewSet, Workspace};
 use structurizr_renderer::{
     dot::DotExporter, exporter::DiagramExporter, mermaid::MermaidExporter,
     plantuml::PlantUmlExporter, svg::SvgExporter,
@@ -251,6 +251,57 @@ fn load_workspace(path: &PathBuf) -> Result<Workspace> {
     }
 }
 
+/// View-type name paired with how many views of that type are defined.
+fn view_type_counts(views: &ViewSet) -> Vec<(&'static str, usize)> {
+    vec![
+        ("systemLandscape", views.system_landscape_views.as_ref().map_or(0, Vec::len)),
+        ("systemContext", views.system_context_views.as_ref().map_or(0, Vec::len)),
+        ("container", views.container_views.as_ref().map_or(0, Vec::len)),
+        ("component", views.component_views.as_ref().map_or(0, Vec::len)),
+        ("dynamic", views.dynamic_views.as_ref().map_or(0, Vec::len)),
+        ("deployment", views.deployment_views.as_ref().map_or(0, Vec::len)),
+        ("filtered", views.filtered_views.as_ref().map_or(0, Vec::len)),
+        ("image", views.image_views.as_ref().map_or(0, Vec::len)),
+        ("custom", views.custom_views.as_ref().map_or(0, Vec::len)),
+    ]
+}
+
+/// View types each exporter's `export_workspace` actually renders. Kept in
+/// sync manually with the `if let Some(..) = views.*` cases in each exporter;
+/// anything not listed here is silently dropped by that exporter today.
+fn handled_view_types(format: &str) -> &'static [&'static str] {
+    match format.to_lowercase().as_str() {
+        "svg" => &["systemLandscape", "systemContext", "container"],
+        "mermaid" => &["systemLandscape", "systemContext"],
+        "dot" | "graphviz" => &["systemLandscape", "systemContext"],
+        _ => &["systemLandscape", "systemContext", "container"], // plantuml
+    }
+}
+
+/// Warn about views defined in the workspace that the chosen exporter has no
+/// support for, so they don't just vanish without explanation.
+fn warn_on_unsupported_views(views: &ViewSet, format: &str) {
+    let handled = handled_view_types(format);
+    let skipped: Vec<(&str, usize)> = view_type_counts(views)
+        .into_iter()
+        .filter(|(name, count)| *count > 0 && !handled.contains(name))
+        .collect();
+    if skipped.is_empty() {
+        return;
+    }
+    let total: usize = skipped.iter().map(|(_, count)| count).sum();
+    let breakdown: Vec<String> = skipped
+        .iter()
+        .map(|(name, count)| format!("{} {}", count, name))
+        .collect();
+    eprintln!(
+        "Warning: {} view(s) skipped ({} exporter does not support: {})",
+        total,
+        format,
+        breakdown.join(", ")
+    );
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -298,6 +349,7 @@ async fn main() -> Result<()> {
             if !generated.is_empty() {
                 println!("Generated views: {}", generated.join(", "));
             }
+            warn_on_unsupported_views(&workspace.views, &format);
             std::fs::create_dir_all(&output)
                 .with_context(|| format!("Cannot create output dir {}", output.display()))?;
 
