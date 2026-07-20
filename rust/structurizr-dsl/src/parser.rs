@@ -12,26 +12,64 @@ pub fn parse_file(path: impl AsRef<Path>) -> Result<Workspace, ParseError> {
     let path = path.as_ref();
     let source = std::fs::read_to_string(path)?;
     let base = path.parent().map(|p| p.to_path_buf());
-    let source = match &base {
-        Some(dir) => preprocess_includes(&source, dir, 0)?,
-        None => source,
+    let (source, source_map) = match &base {
+        Some(dir) => {
+            let mut map = SourceMap::default();
+            let spliced = preprocess_includes(&source, dir, 0, None, &mut map)?;
+            (spliced, Some(map))
+        }
+        None => (source, None),
     };
     let tokens = tokenize(&source);
     let mut parser = Parser::new(tokens);
     parser.base_path = base;
-    parser.parse_workspace()
+    parser.source_map = source_map;
+    parser.parse_workspace_toplevel()
+}
+
+/// Maps each line of the post-`!include` spliced source back to
+/// `(source file, original line)`. The entry file is `None`.
+#[derive(Default)]
+struct SourceMap {
+    /// Index = spliced line - 1.
+    lines: Vec<(Option<String>, usize)>,
+}
+
+impl SourceMap {
+    /// Resolve a spliced line number to `(file, original line)`.
+    fn resolve(&self, spliced_line: usize) -> (Option<&str>, usize) {
+        match spliced_line.checked_sub(1).and_then(|i| self.lines.get(i)) {
+            Some((file, orig)) => (file.as_deref(), *orig),
+            None => (None, spliced_line),
+        }
+    }
+
+    /// Human-readable location for a spliced line, naming the file when the
+    /// line came from an `!include`d file.
+    fn describe(&self, spliced_line: usize) -> String {
+        match self.resolve(spliced_line) {
+            (Some(file), line) => format!("line {} in {}", line, file),
+            (None, line) => format!("line {}", line),
+        }
+    }
 }
 
 /// Splice `!include <path>` lines with the referenced file's contents,
-/// recursively (paths are relative to the including file). Line numbers in
-/// errors refer to the post-include source; a depth cap guards against cycles.
-fn preprocess_includes(source: &str, dir: &Path, depth: usize) -> Result<String, ParseError> {
+/// recursively (paths are relative to the including file), recording each
+/// output line's origin in `map`. A depth cap guards against cycles.
+fn preprocess_includes(
+    source: &str,
+    dir: &Path,
+    depth: usize,
+    file_label: Option<&str>,
+    map: &mut SourceMap,
+) -> Result<String, ParseError> {
     const MAX_INCLUDE_DEPTH: usize = 16;
     if depth > MAX_INCLUDE_DEPTH {
         return Err(ParseError::syntax(0, 0, "include depth exceeded (cycle?)".to_string()));
     }
     let mut out = String::with_capacity(source.len());
-    for line in source.lines() {
+    for (idx, line) in source.lines().enumerate() {
         let trimmed = line.trim_start();
         let rest = trimmed
             .strip_prefix("!include ")
@@ -43,11 +81,13 @@ fn preprocess_includes(source: &str, dir: &Path, depth: usize) -> Result<String,
                 ParseError::syntax(0, 0, format!("cannot read !include '{}': {}", inc_path.display(), e))
             })?;
             let inc_dir = inc_path.parent().unwrap_or(dir).to_path_buf();
-            out.push_str(&preprocess_includes(&inc_src, &inc_dir, depth + 1)?);
+            out.push_str(&preprocess_includes(&inc_src, &inc_dir, depth + 1, Some(rel), map)?);
             out.push('\n');
+            map.lines.push((file_label.map(str::to_string), idx + 1));
         } else {
             out.push_str(line);
             out.push('\n');
+            map.lines.push((file_label.map(str::to_string), idx + 1));
         }
     }
     Ok(out)
@@ -57,7 +97,7 @@ fn preprocess_includes(source: &str, dir: &Path, depth: usize) -> Result<String,
 pub fn parse_str(source: &str) -> Result<Workspace, ParseError> {
     let tokens = tokenize(source);
     let mut parser = Parser::new(tokens);
-    parser.parse_workspace()
+    parser.parse_workspace_toplevel()
 }
 
 struct Parser {
@@ -90,6 +130,8 @@ struct Parser {
     model_group_stack: Vec<String>,
     /// `ident = deploymentGroup "Name"` bindings (lowercased ident → name).
     deployment_group_names: HashMap<String, String>,
+    /// Maps spliced line numbers back to their originating `!include`d file.
+    source_map: Option<SourceMap>,
 }
 
 /// A relationship endpoint identifier that had no binding at parse time.
@@ -192,6 +234,49 @@ impl Parser {
             group_separator: None,
             model_group_stack: Vec::new(),
             deployment_group_names: HashMap::new(),
+            source_map: None,
+        }
+    }
+
+    /// Entry point wrapping [`parse_workspace`] to post-process errors into
+    /// actionable locations: include-aware line numbers and unclosed-brace
+    /// reporting instead of a bare "unexpected end of input".
+    fn parse_workspace_toplevel(&mut self) -> Result<Workspace, ParseError> {
+        let unclosed = find_unclosed_brace(&self.tokens);
+        match self.parse_workspace() {
+            Ok(ws) => Ok(ws),
+            Err(ParseError::UnexpectedEof) => match unclosed {
+                Some(pos) => Err(ParseError::syntax(
+                    pos.line,
+                    pos.col,
+                    format!(
+                        "unexpected end of input: block opened at {} (column {}) is never closed",
+                        self.describe_line(pos.line),
+                        pos.col
+                    ),
+                )),
+                None => Err(ParseError::UnexpectedEof),
+            },
+            Err(ParseError::Syntax { line, col, message }) => {
+                let (file, orig_line) = match &self.source_map {
+                    Some(map) => map.resolve(line),
+                    None => (None, line),
+                };
+                let message = match file {
+                    Some(f) => format!("in {}: {}", f, message),
+                    None => message,
+                };
+                Err(ParseError::syntax(orig_line, col, message))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Include-aware human-readable description of a source line.
+    fn describe_line(&self, line: usize) -> String {
+        match &self.source_map {
+            Some(map) => map.describe(line),
+            None => format!("line {}", line),
         }
     }
 
@@ -492,7 +577,7 @@ impl Parser {
             } else {
                 let lines: Vec<String> = failures
                     .into_iter()
-                    .map(|(l, m)| format!("line {}: {}", l, m))
+                    .map(|(l, m)| format!("{}: {}", self.describe_line(l), m))
                     .collect();
                 format!("unresolved identifiers:\n  {}", lines.join("\n  "))
             };
@@ -4517,6 +4602,21 @@ impl Parser {
             _ => Ok(false),
         }
     }
+}
+
+/// Position of the deepest `{` that is never matched by a `}`, if any.
+fn find_unclosed_brace(tokens: &[Spanned]) -> Option<crate::lexer::Pos> {
+    let mut stack: Vec<crate::lexer::Pos> = Vec::new();
+    for t in tokens {
+        match t.token {
+            Token::OpenBrace => stack.push(t.pos),
+            Token::CloseBrace => {
+                stack.pop();
+            }
+            _ => {}
+        }
+    }
+    stack.last().copied()
 }
 
 /// All element ids present in the model, including deployment nodes and instances.

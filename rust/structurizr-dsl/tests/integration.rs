@@ -1176,3 +1176,39 @@ workspace {
     assert_eq!(people[0].name, "Staff");
     assert!(people[0].relationships.is_some(), "relationship from enterprise person");
 }
+
+#[test]
+fn unclosed_brace_reports_opening_location() {
+    let dsl = r#"workspace "T" {
+    model {
+        s = softwareSystem "S" {
+    }
+}
+"#;
+    let err = parse_str(dsl).expect_err("unbalanced braces must error");
+    let msg = err.to_string();
+    assert!(msg.contains("never closed"), "explains the problem: {msg}");
+    assert!(msg.contains("line 1"), "points at the unmatched open brace: {msg}");
+}
+
+#[test]
+fn errors_in_included_files_name_the_file_and_original_line() {
+    let dir = std::env::temp_dir().join("structurizrx-include-test");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("main.dsl"),
+        "workspace \"Inc\" {\n    model {\n        !include model.dsl\n    }\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("model.dsl"),
+        "user = person \"User\"\nshop = softwareSystem \"Shop\"\nuser -> shoop \"uses\"\n",
+    )
+    .unwrap();
+
+    let err = parse_file(dir.join("main.dsl")).expect_err("typo in include must error");
+    let msg = err.to_string();
+    assert!(msg.contains("model.dsl"), "names the included file: {msg}");
+    assert!(msg.contains("line 3"), "line number is relative to model.dsl: {msg}");
+    assert!(msg.contains("did you mean 'shop'"), "still suggests: {msg}");
+}
