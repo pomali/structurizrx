@@ -11,12 +11,14 @@
 pub mod lexer;
 mod parser;
 mod eval;
+pub mod digest;
 pub mod generate;
 pub mod lint;
 
 use std::collections::BTreeSet;
 use structurizr_model::Workspace;
 
+pub use digest::{digest, element_names};
 pub use generate::generate_views;
 pub use lint::{lint, LintFinding};
 

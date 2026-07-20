@@ -36,6 +36,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/workspace/{name}/decisions", get(api_decisions_handler))
         .route("/api/workspace/{name}/decisions/{id}", get(api_decision_handler))
         .route("/api/workspace/{name}/diagram/{key}/svg", get(api_diagram_svg_handler))
+        .route("/api/workspace/{name}/digest", get(api_digest_handler))
+        .route("/api/workspace/{name}/query", get(api_query_handler))
         .route("/llms.txt", get(llms_txt_handler))
         .route("/static/{*path}", get(static_handler))
         .route("/ws", get(ws_handler))
@@ -187,6 +189,62 @@ async fn api_decision_handler(
         }
     } else {
         (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response()
+    }
+}
+
+/// Plain-text model digest (same output as `structurizrx digest`), sized for
+/// pasting into LLM context.
+///
+/// `GET /api/workspace/{name}/digest`
+async fn api_digest_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Response {
+    let workspaces = state.workspaces.lock().unwrap();
+    let Some(entry) = workspaces.iter().find(|e| e.name == name) else {
+        return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
+    };
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        structurizr_query::digest(&entry.workspace),
+    )
+        .into_response()
+}
+
+#[derive(serde::Deserialize)]
+struct QueryExprParams {
+    expr: String,
+}
+
+/// Run a selector expression (spec §6.2) against the live workspace.
+///
+/// `GET /api/workspace/{name}/query?expr=element.tag==Database`
+///
+/// Returns `{elements: [{id, name}], relationships: [id]}`; a bad expression
+/// returns 400 with the engine's error text (which names valid paths).
+async fn api_query_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    axum::extract::Query(params): axum::extract::Query<QueryExprParams>,
+) -> Response {
+    let workspaces = state.workspaces.lock().unwrap();
+    let Some(entry) = workspaces.iter().find(|e| e.name == name) else {
+        return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
+    };
+    match structurizr_query::query(&params.expr, &entry.workspace) {
+        Ok(selection) => {
+            let names = structurizr_query::element_names(&entry.workspace);
+            let out = serde_json::json!({
+                "elements": selection.elements.iter().map(|id| serde_json::json!({
+                    "id": id,
+                    "name": names.get(id),
+                })).collect::<Vec<_>>(),
+                "relationships": selection.relationships.iter().collect::<Vec<_>>(),
+            });
+            Json(out).into_response()
+        }
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
 }
 

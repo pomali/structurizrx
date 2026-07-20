@@ -73,9 +73,25 @@ No `views` block at all = the `auto` zoom set.
 Well-known properties: `owner`, `layer`.
 
 ## CLI
-    structurizrx validate ws.dsl              # machine-fixable errors
-    structurizrx digest ws.dsl                # compact model summary for LLMs
-    structurizrx query ws.dsl "->api->2"      # run a selector, list matches
+    structurizrx validate ws.dsl [--strict] [--json]   # errors + lint findings
+    structurizrx digest ws.dsl                # compact model + view summary for LLMs
+    structurizrx query ws.dsl "->api->2" [--json]      # run a selector, list matches
     structurizrx render ws.dsl --format svg|mermaid|plantuml|dot --output out/
     structurizrx export ws.dsl                # JSON (superset of Structurizr)
     structurizrx serve ws.dsl --port 3000     # live-reload web viewer
+    structurizrx docs                         # print this cheat sheet
+
+Errors are strict by default: unknown identifiers, misplaced or misspelled
+keywords fail with the offending file/line, the accepted keywords, and a
+"did you mean" suggestion. Forward references are fine. `!sketch` opts out.
+`validate --json` emits {valid, errors[], lint[]} with stable codes
+(parse, unknown-element, unknown-port, unknown-milestone; lint: placeholder,
+uncertain, orphan, unbound-port).
+
+## Server API (under `serve`)
+    GET /llms.txt                                  # this cheat sheet
+    GET /api/workspaces                            # list workspaces
+    GET /api/workspace/{name}                      # full model JSON
+    GET /api/workspace/{name}/digest               # plain-text digest
+    GET /api/workspace/{name}/query?expr=<selector>  # {elements[], relationships[]}
+    GET /api/workspace/{name}/diagram/{key}/svg    # rendered SVG
