@@ -30,6 +30,19 @@ Extension Development Host. Open any `.dsl` file (e.g. one of the fixtures
 under `../../original-java/structurizr-dsl/src/test/resources/dsl/`) to see
 highlighting, diagnostics, hover, go-to-definition and the outline view.
 
+## Packaging a `.vsix`
+
+```sh
+cd editors/vscode
+npm install
+npx @vscode/vsce package          # -> structurizr-dsl-<version>.vsix
+code --install-extension structurizr-dsl-0.1.0.vsix
+```
+
+The `.vsix` bundles the `vscode-languageclient` runtime dependency but *not*
+the `structurizrx` binary — the prerequisites above still apply after
+installing.
+
 ## Known v1 limitations
 
 - Diagnostics from `structurizr_model::validation::validate` fall back to the
