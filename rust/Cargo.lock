@@ -1418,12 +1418,22 @@ name = "structurizr-lsp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "dashmap",
+ "ls-types",
+ "serde",
  "serde_json",
  "structurizr-dsl",
  "structurizr-model",
  "tokio",
  "tower-lsp-server",
+]
+
+[[package]]
+name = "structurizr-lsp-wasm"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "structurizr-lsp",
+ "wasm-bindgen",
 ]
 
 [[package]]

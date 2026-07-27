@@ -8,5 +8,6 @@ members = [
     "structurizr-wasm",
     "structurizr-query",
     "structurizr-lsp",
+    "structurizr-lsp-wasm",
 ]
 resolver = "2"

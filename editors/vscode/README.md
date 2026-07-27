@@ -1,29 +1,46 @@
 # Structurizr DSL (VS Code extension)
 
 Syntax highlighting plus language-server features (diagnostics, hover,
-completion, go-to-definition, outline) for `.dsl` files, backed by the
-`structurizrx lsp` subcommand from this repo's Rust workspace.
+completion, go-to-definition, outline) for `.dsl` files.
 
-## Prerequisites
+## Language server runtime
 
-Build the CLI once:
+The same language server ships two ways, selected by `structurizrDsl.runtime`:
+
+| `runtime` | Behaviour |
+|---|---|
+| `auto` (default) | Use the `structurizrx` binary if one is found, else the bundled WebAssembly build. |
+| `binary` | Only use the `structurizrx` binary; error if it isn't found. |
+| `wasm` | Always use the bundled WebAssembly build. |
+
+The WASM build (`rust/structurizr-lsp-wasm`) runs in-process in the extension
+host, so **nothing has to be installed** — no binary, no subprocess. The native
+binary is faster on large workspaces and always matches your installed CLI, so
+`auto` prefers it when present.
+
+To use a binary, build it once:
 
 ```sh
 cd ../../rust
 cargo build -p structurizr-cli
 ```
 
-By default the extension looks for a `structurizrx` binary on your `PATH`. If
-it isn't there, either add `rust/target/debug` to `PATH`, or point the
-extension at it directly via the `structurizrDsl.serverPath` setting.
+The extension looks for `structurizrx` on your `PATH`; either add
+`rust/target/debug` to `PATH`, or point at it directly with
+`structurizrDsl.serverPath`.
 
-## Running the extension
+## Building the extension
 
 ```sh
 cd editors/vscode
 npm install
+npm run build:wasm   # needs `cargo install wasm-pack`; writes wasm/
 npm run compile
 ```
+
+`build:wasm` is only needed for the WASM runtime, and is run automatically by
+`vscode:prepublish` when packaging. Without it, set `structurizrDsl.runtime` to
+`binary`.
 
 Then open this `editors/vscode` folder in VS Code and press F5 to launch an
 Extension Development Host. Open any `.dsl` file (e.g. one of the fixtures
@@ -38,3 +55,5 @@ highlighting, diagnostics, hover, go-to-definition and the outline view.
 - No semantic tokens yet — highlighting is TextMate-grammar based.
 - Hover/outline cover people, software systems, containers and components;
   deployment nodes and custom elements aren't covered yet.
+- The WASM runtime is a desktop (Node extension host) build; it isn't wired up
+  for vscode.dev / github.dev web hosts yet.

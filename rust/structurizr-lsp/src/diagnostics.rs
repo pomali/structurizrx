@@ -6,7 +6,7 @@ use structurizr_dsl::lexer::Pos;
 use structurizr_dsl::ParseError;
 use structurizr_model::validation;
 use structurizr_model::Workspace;
-use tower_lsp_server::ls_types::{Diagnostic, DiagnosticSeverity, Position, Range};
+use ls_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 
 use crate::convert::line_range;
 
@@ -70,7 +70,7 @@ pub fn validation_diagnostics(
                 range,
                 severity: Some(DiagnosticSeverity::WARNING),
                 source: Some("structurizr-model".to_string()),
-                code: Some(tower_lsp_server::ls_types::NumberOrString::String(
+                code: Some(ls_types::NumberOrString::String(
                     err.code().to_string(),
                 )),
                 message,

@@ -37,19 +37,37 @@
     "configuration": {
       "title": "Structurizr DSL",
       "properties": {
+        "structurizrDsl.runtime": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "binary",
+            "wasm"
+          ],
+          "enumDescriptions": [
+            "Use the structurizrx binary if one is found, otherwise the bundled WebAssembly server.",
+            "Only use the structurizrx binary; report an error if it isn't found.",
+            "Always use the bundled WebAssembly server, even if a binary is installed."
+          ],
+          "default": "auto",
+          "description": "How to run the language server. The bundled WebAssembly build needs nothing installed; the native binary is faster and always matches your installed CLI."
+        },
         "structurizrDsl.serverPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the structurizrx binary. Leave empty to look it up on PATH (build it with `cargo build -p structurizr-cli` in the repo's rust/ directory)."
+          "description": "Path to the structurizrx binary. Leave empty to look it up on PATH (build it with `cargo build -p structurizr-cli` in the repo's rust/ directory). Ignored when structurizrDsl.runtime is \"wasm\"."
         }
       }
     }
   },
   "scripts": {
+    "build:wasm": "wasm-pack build ../../rust/structurizr-lsp-wasm --release --target nodejs --out-dir ../../editors/vscode/wasm --out-name structurizr_lsp_wasm",
     "compile": "tsc -p ./",
-    "watch": "tsc -w -p ./"
+    "watch": "tsc -w -p ./",
+    "vscode:prepublish": "npm run build:wasm && npm run compile"
   },
   "dependencies": {
+    "vscode-jsonrpc": "^9.0.0",
     "vscode-languageclient": "^10.0.0"
   },
   "devDependencies": {
