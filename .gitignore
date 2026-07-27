@@ -46,3 +46,5 @@ editors/vscode/wasm/
 
 # Playwright MCP scratch output (page snapshots, console logs)
 .playwright-mcp/
+
+.DS_Store
