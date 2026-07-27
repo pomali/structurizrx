@@ -21,8 +21,26 @@
             background: var(--bs-body-bg);
         }
         #sidebar-toggle-btn { display: none; }
-        #diagram-area { flex: 1; overflow: hidden; position: relative; background: #fff; }
+        #diagram-area { flex: 1; overflow: hidden; position: relative; background: var(--bs-body-bg); }
         #diagram { width: 100%; height: 100%; }
+        /* The viewport is drag-scrollable, so show the grab affordance. The
+           !important overrides the inline cursor structurizr-diagram.js sets,
+           which is stuck on "grabbing" the whole time panning is enabled. */
+        #diagram-viewport { cursor: grab !important; }
+        #diagram-viewport:active { cursor: grabbing !important; }
+        /* structurizr-static.css sizes the tooltip for a full-window viewer;
+           at 33% of a browser window with an 8px parent line it is unreadable. */
+        #tooltip { width: auto; max-width: min(380px, 40vw); pointer-events: none; }
+        #tooltipName { font-size: 16px; font-weight: 600; }
+        #tooltipParent, #tooltipMetadata { font-size: 11px; opacity: .85; }
+        #tooltipDescription { font-size: 13px; margin-top: 6px; }
+        #tooltipSeparator { margin: 8px 0; opacity: .4; }
+        kbd {
+            background: var(--bs-tertiary-bg); color: var(--bs-body-color);
+            border: 1px solid var(--bs-border-color); border-bottom-width: 2px;
+            border-radius: .25rem; padding: .05rem .35rem;
+            font-size: .8em; font-family: var(--bs-font-monospace);
+        }
         .view-item {
             display: block; padding: .35rem .75rem; border-radius: .25rem;
             text-decoration: none; color: var(--bs-body-color);
@@ -64,14 +82,40 @@
 
         <div class="d-flex align-items-center gap-2 ms-2 flex-shrink-0">
             <span class="badge bg-secondary d-none" id="view-type-badge"></span>
+
+            <!-- Animation controls, shown only for dynamic/animated views -->
+            <div class="btn-group btn-group-sm d-none" id="animationControls" role="group">
+                <button class="btn btn-outline-secondary" id="btnAnimBack" title="Previous animation step (,)">
+                    <i class="bi bi-skip-backward"></i>
+                </button>
+                <button class="btn btn-outline-secondary" id="btnAnimForward" title="Next animation step (.)">
+                    <i class="bi bi-skip-forward"></i>
+                </button>
+            </div>
+
+            <div class="btn-group btn-group-sm" role="group">
+                <button class="btn btn-outline-secondary" id="btnZoomOut" title="Zoom out (-)">
+                    <i class="bi bi-zoom-out"></i>
+                </button>
+                <button class="btn btn-outline-secondary" id="btnFitView" title="Zoom to fit (c)">
+                    <i class="bi bi-arrows-angle-contract"></i>
+                </button>
+                <button class="btn btn-outline-secondary" id="btnZoomIn" title="Zoom in (+)">
+                    <i class="bi bi-zoom-in"></i>
+                </button>
+            </div>
+
             <a class="btn btn-sm btn-outline-secondary d-none" id="btnDownloadSvg" title="Open diagram SVG in a new tab" target="_blank" rel="noopener noreferrer">
                 <i class="bi bi-box-arrow-up-right"></i>
             </a>
-            <button class="btn btn-sm btn-outline-secondary" id="btnFitView" title="Fit diagram (F)">
+            <button class="btn btn-sm btn-outline-secondary" id="btnFullScreen" title="Full screen (f)">
                 <i class="bi bi-fullscreen"></i>
             </button>
             <button class="btn btn-sm btn-outline-secondary" id="themeToggle" title="Toggle dark mode">
                 <i class="bi bi-circle-half"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="btnHelp" title="Keyboard shortcuts (?)">
+                <i class="bi bi-question-lg"></i>
             </button>
         </div>
     </nav>
@@ -97,6 +141,86 @@
     <!-- Status bar -->
     <div id="status-bar">
         <span id="status-msg">Loading…</span>
+        <span class="ms-2 d-none d-md-inline">
+            · double-click an element to drill in · <kbd>space</kbd> to jump to a view
+            · <kbd>?</kbd> for shortcuts
+        </span>
+    </div>
+</div>
+
+<!-- Hover tooltip; populated by structurizr-tooltip.js -->
+<div id="tooltip" class="hidden">
+    <div id="tooltipHeader" class="hidden">
+        <div id="tooltipName"></div>
+        <div id="tooltipParent"></div>
+        <div id="tooltipMetadata"></div>
+        <div id="tooltipType"></div>
+        <div id="tooltipDescription"></div>
+    </div>
+    <hr id="tooltipSeparator" class="hidden"/>
+    <div id="tooltipTags"></div>
+    <div id="tooltipProperties"></div>
+    <div id="tooltipUrl"></div>
+    <div id="tooltipAdditionalContent"></div>
+</div>
+
+<!-- Quick navigation (space); populated by structurizr-quick-navigation.js -->
+<div class="modal fade" id="quickFindModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <input id="quickFindModalFilter" type="text" placeholder="Start typing..." class="form-control"/>
+            </div>
+            <div class="modal-body">
+                <div id="quickFindModalItems"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Drill-down target picker; driven by structurizr-navigation.js -->
+<div class="modal fade" id="navigationModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-body p-0">
+                <select class="form-control" id="navigationList"></select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Diagram key (i) -->
+<div class="modal fade" id="keyModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-body text-center">
+                <div id="diagramKey"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Keyboard shortcuts (?) -->
+<div class="modal fade" id="helpModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Interacting with the diagram</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="list-unstyled mb-0" style="line-height: 2">
+                    <li>Drag the background to pan; <kbd>ctrl</kbd>/<kbd>⌘</kbd> + scroll (or pinch) to zoom.</li>
+                    <li>Double-click an element to drill in — look for the magnifying glass.</li>
+                    <li>Hover an element or relationship for details.</li>
+                    <li><kbd>+</kbd> <kbd>-</kbd> zoom in/out, <kbd>c</kbd> fit content, <kbd>w</kbd> fit width, <kbd>h</kbd> fit height</li>
+                    <li><kbd>←</kbd> <kbd>→</kbd> previous/next view · <kbd>space</kbd> quick navigation</li>
+                    <li><kbd>d</kbd> toggle descriptions · <kbd>m</kbd> toggle metadata · <kbd>t</kbd> toggle tooltips</li>
+                    <li><kbd>,</kbd> <kbd>.</kbd> step through animation · <kbd>i</kbd> diagram key</li>
+                    <li><kbd>f</kbd> full screen · <kbd>?</kbd> this help</li>
+                </ul>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -112,10 +236,42 @@
 <script src="/static/js/structurizr-ui.js"></script>
 <script src="/static/js/structurizr-workspace.js"></script>
 <script src="/static/js/structurizr-diagram.js"></script>
+<!-- These bind to the markup above on load, so they must come after it. -->
+<script src="/static/js/structurizr-tooltip.js"></script>
+<script src="/static/js/structurizr-navigation.js"></script>
+<script src="/static/js/structurizr-quick-navigation.js"></script>
 
 <script>
 (function() {
     var WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
+
+    // dagre cannot rank an edge whose endpoint is a cluster — a relationship
+    // between two deployment nodes, for instance — and throws part-way through.
+    // structurizr-diagram.js swallows that, which leaves every element of the
+    // view piled up at its pre-layout position. Hide those edges from the
+    // layout (they are still drawn) so the rest of the diagram is placed.
+    (function patchDirectedGraphLayout() {
+        var layout = joint.layout.DirectedGraph.layout;
+        joint.layout.DirectedGraph.layout = function(graphOrCells, options) {
+            var cells = graphOrCells.getCells ? graphOrCells.getCells() : graphOrCells;
+            var isCluster = {};
+            cells.forEach(function(cell) {
+                if (cell.isElement() && cell.getEmbeddedCells().length > 0) {
+                    isCluster[cell.id] = true;
+                }
+            });
+            var layoutable = cells.filter(function(cell) {
+                if (!cell.isLink()) return true;
+                var source = cell.get('source'), target = cell.get('target');
+                return !(source && isCluster[source.id]) && !(target && isCluster[target.id]);
+            });
+            return layout.call(
+                this,
+                layoutable.length === cells.length ? graphOrCells : layoutable,
+                options
+            );
+        };
+    })();
 
     // structurizr.diagram is created once and reused across view switches.
     var diagram = null;
@@ -145,7 +301,9 @@
 
     function updateDiagramDarkMode() {
         if (diagram) {
+            // setDarkMode() re-renders, which discards the current zoom.
             diagram.setDarkMode(structurizr.ui.isDarkMode());
+            fitDiagram();
         }
     }
 
@@ -193,6 +351,16 @@
             return;
         }
 
+        // The title, description and timestamp are already in this page's
+        // chrome. Drawing them onto the canvas as well duplicates them and,
+        // because they sit at the page margin rather than with the elements,
+        // pulls zoom-to-fit off centre. Any explicit setting wins.
+        var viewSetProperties = structurizr.workspace.views.configuration.properties;
+        ['structurizr.title', 'structurizr.description', 'structurizr.metadata']
+            .forEach(function(name) {
+                if (viewSetProperties[name] === undefined) viewSetProperties[name] = 'false';
+            });
+
         // Reset and reload themes (theme URLs come from workspace configuration)
         structurizr.ui.themes = [];
         structurizr.ui.loadThemes(function() {
@@ -229,39 +397,36 @@
                 targetKey = views[0].key;
             }
 
-            if (!diagram) {
-                // Create the diagram widget once.
-                diagram = new structurizr.ui.Diagram('diagram', false, function() {
-                    // Called once after JointJS initialises and images preload.
-                    diagram.setDarkMode(structurizr.ui.isDarkMode());
-                    diagram.setNavigationEnabled(true);
+            // The diagram widget is created once — a live reload reloads the
+            // whole page rather than swapping the workspace underneath it.
+            diagram = new structurizr.ui.Diagram('diagram', false, function() {
+                // Called once after JointJS initialises and images preload.
+                // structurizr-navigation.js reaches for this global.
+                structurizr.diagram = diagram;
 
-                    diagram.getPossibleViewportWidth = function() {
-                        return document.getElementById('diagram-area').clientWidth;
-                    };
-                    diagram.getPossibleViewportHeight = function() {
-                        return document.getElementById('diagram-area').clientHeight;
-                    };
+                diagram.setDarkMode(structurizr.ui.isDarkMode());
+                diagram.setNavigationEnabled(true);
 
-                    // Listen for view changes driven by the diagram itself (e.g. keyboard nav)
-                    diagram.onViewChanged(function(key) {
-                        currentViewKey = key;
-                        updateHash(key);
-                        updateSidebarActive(key);
-                        updateViewBadge(key);
-                    });
+                diagram.getPossibleViewportWidth = function() {
+                    return document.getElementById('diagram-area').clientWidth;
+                };
+                diagram.getPossibleViewportHeight = function() {
+                    return document.getElementById('diagram-area').clientHeight;
+                };
 
-                    diagramReady = true;
-                    activateView(targetKey);
+                // Listen for view changes driven by the diagram itself (e.g. keyboard nav)
+                diagram.onViewChanged(function(key) {
+                    currentViewKey = key;
+                    updateHash(key);
+                    updateSidebarActive(key);
+                    updateViewBadge(key);
                 });
-            } else {
-                // Diagram already exists — workspace was reloaded. Re-render current view.
-                structurizr.ui.themes = [];
-                structurizr.ui.loadThemes(function() {
-                    try { buildSidebar(); } catch(e) { console.error('buildSidebar failed:', e); }
-                    activateView(currentViewKey || targetKey);
-                });
-            }
+
+                initInteraction();
+
+                diagramReady = true;
+                activateView(targetKey);
+            });
 
             // React to hash changes (browser back/forward, links)
             window.onhashchange = function() {
@@ -284,9 +449,28 @@
         updateSidebarActive(key);
         updateViewBadge(key);
         diagram.changeView(key, function() {
-            diagram.resize();
-            diagram.zoomToWidthOrHeight();
+            fitDiagram();
+            updateAnimationControls();
         });
+    }
+
+    // Fit the diagram's *content*, not its page: with automatic layout the page
+    // is usually much larger than the elements on it, and fitting the page
+    // leaves the diagram unreadably small.
+    function fitDiagram() {
+        if (!diagram) return;
+        diagram.resize();
+        var view = diagram.getCurrentView();
+        if (view && view.automaticLayout) {
+            // Shrink-wrap the page around the laid-out elements. Without this,
+            // content that spilled outside the page is cropped away by
+            // zoomFitContent() and ends up off-screen.
+            diagram.autoPageSize();
+        }
+        // zoomToWidthOrHeight() first: it is what establishes the minimum zoom
+        // scale, so zooming out from here can still reach the whole page.
+        diagram.zoomToWidthOrHeight();
+        diagram.zoomFitContent();
     }
 
     // ===== SIDEBAR =====
@@ -391,6 +575,8 @@
         groups.forEach(function(g) {
             addGroup(g.label, manualViews.filter(function(v) { return v.type === g.type; }));
         });
+
+        buildQuickNavigation();
     }
 
     function updateSidebarActive(key) {
@@ -426,15 +612,249 @@
         }
     }
 
-    // ===== FIT BUTTON =====
-    document.getElementById('btnFitView').addEventListener('click', function() {
-        if (diagram) { diagram.resize(); diagram.zoomToWidthOrHeight(); }
-    });
+    // ===== INTERACTION =====
+    // Wired once, from the diagram's construction callback.
+    function initInteraction() {
+        // Hover tooltips for elements and relationships. structurizr-diagram.js
+        // asks for them without a header, on the assumption that the name and
+        // description are legible on the diagram itself — which stops being
+        // true as soon as you zoom out, so ask for the full thing instead.
+        diagram.setTooltip({
+            isEnabled: function() { return tooltip.isEnabled(); },
+            isVisible: function() { return tooltip.isVisible(); },
+            hide: function() { tooltip.hide(); },
+            showTooltipForElement: function(element, style, x, y, header, perspective) {
+                tooltip.showTooltipForElement(element, style, x, y, true, perspective);
+            },
+            showTooltipForRelationship: function(relationship, relationshipInView, style, x, y, header, perspective) {
+                tooltip.showTooltipForRelationship(relationship, relationshipInView, style, x, y, true, perspective);
+            }
+        });
+        tooltip.enable();
 
-    // Resize diagram when window size changes
-    window.addEventListener('resize', function() {
-        if (diagram) { diagram.resize(); diagram.zoomToWidthOrHeight(); }
-    });
+        // Double-click to drill into a more detailed view, or follow a url.
+        diagram.onElementDoubleClicked(elementDoubleClicked);
+        diagram.onRelationshipDoubleClicked(relationshipDoubleClicked);
+
+        // Arrow keys page through views; structurizr-diagram.js only forwards
+        // them once it has decided the canvas has nowhere left to scroll.
+        diagram.onkeydown(function(e) {
+            var LEFT = 37, UP = 38, RIGHT = 39, DOWN = 40, PAGE_UP = 33, PAGE_DOWN = 34;
+            if (e.which === LEFT || e.which === UP || e.which === PAGE_UP) {
+                navigateToAdjacentView(-1);
+                e.preventDefault();
+            } else if (e.which === RIGHT || e.which === DOWN || e.which === PAGE_DOWN) {
+                navigateToAdjacentView(1);
+                e.preventDefault();
+            }
+        });
+
+        diagram.onkeypress(function(e) {
+            var handlers = {
+                43: function() { diagram.zoomIn(); },            // +
+                61: function() { diagram.zoomIn(); },            // =
+                45: function() { diagram.zoomOut(); },           // -
+                99: function() { fitDiagram(); },                // c
+                119: function() { diagram.zoomFitWidth(); },     // w
+                104: function() { diagram.zoomFitHeight(); },    // h
+                100: function() { diagram.toggleDescription(); },// d
+                109: function() { diagram.toggleMetadata(); },   // m
+                116: toggleTooltip,                              // t
+                105: showDiagramKey,                             // i
+                102: function() { structurizr.ui.enterFullScreen('diagram'); }, // f
+                63: showHelp,                                    // ?
+                44: function() { stepAnimation(-1); },           // ,
+                46: function() { stepAnimation(1); }             // .
+            };
+            var handler = handlers[e.which];
+            if (handler) {
+                handler();
+                e.preventDefault();
+            }
+        });
+
+        // Ctrl/⌘ + wheel zooms (this is also what a trackpad pinch reports);
+        // a plain wheel keeps its default meaning of scrolling the viewport.
+        document.getElementById('diagram-viewport').addEventListener('wheel', function(e) {
+            if (!e.ctrlKey && !e.metaKey) return;
+            if (e.deltaY < 0) {
+                diagram.zoomIn(e);
+            } else if (e.deltaY > 0) {
+                diagram.zoomOut(e);
+            }
+            e.preventDefault();
+            e.stopPropagation();
+        }, { passive: false });
+
+        // Quick navigation (space) shares the keyboard with the diagram.
+        quickNavigation.onOpen(function() { diagram.setKeyboardShortcutsEnabled(false); });
+        quickNavigation.onClose(function() { diagram.setKeyboardShortcutsEnabled(true); });
+
+        // Modals likewise, so typing in them doesn't drive the diagram.
+        ['helpModal', 'keyModal'].forEach(function(id) {
+            var el = document.getElementById(id);
+            el.addEventListener('shown.bs.modal', function() { diagram.setKeyboardShortcutsEnabled(false); });
+            el.addEventListener('hidden.bs.modal', function() { diagram.setKeyboardShortcutsEnabled(true); });
+        });
+
+        document.getElementById('btnZoomIn').addEventListener('click', function() { diagram.zoomIn(); });
+        document.getElementById('btnZoomOut').addEventListener('click', function() { diagram.zoomOut(); });
+        document.getElementById('btnFitView').addEventListener('click', fitDiagram);
+        document.getElementById('btnFullScreen').addEventListener('click', function() {
+            structurizr.ui.enterFullScreen('diagram');
+        });
+        document.getElementById('btnAnimBack').addEventListener('click', function() { stepAnimation(-1); });
+        document.getElementById('btnAnimForward').addEventListener('click', function() { stepAnimation(1); });
+    }
+
+    document.getElementById('btnHelp').addEventListener('click', showHelp);
+
+    function showHelp() {
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('helpModal')).show();
+    }
+
+    function toggleTooltip() {
+        if (tooltip.isEnabled()) { tooltip.disable(); } else { tooltip.enable(); }
+    }
+
+    function showDiagramKey() {
+        if (diagram.getCurrentView().type === structurizr.constants.IMAGE_VIEW_TYPE) return;
+        document.getElementById('diagramKey').innerHTML = diagram.exportCurrentDiagramKeyToSVG();
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('keyModal')).show();
+    }
+
+    // ===== ANIMATION (dynamic views, and views with animation steps) =====
+    function viewIsAnimated() {
+        return diagram && (diagram.currentViewIsDynamic() || diagram.currentViewHasAnimation());
+    }
+
+    function updateAnimationControls() {
+        document.getElementById('animationControls')
+                .classList.toggle('d-none', !viewIsAnimated());
+    }
+
+    function stepAnimation(direction) {
+        if (!viewIsAnimated()) return;
+        if (!diagram.animationStarted()) {
+            diagram.startAnimation(false);
+            if (direction > 0) return;
+        }
+        if (direction > 0) {
+            diagram.stepForwardInAnimation();
+        } else {
+            diagram.stepBackwardInAnimation();
+        }
+    }
+
+    // ===== DRILL-DOWN NAVIGATION =====
+    function navigateToAdjacentView(offset) {
+        var views = structurizr.workspace.getViews();
+        var index = views.indexOf(diagram.getCurrentViewOrFilter());
+        var next = views[index + offset];
+        if (index !== -1 && next) activateView(next.key);
+    }
+
+    /// Collects everywhere a double-clicked element could take you — the views
+    /// that show it in more detail, its url, and any url-valued properties —
+    /// and either goes there or offers a choice.
+    function elementDoubleClicked(evt, elementId) {
+        var element = structurizr.workspace.findElementById(elementId);
+        if (!element) return;
+
+        var ws = structurizr.workspace;
+        var currentView = diagram.getCurrentView();
+        var views = [];
+
+        if (element.type === structurizr.constants.SOFTWARE_SYSTEM_ELEMENT_TYPE) {
+            if (currentView.type === structurizr.constants.SYSTEM_LANDSCAPE_VIEW_TYPE ||
+                currentView.softwareSystemId !== element.id) {
+                views = ws.findSystemContextViewsForSoftwareSystem(element.id);
+                if (views.length === 0) {
+                    views = ws.findContainerViewsForSoftwareSystem(element.id);
+                }
+            } else if (currentView.type === structurizr.constants.SYSTEM_CONTEXT_VIEW_TYPE) {
+                views = ws.findContainerViewsForSoftwareSystem(element.id);
+            }
+        } else if (element.type === structurizr.constants.CONTAINER_ELEMENT_TYPE) {
+            views = ws.findComponentViewsForContainer(element.id);
+        } else if (element.type === structurizr.constants.SOFTWARE_SYSTEM_INSTANCE_ELEMENT_TYPE) {
+            views = ws.findSystemContextViewsForSoftwareSystem(element.softwareSystemId);
+        } else if (element.type === structurizr.constants.CONTAINER_INSTANCE_ELEMENT_TYPE) {
+            views = ws.findComponentViewsForContainer(element.containerId);
+        }
+
+        views = views.concat(ws.findDynamicViewsForElement(element.id))
+                     .concat(ws.findImageViewsForElement(element.id));
+
+        var options = views.map(function(view) {
+            return {
+                value: '#' + view.key,
+                label: structurizr.ui.getTitleForView(view) + ' (#' + view.key + ')'
+            };
+        });
+
+        if (element.url) {
+            options.push({ value: element.url, label: labelForUrl(element.url) });
+        }
+        options = options.concat(urlProperties(element.properties));
+
+        offerNavigation(options);
+    }
+
+    function relationshipDoubleClicked(evt, relationshipId) {
+        var relationship = structurizr.workspace.findRelationshipById(relationshipId);
+        if (!relationship) return;
+
+        var options = [];
+        if (relationship.url) {
+            options.push({ value: relationship.url, label: labelForUrl(relationship.url) });
+        }
+        options = options.concat(urlProperties(relationship.properties));
+
+        offerNavigation(options);
+    }
+
+    function urlProperties(properties) {
+        if (!properties) return [];
+        return Object.keys(properties)
+            .filter(function(name) {
+                var v = properties[name];
+                return v.indexOf('http://') === 0 || v.indexOf('https://') === 0;
+            })
+            .map(function(name) { return { value: properties[name], label: name }; });
+    }
+
+    function labelForUrl(url) {
+        if (url.indexOf('#') === 0) {
+            var view = structurizr.workspace.findViewByKey(url.substring(1));
+            if (view) return structurizr.ui.getTitleForView(view) + ' (' + url + ')';
+        }
+        return url;
+    }
+
+    function offerNavigation(options) {
+        if (options.length === 1) {
+            navigateTo(options[0].value);
+        } else if (options.length > 1) {
+            openNavigationModal(options);
+        }
+    }
+
+    // ===== QUICK NAVIGATION (space) =====
+    function buildQuickNavigation() {
+        quickNavigation.clear();
+        structurizr.workspace.getViews().forEach(function(view) {
+            var title = structurizr.util.escapeHtml(structurizr.ui.getTitleForView(view));
+            var key = structurizr.util.escapeHtml(view.key);
+            quickNavigation.addHandler(
+                title + ' <span class="viewKey">(#' + key + ')</span>',
+                function() { activateView(view.key); }
+            );
+        });
+    }
+
+    // Refit the diagram when the window (and so the viewport) changes size.
+    window.addEventListener('resize', fitDiagram);
 
     // ===== WEBSOCKET LIVE RELOAD =====
     function connectWs() {
@@ -444,7 +864,12 @@
             var msg = JSON.parse(e.data);
             if (msg.type === 'reload') {
                 setStatus('Reloading…');
-                loadWorkspace(currentViewKey);
+                // Re-fetching the workspace is not enough: structurizr-diagram.js
+                // holds on to the view object it was given and changeView() is a
+                // no-op when the key hasn't changed, so the old workspace would
+                // stay on screen. The page is served no-store and the current
+                // view is in the hash, so a full reload is both correct and cheap.
+                location.reload();
             }
         };
         ws.onclose = function() { setTimeout(connectWs, 2000); };

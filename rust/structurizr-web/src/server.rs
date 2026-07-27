@@ -41,7 +41,27 @@ pub fn build_router(state: AppState) -> Router {
         .route("/llms.txt", get(llms_txt_handler))
         .route("/static/{*path}", get(static_handler))
         .route("/ws", get(ws_handler))
+        .layer(axum::middleware::from_fn(no_store_dynamic_responses))
         .with_state(state)
+}
+
+/// Everything this server produces outside `/static/` is derived from workspace
+/// files that change under live reload, so it must never be cached. Without
+/// this the browser applies heuristic caching to `/api/workspace/{name}` and a
+/// reload can re-render the previous version of the workspace.
+async fn no_store_dynamic_responses(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let is_static = request.uri().path().starts_with("/static/");
+    let mut response = next.run(request).await;
+    if !is_static {
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-store"),
+        );
+    }
+    response
 }
 
 // ---- Page handlers ----

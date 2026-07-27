@@ -38,3 +38,9 @@ editors/vscode/out/
 
 # The grammar file matches the structurizr-*.json ignore rule above; keep it.
 !editors/vscode/syntaxes/*.json
+
+# Claude Code local state and worktrees
+.claude/
+
+# Playwright MCP scratch output (page snapshots, console logs)
+.playwright-mcp/

@@ -1212,3 +1212,171 @@ fn errors_in_included_files_name_the_file_and_original_line() {
     assert!(msg.contains("line 3"), "line number is relative to model.dsl: {msg}");
     assert!(msg.contains("did you mean 'shop'"), "still suggests: {msg}");
 }
+
+/// The web viewer hands `automaticLayout` straight to dagre, so every field has
+/// to be populated — an absent one silently falls back to dagre's own much
+/// tighter defaults and the diagram comes out cramped.
+#[test]
+fn autolayout_arguments_are_parsed_and_defaulted() {
+    fn layout_of(directive: &str) -> structurizr_model::AutomaticLayout {
+        let dsl = format!(
+            r#"
+workspace "AL" {{
+    model {{
+        s = softwareSystem "System"
+    }}
+    views {{
+        systemContext s "SC" {{
+            include *
+            {directive}
+        }}
+    }}
+}}
+"#
+        );
+        parse_str(&dsl)
+            .expect("should parse")
+            .views
+            .system_context_views
+            .unwrap()
+            .remove(0)
+            .automatic_layout
+            .expect("autolayout should be set")
+    }
+
+    // Bare `autolayout` takes the upstream defaults.
+    let bare = layout_of("autolayout");
+    assert_eq!(bare.rank_direction.as_deref(), Some("LeftRight"));
+    assert_eq!(bare.rank_separation, Some(100));
+    assert_eq!(bare.node_separation, Some(50));
+    assert_eq!(bare.edge_separation, Some(50));
+    assert_eq!(bare.vertices, Some(true));
+
+    // The DSL spells directions tb|bt|lr|rl.
+    assert_eq!(
+        layout_of("autolayout tb").rank_direction.as_deref(),
+        Some("TopBottom")
+    );
+    assert_eq!(
+        layout_of("autolayout rl").rank_direction.as_deref(),
+        Some("RightLeft")
+    );
+
+    // Separations and the vertices flag are positional and each may be omitted.
+    let partial = layout_of("autolayout lr 300");
+    assert_eq!(partial.rank_direction.as_deref(), Some("LeftRight"));
+    assert_eq!(partial.rank_separation, Some(300));
+    assert_eq!(partial.node_separation, Some(50));
+
+    let full = layout_of("autolayout bt 300 600 10 false");
+    assert_eq!(full.rank_direction.as_deref(), Some("BottomTop"));
+    assert_eq!(full.rank_separation, Some(300));
+    assert_eq!(full.node_separation, Some(600));
+    assert_eq!(full.edge_separation, Some(10));
+    assert_eq!(full.vertices, Some(false));
+}
+
+/// Dynamic view steps have to name relationships that exist in the model:
+/// the viewer looks each one up by id and throws on a miss.
+#[test]
+fn dynamic_view_reply_steps_reuse_the_reverse_relationship() {
+    let dsl = r#"
+workspace "Dyn" {
+    model {
+        s = softwareSystem "System" {
+            web = container "Web"
+            db = container "Database"
+            web -> db "Reads from"
+        }
+    }
+    views {
+        dynamic s "Seq" {
+            web -> db "Queries"
+            db -> web "Returns rows to"
+            db -> db "Never happens"
+        }
+    }
+}
+"#;
+    let ws = parse_str(dsl).expect("should parse");
+    let system = &ws.model.software_systems.as_ref().unwrap()[0];
+    let rel_id = &system.relationships.as_ref().unwrap()[0].id;
+
+    let steps = ws.views.dynamic_views.as_ref().unwrap()[0]
+        .relationship_views
+        .as_ref()
+        .unwrap();
+
+    // The unmatched step is dropped rather than given a made-up id.
+    assert_eq!(steps.len(), 2, "unmatched step should be dropped: {steps:?}");
+
+    assert_eq!(&steps[0].id, rel_id);
+    assert_eq!(steps[0].response, None);
+    assert_eq!(steps[0].order.as_deref(), Some("1"));
+
+    // The reply travels back along the same relationship.
+    assert_eq!(&steps[1].id, rel_id);
+    assert_eq!(steps[1].response, Some(true));
+    assert_eq!(steps[1].order.as_deref(), Some("2"));
+}
+
+/// Deployment views draw the instances, so the relationships between the
+/// containers have to be mirrored onto them — otherwise the view is a set of
+/// unconnected boxes and automatic layout has nothing to arrange.
+#[test]
+fn container_relationships_are_replicated_onto_deployment_instances() {
+    let dsl = r#"
+workspace "Deploy" {
+    model {
+        s = softwareSystem "System" {
+            web = container "Web" {
+                ui = component "UI"
+            }
+            api = container "API"
+            ui -> api "Calls"
+        }
+        deploymentEnvironment "Live" {
+            deploymentNode "Server" {
+                liveWeb = containerInstance web
+                liveApi = containerInstance api
+            }
+        }
+        deploymentEnvironment "Test" {
+            deploymentNode "Laptop" {
+                testWeb = containerInstance web
+            }
+        }
+    }
+    views {
+        deployment s "Live" "LiveDeployment" {
+            include *
+            autolayout
+        }
+    }
+}
+"#;
+    let ws = parse_str(dsl).expect("should parse");
+    let nodes = ws.model.deployment_nodes.as_ref().unwrap();
+
+    let live = nodes.iter().find(|n| n.environment.as_deref() == Some("Live")).unwrap();
+    let instances = live.container_instances.as_ref().unwrap();
+    let web_instance = instances.iter().find(|i| i.relationships.is_some()).unwrap();
+    let replicated = web_instance.relationships.as_ref().unwrap();
+
+    // The component-level relationship counts as one between the containers.
+    assert_eq!(replicated.len(), 1, "expected one replicated edge: {replicated:?}");
+    assert_eq!(replicated[0].description.as_deref(), Some("Calls"));
+    assert!(replicated[0].linked_relationship_id.is_some(), "links back to the original");
+    let api_instance = instances.iter().find(|i| i.id != web_instance.id).unwrap();
+    assert_eq!(replicated[0].destination_id, api_instance.id);
+
+    // Instances in a different environment are never wired together.
+    let test = nodes.iter().find(|n| n.environment.as_deref() == Some("Test")).unwrap();
+    for instance in test.container_instances.iter().flatten() {
+        assert!(instance.relationships.is_none(), "no cross-environment edges");
+    }
+
+    // …and the view picks the replicated relationship up.
+    let view = &ws.views.deployment_views.as_ref().unwrap()[0];
+    assert_eq!(view.relationship_views.as_ref().unwrap().len(), 1);
+}

@@ -621,7 +621,170 @@ impl Parser {
             let source_id = rel.source_id.clone();
             self.attach_relationship_to_element(model, &source_id, rel);
         }
+
+        self.replicate_relationships_between_instances(model);
+
         Ok(())
+    }
+
+    /// Mirror each container/software-system relationship onto the deployment
+    /// instances of those elements, the way upstream does when an instance is
+    /// added to the model. Without these, deployment views come out as a set of
+    /// unconnected nodes, and their automatic layout has nothing to work from.
+    ///
+    /// Two instances are only connected when they share a deployment group, so
+    /// that two copies of the same stack in one environment don't cross-wire.
+    fn replicate_relationships_between_instances(&mut self, model: &mut Model) {
+        /// An instance's identity for replication purposes.
+        struct Instance {
+            id: String,
+            /// The container or software system this is an instance of.
+            element_id: String,
+            environment: Option<String>,
+            groups: Vec<String>,
+        }
+
+        const DEFAULT_GROUP: &str = "Default";
+
+        fn collect(node: &DeploymentNode, out: &mut Vec<Instance>) {
+            for ci in node.container_instances.iter().flatten() {
+                out.push(Instance {
+                    id: ci.id.clone(),
+                    element_id: ci.container_id.clone(),
+                    environment: ci.environment.clone(),
+                    groups: ci.deployment_groups.clone().unwrap_or_default(),
+                });
+            }
+            for ssi in node.software_system_instances.iter().flatten() {
+                out.push(Instance {
+                    id: ssi.id.clone(),
+                    element_id: ssi.software_system_id.clone(),
+                    environment: ssi.environment.clone(),
+                    groups: ssi.deployment_groups.clone().unwrap_or_default(),
+                });
+            }
+            for child in node.children.iter().flatten() {
+                collect(child, out);
+            }
+        }
+
+        let mut instances = Vec::new();
+        for node in model.deployment_nodes.iter().flatten() {
+            collect(node, &mut instances);
+        }
+        if instances.is_empty() {
+            return;
+        }
+
+        // Only containers and software systems get deployed, so a relationship
+        // declared between components counts as one between their containers —
+        // the same lifting the container view does. `deployed_owner` maps any
+        // element to the deployable one it sits in.
+        let mut deployed_owner: HashMap<String, String> = HashMap::new();
+        let mut source_rels: Vec<Relationship> = Vec::new();
+        for ss in model.software_systems.iter().flatten() {
+            deployed_owner.insert(ss.id.clone(), ss.id.clone());
+            source_rels.extend(ss.relationships.iter().flatten().cloned());
+            for c in ss.containers.iter().flatten() {
+                deployed_owner.insert(c.id.clone(), c.id.clone());
+                source_rels.extend(c.relationships.iter().flatten().cloned());
+                for comp in c.components.iter().flatten() {
+                    deployed_owner.insert(comp.id.clone(), c.id.clone());
+                    source_rels.extend(comp.relationships.iter().flatten().cloned());
+                }
+            }
+        }
+        for p in model.people.iter().flatten() {
+            deployed_owner.insert(p.id.clone(), p.id.clone());
+            source_rels.extend(p.relationships.iter().flatten().cloned());
+        }
+
+        let default_groups = vec![DEFAULT_GROUP.to_string()];
+        let groups_of = |i: &Instance| -> Vec<String> {
+            if i.groups.is_empty() {
+                default_groups.clone()
+            } else {
+                i.groups.clone()
+            }
+        };
+
+        let mut replicated: Vec<Relationship> = Vec::new();
+        // Several component-level relationships can lift to the same pair of
+        // containers; the instances only need one edge per distinct description.
+        let mut seen: HashSet<(String, String, Option<String>)> = HashSet::new();
+        for source in &instances {
+            for destination in &instances {
+                if source.id == destination.id || source.environment != destination.environment {
+                    continue;
+                }
+                let destination_groups = groups_of(destination);
+                if !groups_of(source).iter().any(|g| destination_groups.contains(g)) {
+                    continue;
+                }
+                for rel in &source_rels {
+                    if deployed_owner.get(&rel.source_id) != Some(&source.element_id)
+                        || deployed_owner.get(&rel.destination_id) != Some(&destination.element_id)
+                    {
+                        continue;
+                    }
+                    let key = (
+                        source.id.clone(),
+                        destination.id.clone(),
+                        rel.description.clone(),
+                    );
+                    if !seen.insert(key) {
+                        continue;
+                    }
+                    replicated.push(Relationship {
+                        id: self.next_id(),
+                        source_id: source.id.clone(),
+                        destination_id: destination.id.clone(),
+                        linked_relationship_id: Some(rel.id.clone()),
+                        description: rel.description.clone(),
+                        technology: rel.technology.clone(),
+                        tags: rel.tags.clone(),
+                        interaction_style: rel.interaction_style.clone(),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+
+        // `attach_relationship_to_element` only knows about the static model, so
+        // instances need their own walk down the deployment node tree.
+        fn attach(nodes: &mut [DeploymentNode], source_id: &str, rel: &mut Option<Relationship>) {
+            for node in nodes.iter_mut() {
+                if rel.is_none() {
+                    return;
+                }
+                for ci in node.container_instances.iter_mut().flatten() {
+                    if ci.id == source_id {
+                        if let Some(r) = rel.take() {
+                            ci.relationships.get_or_insert_with(Vec::new).push(r);
+                        }
+                        return;
+                    }
+                }
+                for ssi in node.software_system_instances.iter_mut().flatten() {
+                    if ssi.id == source_id {
+                        if let Some(r) = rel.take() {
+                            ssi.relationships.get_or_insert_with(Vec::new).push(r);
+                        }
+                        return;
+                    }
+                }
+                if let Some(children) = &mut node.children {
+                    attach(children, source_id, rel);
+                }
+            }
+        }
+
+        if let Some(nodes) = &mut model.deployment_nodes {
+            for rel in replicated {
+                let source_id = rel.source_id.clone();
+                attach(nodes, &source_id, &mut Some(rel));
+            }
+        }
     }
 
     fn substitute_vars(&self, s: &str) -> String {
@@ -3244,29 +3407,7 @@ impl Parser {
                 }
                 Some(Token::Word(w)) if w.eq_ignore_ascii_case("autolayout") || w.eq_ignore_ascii_case("autoLayout") => {
                     self.advance();
-                    let direction = match self.peek() {
-                        Some(Token::Word(w)) if is_autolayout_direction(w) => self.consume_string(),
-                        _ => None,
-                    };
-                    let rank_sep = match self.peek() {
-                        Some(Token::Word(w)) if w.parse::<i32>().is_ok() => {
-                            self.consume_string().and_then(|s| s.parse::<i32>().ok())
-                        }
-                        _ => None,
-                    };
-                    let node_sep = match self.peek() {
-                        Some(Token::Word(w)) if w.parse::<i32>().is_ok() => {
-                            self.consume_string().and_then(|s| s.parse::<i32>().ok())
-                        }
-                        _ => None,
-                    };
-                    auto_layout = Some(AutomaticLayout {
-                        implementation: Some("Graphviz".to_string()),
-                        rank_direction: direction,
-                        rank_separation: rank_sep,
-                        node_separation: node_sep,
-                        ..Default::default()
-                    });
+                    auto_layout = Some(self.parse_autolayout_arguments());
                 }
                 Some(Token::Word(w)) if w.eq_ignore_ascii_case("description") || w.eq_ignore_ascii_case("title") || w.eq_ignore_ascii_case("properties") => {
                     self.advance();
@@ -3291,26 +3432,29 @@ impl Parser {
                     element_set.insert(src_id.clone());
                     element_set.insert(dst_id.clone());
 
-                    // Find relationship ID in the model between src and dst
-                    let rel_id = Self::find_relationship_id(model, &src_id, &dst_id);
-                    if let Some(id) = rel_id {
+                    // A step draws an existing model relationship. If only the
+                    // reverse one exists the step is a reply, drawn along that
+                    // relationship pointing backwards (`response`). A step that
+                    // matches neither can't be drawn at all, so it is dropped —
+                    // a view referring to a relationship id that isn't in the
+                    // model breaks every renderer downstream.
+                    if let Some(id) = Self::find_relationship_id(model, &src_id, &dst_id) {
                         rel_views.push(RelationshipView {
                             id,
                             order: Some(order.to_string()),
                             description: step_desc,
                             ..Default::default()
                         });
-                    } else {
-                        // No existing relationship found; create a placeholder with a
-                        // synthetic ID so the view can still record the step.
+                        order += 1;
+                    } else if let Some(id) = Self::find_relationship_id(model, &dst_id, &src_id) {
                         rel_views.push(RelationshipView {
-                            id: format!("dyn-{}-{}", src_id, dst_id),
+                            id,
                             order: Some(order.to_string()),
                             description: step_desc,
-                            ..Default::default()
+                            response: Some(true),
                         });
+                        order += 1;
                     }
-                    order += 1;
                 }
                 _ => {
                     self.advance();
@@ -3405,6 +3549,66 @@ impl Parser {
         })
     }
 
+    /// Parse the arguments of an `autoLayout` directive, which the caller has
+    /// already consumed:
+    ///
+    /// `autoLayout [rankDirection] [rankSeparation] [nodeSeparation] [edgeSeparation] [vertices]`
+    ///
+    /// Every argument is optional, and omitted ones are filled in with the same
+    /// defaults upstream applies. They have to be written out rather than left
+    /// absent: the browser viewer passes them straight to dagre, which
+    /// substitutes its own (much tighter) defaults for anything undefined.
+    fn parse_autolayout_arguments(&mut self) -> AutomaticLayout {
+        const DEFAULT_RANK_DIRECTION: &str = "LeftRight";
+        const DEFAULT_RANK_SEPARATION: i32 = 100;
+        const DEFAULT_NODE_SEPARATION: i32 = 50;
+        const DEFAULT_EDGE_SEPARATION: i32 = 50;
+        const DEFAULT_VERTICES: bool = true;
+
+        let rank_direction = match self.peek() {
+            Some(Token::Word(w)) if autolayout_rank_direction(w).is_some() => self
+                .consume_string()
+                .as_deref()
+                .and_then(autolayout_rank_direction),
+            _ => None,
+        };
+        let rank_separation = self.consume_optional_i32();
+        let node_separation = self.consume_optional_i32();
+        let edge_separation = self.consume_optional_i32();
+        let vertices = self.consume_optional_bool();
+
+        AutomaticLayout {
+            implementation: Some("Graphviz".to_string()),
+            rank_direction: Some(rank_direction.unwrap_or(DEFAULT_RANK_DIRECTION).to_string()),
+            rank_separation: Some(rank_separation.unwrap_or(DEFAULT_RANK_SEPARATION)),
+            node_separation: Some(node_separation.unwrap_or(DEFAULT_NODE_SEPARATION)),
+            edge_separation: Some(edge_separation.unwrap_or(DEFAULT_EDGE_SEPARATION)),
+            vertices: Some(vertices.unwrap_or(DEFAULT_VERTICES)),
+        }
+    }
+
+    /// Consume the next token if it is an integer literal.
+    fn consume_optional_i32(&mut self) -> Option<i32> {
+        match self.peek() {
+            Some(Token::Word(w)) if w.parse::<i32>().is_ok() => {
+                self.consume_string().and_then(|s| s.parse::<i32>().ok())
+            }
+            _ => None,
+        }
+    }
+
+    /// Consume the next token if it is `true` or `false`.
+    fn consume_optional_bool(&mut self) -> Option<bool> {
+        match self.peek() {
+            Some(Token::Word(w))
+                if w.eq_ignore_ascii_case("true") || w.eq_ignore_ascii_case("false") =>
+            {
+                self.consume_string().map(|s| s.eq_ignore_ascii_case("true"))
+            }
+            _ => None,
+        }
+    }
+
     /// Parse a view block (inside `{ }`), return automatic layout if present.
     fn parse_optional_view_block(&mut self, include_all: &mut bool) -> Result<Option<AutomaticLayout>, ParseError> {
         let mut ignored = Vec::new();
@@ -3450,31 +3654,7 @@ impl Parser {
                 }
                 Some(Token::Word(w)) if w.eq_ignore_ascii_case("autolayout") || w.eq_ignore_ascii_case("autoLayout") => {
                     self.advance();
-                    let direction = match self.peek() {
-                        Some(Token::Word(w)) if is_autolayout_direction(w) => {
-                            self.consume_string()
-                        }
-                        _ => None,
-                    };
-                    let rank_sep = match self.peek() {
-                        Some(Token::Word(w)) if w.parse::<i32>().is_ok() => {
-                            self.consume_string().and_then(|s| s.parse::<i32>().ok())
-                        }
-                        _ => None,
-                    };
-                    let node_sep = match self.peek() {
-                        Some(Token::Word(w)) if w.parse::<i32>().is_ok() => {
-                            self.consume_string().and_then(|s| s.parse::<i32>().ok())
-                        }
-                        _ => None,
-                    };
-                    auto_layout = Some(AutomaticLayout {
-                        implementation: Some("Graphviz".to_string()),
-                        rank_direction: direction,
-                        rank_separation: rank_sep,
-                        node_separation: node_sep,
-                        ..Default::default()
-                    });
+                    auto_layout = Some(self.parse_autolayout_arguments());
                 }
                 Some(Token::Word(w)) if w.eq_ignore_ascii_case("include") => {
                     self.advance();
@@ -4809,12 +4989,17 @@ fn is_view_block_keyword(w: &str) -> bool {
     )
 }
 
-/// Returns true if `w` is a valid `autoLayout` direction argument.
-fn is_autolayout_direction(w: &str) -> bool {
-    matches!(
-        w.to_lowercase().as_str(),
-        "topbottom" | "bottomtop" | "leftright" | "rightleft"
-    )
+/// Maps an `autoLayout` direction argument to the name used in the JSON schema.
+/// The DSL spells these `tb|bt|lr|rl`; the long forms are accepted for the
+/// benefit of workspaces round-tripped from JSON.
+fn autolayout_rank_direction(w: &str) -> Option<&'static str> {
+    match w.to_lowercase().as_str() {
+        "tb" | "topbottom" => Some("TopBottom"),
+        "bt" | "bottomtop" => Some("BottomTop"),
+        "lr" | "leftright" => Some("LeftRight"),
+        "rl" | "rightleft" => Some("RightLeft"),
+        _ => None,
+    }
 }
 
 /// Canonicalize a shape name to the PascalCase expected by structurizr-diagram.js.

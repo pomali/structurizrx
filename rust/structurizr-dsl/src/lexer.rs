@@ -40,6 +40,10 @@ pub fn tokenize(source: &str) -> Vec<Spanned> {
     let mut i = 0;
     let mut line = 1usize;
     let mut col = 1usize;
+    // Whether anything other than whitespace has been seen on the current line.
+    // `//` and `#` only start a comment at the beginning of a line, so that
+    // unquoted urls (`themes https://example.com/theme.json`) survive intact.
+    let mut line_has_content = false;
 
     while i < chars.len() {
         let c = chars[i];
@@ -49,6 +53,7 @@ pub fn tokenize(source: &str) -> Vec<Spanned> {
             line += 1;
             col = 1;
             i += 1;
+            line_has_content = false;
             continue;
         }
         if c.is_whitespace() {
@@ -73,13 +78,11 @@ pub fn tokenize(source: &str) -> Vec<Spanned> {
 
         let pos = Pos { line, col };
 
-        // Single-line comment: // or bare #
-        // A '#' is a comment only when it is NOT followed by a hex digit (colors like #1168bd)
-        // and NOT followed by '{' (variable interpolation #{...}).
-        if (c == '/' && i + 1 < chars.len() && chars[i + 1] == '/')
-            || (c == '#'
-                && !(i + 1 < chars.len() && chars[i + 1] == '{')
-                && !(i + 1 < chars.len() && chars[i + 1].is_ascii_hexdigit()))
+        // Single-line comment: a line whose first non-whitespace is `//` or `#`.
+        // `#{` is variable interpolation, never a comment.
+        if !line_has_content
+            && ((c == '/' && i + 1 < chars.len() && chars[i + 1] == '/')
+                || (c == '#' && !(i + 1 < chars.len() && chars[i + 1] == '{')))
         {
             while i < chars.len() && chars[i] != '\n' {
                 i += 1;
@@ -87,6 +90,8 @@ pub fn tokenize(source: &str) -> Vec<Spanned> {
             }
             continue;
         }
+
+        line_has_content = true;
 
         // Multi-line comment: /* ... */
         if c == '/' && i + 1 < chars.len() && chars[i + 1] == '*' {
@@ -219,7 +224,8 @@ pub fn tokenize(source: &str) -> Vec<Spanned> {
                 && chars[i] != '"'
                 && chars[i] != '='
                 && !(chars[i] == '-' && i + 1 < chars.len() && chars[i + 1] == '>')
-                && !(chars[i] == '/' && i + 1 < chars.len() && (chars[i + 1] == '/' || chars[i + 1] == '*'))
+                // `/*` still ends a word, but `//` does not — it is part of urls.
+                && !(chars[i] == '/' && i + 1 < chars.len() && chars[i + 1] == '*')
             {
                 i += 1;
                 col += 1;
@@ -261,6 +267,32 @@ mod tests {
     fn skips_block_comments() {
         let tokens = tokenize("/* hello */ workspace");
         assert_eq!(tokens.len(), 1);
+    }
+
+    #[test]
+    fn indented_line_comments_are_skipped() {
+        let tokens = tokenize("workspace\n    // comment\n    # another\n    model");
+        assert_eq!(tokens.len(), 2);
+    }
+
+    #[test]
+    fn double_slash_inside_a_line_is_not_a_comment() {
+        // Theme and icon urls are written unquoted, so `//` mid-line has to
+        // stay part of the word.
+        let tokens = tokenize("themes https://example.com/theme.json");
+        assert_eq!(tokens.len(), 2);
+        assert!(
+            matches!(&tokens[1].token, Token::Word(w) if w == "https://example.com/theme.json"),
+            "got {:?}",
+            tokens[1].token
+        );
+    }
+
+    #[test]
+    fn hash_inside_a_line_is_not_a_comment() {
+        let tokens = tokenize("background #1168bd");
+        assert_eq!(tokens.len(), 2);
+        assert!(matches!(&tokens[1].token, Token::Word(w) if w == "#1168bd"));
     }
 
     #[test]
