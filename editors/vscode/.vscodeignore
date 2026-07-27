@@ -1,6 +1,8 @@
 .vscode/**
 src/**
 tsconfig.json
-node_modules/**
 **/*.map
 .gitignore
+package-lock.json
+# node_modules is deliberately not ignored: vsce bundles only the production
+# dependencies, and vscode-languageclient is required at runtime.

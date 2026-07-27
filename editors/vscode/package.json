@@ -4,6 +4,13 @@
   "description": "Syntax highlighting and language server support (diagnostics, hover, completion, go-to-definition, outline) for the Structurizr DSL, backed by structurizrx.",
   "version": "0.1.0",
   "private": true,
+  "publisher": "structurizrx",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pomali/structurizrx.git",
+    "directory": "editors/vscode"
+  },
   "engines": {
     "vscode": "^1.91.0"
   },
@@ -47,7 +54,9 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
-    "watch": "tsc -w -p ./"
+    "watch": "tsc -w -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package --allow-missing-repository"
   },
   "dependencies": {
     "vscode-languageclient": "^10.0.0"
