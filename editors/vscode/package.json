@@ -1,21 +1,39 @@
 {
   "name": "structurizr-dsl",
-  "displayName": "Structurizr DSL",
-  "description": "Syntax highlighting and language server support (diagnostics, hover, completion, go-to-definition, find references, rename, semantic highlighting, outline) for the Structurizr DSL, backed by structurizrx.",
+  "displayName": "StructurizrX DSL",
+  "description": "Rich language support for the Structurizr DSL: diagnostics, hover, completion, go-to-definition, find references, rename, semantic highlighting and outline — no binary install required.",
   "version": "0.3.0",
   "private": true,
   "publisher": "structurizrx",
   "license": "Apache-2.0",
+  "icon": "icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/pomali/structurizrx.git",
     "directory": "editors/vscode"
   },
+  "bugs": {
+    "url": "https://github.com/pomali/structurizrx/issues"
+  },
+  "homepage": "https://github.com/pomali/structurizrx/tree/main/editors/vscode#readme",
+  "keywords": [
+    "structurizr",
+    "structurizrx",
+    "c4sx",
+    "c4",
+    "c4 model",
+    "architecture",
+    "diagram",
+    "dsl",
+    "language server",
+    "lsp"
+  ],
   "engines": {
     "vscode": "^1.91.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Linters"
   ],
   "activationEvents": [
     "onLanguage:structurizr-dsl"
@@ -29,7 +47,8 @@
           "Structurizr DSL"
         ],
         "extensions": [
-          ".dsl"
+          ".dsl",
+          ".c4sx"
         ],
         "configuration": "./language-configuration.json"
       }
@@ -81,6 +100,7 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.91.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "@vscode/vsce": "^3.9.2"
   }
 }

@@ -1,6 +1,13 @@
-# Structurizr DSL (VS Code extension)
+# StructurizrX DSL
 
-Language support for `.dsl` files:
+Language support for [Structurizr DSL](https://docs.structurizr.com/dsl)
+files (`.dsl`, or the unambiguous `.c4sx` extension), powered by
+[structurizrx](https://github.com/pomali/structurizrx), a Rust
+re-implementation of Structurizr. The language server ships bundled as
+WebAssembly, so the extension works immediately after install — **no binary,
+runtime or extra setup required**.
+
+## Features
 
 - **Diagnostics** — syntax and model-validation errors as you type.
 - **Hover** — kind, description, technology and tags for any element identifier.
@@ -18,6 +25,11 @@ Language support for `.dsl` files:
 - **Outline** — people, software systems, containers and components.
 
 See [PLAN.md](PLAN.md) for what's implemented and what's planned.
+
+## Requirements
+
+None — the bundled WebAssembly language server runs in-process. Installing the
+`structurizrx` binary is optional; see below if you want it.
 
 ## Language server runtime
 
