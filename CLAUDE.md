@@ -28,6 +28,7 @@ cargo test
 cargo test -p structurizr-dsl
 cargo test -p structurizr-renderer
 cargo test -p structurizr-wasm
+cargo test -p structurizr-lsp
 
 # Run a specific test
 cargo test -p structurizr-renderer svg_exporter_relationships
@@ -89,6 +90,12 @@ Axum HTTP server serving a workspace browser at `http://localhost:<port>`. Key r
 - `WS /ws` — live-reload WebSocket
 
 HTML templates live in `structurizr-web/src/templates/`. Static assets (CSS, JS, icons, WASM output) are embedded at compile time via `rust-embed` from `structurizr-web/assets/`. The WASM output files land in `assets/wasm/` and are produced by the `build.rs` script.
+
+### `structurizr-lsp`
+Language server for the DSL, built on the `structurizr-dsl` lexer/parser. All logic lives in `core.rs` (`Core`), which is synchronous and runtime-agnostic. Two front ends drive it: `backend.rs` (tower-lsp over stdio, behind the default `stdio` feature, used by `structurizrx lsp`) and `jsonrpc.rs` (`Dispatcher` — one message in, messages out), which is what compiles for wasm32. tower-lsp/tokio must stay behind the `stdio` feature; neither builds for `wasm32-unknown-unknown`.
+
+### `structurizr-lsp-wasm`
+`wasm-bindgen` shim exposing `jsonrpc::Dispatcher` to JavaScript as `LspServer.handle(message) -> string` (a JSON array of outgoing messages). The host owns the message loop; there is no transport in the crate. Built by the VS Code extension's `npm run build:wasm` (`wasm-pack --target nodejs` → `editors/vscode/wasm/`), which lets the extension run the language server with no `structurizrx` binary installed.
 
 ### `structurizr-query`
 Selector-expression engine (spec §6.2) and view generation (`generate_views`, spec §6.3). Depends only on `structurizr-model`; used by `structurizr-cli` and `structurizr-web`.

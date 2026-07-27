@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use structurizr_dsl::lexer::{tokenize, Pos, Spanned};
 use structurizr_dsl::{parse_str_with_identifiers, IdentifierRegister};
 use structurizr_model::Workspace;
-use tower_lsp_server::ls_types::Diagnostic;
+use ls_types::Diagnostic;
 
 use crate::diagnostics;
 use crate::index::{self, Declarations};

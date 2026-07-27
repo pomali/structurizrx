@@ -5,7 +5,7 @@
 //! here and unit-tested rather than inlined at every call site.
 
 use structurizr_dsl::lexer::Pos;
-use tower_lsp_server::ls_types::{Position, Range};
+use ls_types::{Position, Range};
 
 pub fn pos_to_position(pos: Pos) -> Position {
     Position {
