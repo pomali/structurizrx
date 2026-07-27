@@ -117,8 +117,8 @@ fn view_type_counts(views: &ViewSet) -> Vec<(&'static str, usize)> {
 /// anything not listed here is silently dropped by that exporter today.
 fn handled_view_types(format: &str) -> &'static [&'static str] {
     match format.to_lowercase().as_str() {
-        "svg" => &["systemLandscape", "systemContext", "container"],
-        "mermaid" => &["systemLandscape", "systemContext"],
+        "svg" => &["systemLandscape", "systemContext", "container", "component"],
+        "mermaid" => &["systemLandscape", "systemContext", "container", "component"],
         "dot" | "graphviz" => &["systemLandscape", "systemContext"],
         _ => &["systemLandscape", "systemContext", "container"], // plantuml
     }

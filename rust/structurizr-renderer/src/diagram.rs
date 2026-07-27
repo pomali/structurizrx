@@ -39,7 +39,7 @@ impl Diagram {
     pub fn extension(&self) -> &str {
         match self.format {
             DiagramFormat::PlantUml => "puml",
-            DiagramFormat::Mermaid => "md",
+            DiagramFormat::Mermaid => "mmd",
             DiagramFormat::Dot => "dot",
             DiagramFormat::Svg => "svg",
         }

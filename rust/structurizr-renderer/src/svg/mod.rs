@@ -4,6 +4,7 @@ use structurizr_model::*;
 
 use crate::diagram::{Diagram, DiagramFormat};
 use crate::exporter::DiagramExporter;
+use crate::scope::*;
 
 // ── Layout constants ─────────────────────────────────────────────────────────
 
@@ -434,141 +435,6 @@ impl DiagramExporter for SvgExporter {
 
 // ── View scoping helpers ─────────────────────────────────────────────────────
 
-/// Every relationship in the model, at any nesting level.
-fn all_relationships(model: &Model) -> Vec<&Relationship> {
-    let mut out = Vec::new();
-    for p in model.people.iter().flatten() {
-        out.extend(p.relationships.iter().flatten());
-    }
-    for ss in model.software_systems.iter().flatten() {
-        out.extend(ss.relationships.iter().flatten());
-        for c in ss.containers.iter().flatten() {
-            out.extend(c.relationships.iter().flatten());
-            for comp in c.components.iter().flatten() {
-                out.extend(comp.relationships.iter().flatten());
-            }
-        }
-    }
-    for ce in model.custom_elements.iter().flatten() {
-        out.extend(ce.relationships.iter().flatten());
-    }
-    out
-}
-
-/// Map every element id to its top-level owner (person / software system / custom element).
-fn top_level_owner(model: &Model) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    for p in model.people.iter().flatten() {
-        map.insert(p.id.clone(), p.id.clone());
-    }
-    for ss in model.software_systems.iter().flatten() {
-        map.insert(ss.id.clone(), ss.id.clone());
-        for c in ss.containers.iter().flatten() {
-            map.insert(c.id.clone(), ss.id.clone());
-            for comp in c.components.iter().flatten() {
-                map.insert(comp.id.clone(), ss.id.clone());
-            }
-        }
-    }
-    for ce in model.custom_elements.iter().flatten() {
-        map.insert(ce.id.clone(), ce.id.clone());
-    }
-    map
-}
-
-/// Elements in scope for a system context view without an explicit element list:
-/// the focal system plus every top-level element related to it (directly or via
-/// a relationship involving one of its containers/components).
-fn context_scope(model: &Model, focal_id: &str) -> HashSet<String> {
-    let owner = top_level_owner(model);
-    let mut scope = HashSet::new();
-    scope.insert(focal_id.to_string());
-    for r in all_relationships(model) {
-        if let (Some(src), Some(dst)) = (owner.get(&r.source_id), owner.get(&r.destination_id)) {
-            if src == focal_id && dst != focal_id {
-                scope.insert(dst.clone());
-            } else if dst == focal_id && src != focal_id {
-                scope.insert(src.clone());
-            }
-        }
-    }
-    scope
-}
-
-/// Elements in scope for a container view without an explicit element list:
-/// the focal system's containers plus related people/external systems.
-fn container_scope(model: &Model, focal_id: &str) -> HashSet<String> {
-    let mut scope = context_scope(model, focal_id);
-    scope.remove(focal_id);
-    for ss in model.software_systems.iter().flatten() {
-        if ss.id == focal_id {
-            for c in ss.containers.iter().flatten() {
-                scope.insert(c.id.clone());
-            }
-        }
-    }
-    scope
-}
-
-/// Elements in scope for a component view without an explicit element list:
-/// the focal container's components plus the elements they relate to (sibling
-/// containers collapsed from their components, external systems, people).
-fn component_scope(model: &Model, focal_container_id: &str) -> HashSet<String> {
-    // component id → owning container id
-    let mut comp_container: HashMap<String, String> = HashMap::new();
-    let mut components: HashSet<String> = HashSet::new();
-    for ss in model.software_systems.iter().flatten() {
-        for c in ss.containers.iter().flatten() {
-            for comp in c.components.iter().flatten() {
-                comp_container.insert(comp.id.clone(), c.id.clone());
-                if c.id == focal_container_id {
-                    components.insert(comp.id.clone());
-                }
-            }
-        }
-    }
-
-    // Collapse an endpoint to how it should appear in this component view: a
-    // focal component stays itself; another container's component collapses to
-    // that container; anything else stays as-is.
-    let collapse = |id: &str| -> String {
-        if components.contains(id) {
-            return id.to_string();
-        }
-        match comp_container.get(id) {
-            Some(container) => container.clone(),
-            None => id.to_string(),
-        }
-    };
-
-    let mut scope = components.clone();
-    for r in all_relationships(model) {
-        let s_in = components.contains(&r.source_id);
-        let d_in = components.contains(&r.destination_id);
-        if s_in && !d_in {
-            scope.insert(collapse(&r.destination_id));
-        } else if d_in && !s_in {
-            scope.insert(collapse(&r.source_id));
-        }
-    }
-    scope
-}
-
-/// Map each container/component id to its parent (component → container,
-/// container → software system).  Top-level elements have no entry.
-fn child_parent_map(model: &Model) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    for ss in model.software_systems.iter().flatten() {
-        for c in ss.containers.iter().flatten() {
-            map.insert(c.id.clone(), ss.id.clone());
-            for comp in c.components.iter().flatten() {
-                map.insert(comp.id.clone(), c.id.clone());
-            }
-        }
-    }
-    map
-}
-
 /// Lift edge endpoints to their nearest **visible** ancestor — the implied
 /// relationships of upstream Structurizr.  A component→system relationship
 /// renders as container→system in a container view, and so on.  Edges whose
@@ -577,15 +443,7 @@ fn child_parent_map(model: &Model) -> HashMap<String, String> {
 /// are deduplicated.
 fn lift_edges(edges: Vec<Edge>, model: &Model, visible: &HashSet<String>) -> Vec<Edge> {
     let parents = child_parent_map(model);
-    let lift = |id: &str| -> Option<String> {
-        let mut cur = id.to_string();
-        loop {
-            if visible.contains(&cur) {
-                return Some(cur);
-            }
-            cur = parents.get(&cur)?.clone();
-        }
-    };
+    let lift = |id: &str| lift_to_visible(id, &parents, visible);
     let mut out = Vec::new();
     let mut seen: HashSet<(String, String, String, String)> = HashSet::new();
     for mut e in edges {
@@ -1240,47 +1098,6 @@ fn collect_rels(rels: &Option<Vec<Relationship>>, edges: &mut Vec<Edge>, rel_fil
 }
 
 // ── View filter helpers ───────────────────────────────────────────────────────
-
-/// Build an element ID allowlist and a stored-position map from a view's `element_views`.
-///
-/// Returns `(None, empty_map)` when `element_views` is absent or empty, which means
-/// "show all elements" (backwards-compatible behaviour for workspaces without explicit views).
-fn build_element_filter(
-    element_views: Option<&[ElementView]>,
-) -> (Option<HashSet<String>>, HashMap<String, (i32, i32)>) {
-    let evs = match element_views {
-        None => return (None, HashMap::new()),
-        Some(evs) if evs.is_empty() => return (None, HashMap::new()),
-        Some(evs) => evs,
-    };
-    let ids: HashSet<String> = evs.iter().map(|ev| ev.id.clone()).collect();
-    let pos: HashMap<String, (i32, i32)> = evs
-        .iter()
-        .filter_map(|ev| ev.x.zip(ev.y).map(|(x, y)| (ev.id.clone(), (x, y))))
-        .collect();
-    (Some(ids), pos)
-}
-
-/// Build a relationship ID allowlist from a view's `relationship_views`.
-///
-/// Returns `None` when absent or empty (meaning "allow all relationships").
-fn build_rel_filter(rel_views: Option<&[RelationshipView]>) -> Option<HashSet<String>> {
-    let rvs = rel_views?;
-    if rvs.is_empty() {
-        return None;
-    }
-    Some(rvs.iter().map(|rv| rv.id.clone()).collect())
-}
-
-/// Returns `true` if `id` is allowed by the element filter.
-///
-/// When the filter is `None` (no `element_views` present), all elements are allowed.
-fn elem_allowed(filter: &Option<HashSet<String>>, id: &str) -> bool {
-    match filter {
-        None => true,
-        Some(set) => set.contains(id),
-    }
-}
 
 /// Apply stored x/y positions from the element-position map to `nodes`.
 ///
