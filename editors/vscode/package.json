@@ -1,8 +1,8 @@
 {
   "name": "structurizr-dsl",
   "displayName": "Structurizr DSL",
-  "description": "Syntax highlighting and language server support (diagnostics, hover, completion, go-to-definition, outline) for the Structurizr DSL, backed by structurizrx.",
-  "version": "0.2.0",
+  "description": "Syntax highlighting and language server support (diagnostics, hover, completion, go-to-definition, find references, rename, semantic highlighting, outline) for the Structurizr DSL, backed by structurizrx.",
+  "version": "0.3.0",
   "private": true,
   "publisher": "structurizrx",
   "license": "Apache-2.0",

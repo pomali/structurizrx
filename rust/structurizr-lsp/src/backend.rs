@@ -69,8 +69,10 @@ impl LanguageServer for Backend {
     }
 
     async fn completion(&self, params: CompletionParams) -> RpcResult<Option<CompletionResponse>> {
-        let uri = params.text_document_position.text_document.uri;
-        Ok(Some(CompletionResponse::Array(self.core.completion(&uri))))
+        let p = params.text_document_position;
+        Ok(Some(CompletionResponse::Array(
+            self.core.completion(&p.text_document.uri, p.position),
+        )))
     }
 
     async fn goto_definition(
@@ -92,5 +94,47 @@ impl LanguageServer for Backend {
             .core
             .document_symbol(&params.text_document.uri)
             .map(DocumentSymbolResponse::Nested))
+    }
+
+    async fn references(&self, params: ReferenceParams) -> RpcResult<Option<Vec<Location>>> {
+        let p = params.text_document_position;
+        Ok(self.core.references(&p.text_document.uri, p.position))
+    }
+
+    async fn document_highlight(
+        &self,
+        params: DocumentHighlightParams,
+    ) -> RpcResult<Option<Vec<DocumentHighlight>>> {
+        let p = params.text_document_position_params;
+        Ok(self
+            .core
+            .document_highlight(&p.text_document.uri, p.position))
+    }
+
+    async fn prepare_rename(
+        &self,
+        params: TextDocumentPositionParams,
+    ) -> RpcResult<Option<PrepareRenameResponse>> {
+        Ok(self
+            .core
+            .prepare_rename(&params.text_document.uri, params.position)
+            .map(PrepareRenameResponse::Range))
+    }
+
+    async fn rename(&self, params: RenameParams) -> RpcResult<Option<WorkspaceEdit>> {
+        let p = params.text_document_position;
+        Ok(self
+            .core
+            .rename(&p.text_document.uri, p.position, &params.new_name))
+    }
+
+    async fn semantic_tokens_full(
+        &self,
+        params: SemanticTokensParams,
+    ) -> RpcResult<Option<SemanticTokensResult>> {
+        Ok(self
+            .core
+            .semantic_tokens(&params.text_document.uri)
+            .map(SemanticTokensResult::Tokens))
     }
 }

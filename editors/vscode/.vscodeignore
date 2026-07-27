@@ -1,6 +1,7 @@
 .vscode/**
 src/**
 tsconfig.json
+PLAN.md
 **/*.map
 .gitignore
 package-lock.json

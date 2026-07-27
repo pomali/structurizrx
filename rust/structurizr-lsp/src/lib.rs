@@ -9,11 +9,13 @@
 
 #[cfg(feature = "stdio")]
 mod backend;
+mod context;
 mod convert;
 pub mod core;
 mod diagnostics;
 mod document;
 mod index;
+mod semantic;
 pub mod jsonrpc;
 
 /// Runs the language server over stdio. Intended to be spawned by an editor

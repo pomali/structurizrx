@@ -11,8 +11,10 @@ use ls_types::*;
 use structurizr_dsl::lexer::Pos;
 use structurizr_model::Workspace;
 
+use crate::context::context_at;
 use crate::convert::{point_range, position_to_pos};
 use crate::document::DocumentState;
+use crate::semantic;
 
 #[derive(Default)]
 pub struct Core {
@@ -31,6 +33,20 @@ impl Core {
             completion_provider: Some(CompletionOptions::default()),
             definition_provider: Some(OneOf::Left(true)),
             document_symbol_provider: Some(OneOf::Left(true)),
+            references_provider: Some(OneOf::Left(true)),
+            document_highlight_provider: Some(OneOf::Left(true)),
+            rename_provider: Some(OneOf::Right(RenameOptions {
+                prepare_provider: Some(true),
+                work_done_progress_options: WorkDoneProgressOptions::default(),
+            })),
+            semantic_tokens_provider: Some(
+                SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
+                    legend: semantic::legend(),
+                    full: Some(SemanticTokensFullOptions::Bool(true)),
+                    range: Some(false),
+                    work_done_progress_options: WorkDoneProgressOptions::default(),
+                }),
+            ),
             ..ServerCapabilities::default()
         }
     }
@@ -76,29 +92,54 @@ impl Core {
         })
     }
 
-    pub fn completion(&self, uri: &Uri) -> Vec<CompletionItem> {
+    /// Completions legal at `position`: the keywords of the enclosing block,
+    /// plus the elements declared so far.
+    ///
+    /// Scoping matters more here than it looks. The DSL reuses the same words
+    /// at different depths (`container` declares an element in a
+    /// `softwareSystem` body but opens a view under `views`), so an unscoped
+    /// list is mostly wrong suggestions.
+    pub fn completion(&self, uri: &Uri, position: Position) -> Vec<CompletionItem> {
+        let documents = self.documents.read().unwrap();
+        let Some(doc) = documents.get(uri) else {
+            return Vec::new();
+        };
+        let ctx = context_at(&doc.tokens, position_to_pos(position));
+
         let mut items = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-        for &(_, keywords) in structurizr_dsl::keyword_sets() {
-            for &kw in keywords {
-                if seen.insert(kw) {
-                    items.push(CompletionItem {
-                        label: kw.to_string(),
-                        kind: Some(CompletionItemKind::KEYWORD),
-                        ..CompletionItem::default()
-                    });
+        // Right after `->` the only thing that can follow is the destination
+        // element, so offering keywords would only get in the way.
+        if !ctx.after_arrow {
+            let wanted = ctx.keyword_set();
+            let mut seen = std::collections::HashSet::new();
+            for &(block, keywords) in structurizr_dsl::keyword_sets() {
+                // An unrecognised block falls back to every keyword: a noisy
+                // list is still better than an empty one.
+                if wanted.is_some_and(|w| w != block) {
+                    continue;
+                }
+                for &kw in keywords {
+                    if seen.insert(kw) {
+                        items.push(CompletionItem {
+                            label: kw.to_string(),
+                            kind: Some(CompletionItemKind::KEYWORD),
+                            ..CompletionItem::default()
+                        });
+                    }
                 }
             }
         }
-        let documents = self.documents.read().unwrap();
-        if let Some(analyzed) = documents.get(uri).and_then(|doc| doc.last_ok.as_ref()) {
-            for (ident, (id, kind)) in &analyzed.identifiers.identifiers {
-                items.push(CompletionItem {
-                    label: ident.clone(),
-                    kind: Some(CompletionItemKind::VARIABLE),
-                    detail: Some(format!("{:?} ({})", kind, id)),
-                    ..CompletionItem::default()
-                });
+
+        if ctx.wants_identifiers() {
+            if let Some(analyzed) = doc.last_ok.as_ref() {
+                for (ident, (id, kind)) in &analyzed.identifiers.identifiers {
+                    items.push(CompletionItem {
+                        label: ident.clone(),
+                        kind: Some(CompletionItemKind::VARIABLE),
+                        detail: Some(format!("{:?} ({})", kind, id)),
+                        ..CompletionItem::default()
+                    });
+                }
             }
         }
         items
@@ -119,6 +160,89 @@ impl Core {
         let documents = self.documents.read().unwrap();
         let analyzed = documents.get(uri)?.last_ok.as_ref()?;
         Some(build_symbols(&analyzed.workspace, &analyzed.id_to_pos))
+    }
+
+    pub fn references(&self, uri: &Uri, position: Position) -> Option<Vec<Location>> {
+        let (_, ranges) = self.identifier_ranges(uri, position)?;
+        Some(
+            ranges
+                .into_iter()
+                .map(|range| Location {
+                    uri: uri.clone(),
+                    range,
+                })
+                .collect(),
+        )
+    }
+
+    pub fn document_highlight(&self, uri: &Uri, position: Position) -> Option<Vec<DocumentHighlight>> {
+        let (_, ranges) = self.identifier_ranges(uri, position)?;
+        Some(
+            ranges
+                .into_iter()
+                .map(|range| DocumentHighlight {
+                    range,
+                    kind: Some(DocumentHighlightKind::TEXT),
+                })
+                .collect(),
+        )
+    }
+
+    /// The range the editor should pre-fill in its rename box, or `None` if
+    /// this position isn't a renameable identifier — which is how the editor
+    /// knows to refuse the rename up front rather than after the fact.
+    pub fn prepare_rename(&self, uri: &Uri, position: Position) -> Option<Range> {
+        let (word, ranges) = self.identifier_ranges(uri, position)?;
+        let cursor = position_to_pos(position);
+        // The occurrence under the cursor, i.e. the one the editor will
+        // highlight and pre-fill.
+        ranges.into_iter().find(|r| {
+            r.start.line as usize + 1 == cursor.line
+                && (r.start.character..=r.end.character).contains(&(cursor.col as u32 - 1))
+        })
+        .or_else(|| Some(point_range(cursor, word.chars().count())))
+    }
+
+    pub fn rename(&self, uri: &Uri, position: Position, new_name: &str) -> Option<WorkspaceEdit> {
+        let (_, ranges) = self.identifier_ranges(uri, position)?;
+        let edits: Vec<TextEdit> = ranges
+            .into_iter()
+            .map(|range| TextEdit {
+                range,
+                new_text: new_name.to_string(),
+            })
+            .collect();
+        Some(WorkspaceEdit {
+            changes: Some(HashMap::from([(uri.clone(), edits)])),
+            ..WorkspaceEdit::default()
+        })
+    }
+
+    pub fn semantic_tokens(&self, uri: &Uri) -> Option<SemanticTokens> {
+        let documents = self.documents.read().unwrap();
+        let doc = documents.get(uri)?;
+        Some(SemanticTokens {
+            result_id: None,
+            data: semantic::encode(&doc.tokens, &doc.declarations),
+        })
+    }
+
+    /// The identifier at `position` and the ranges of every token referring to
+    /// it. `None` unless the word is a *declared* identifier, which keeps
+    /// references and rename off keywords and quoted text.
+    fn identifier_ranges(&self, uri: &Uri, position: Position) -> Option<(String, Vec<Range>)> {
+        let documents = self.documents.read().unwrap();
+        let doc = documents.get(uri)?;
+        let word = doc.word_at(position_to_pos(position))?.to_string();
+        if !doc.declarations.contains_key(&word.to_lowercase()) {
+            return None;
+        }
+        let len = word.chars().count();
+        let ranges = crate::index::find_references(&doc.tokens, &word)
+            .into_iter()
+            .map(|pos| point_range(pos, len))
+            .collect();
+        Some((word, ranges))
     }
 }
 
