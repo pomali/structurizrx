@@ -108,6 +108,9 @@
             <a class="btn btn-sm btn-outline-secondary d-none" id="btnDownloadSvg" title="Open diagram SVG in a new tab" target="_blank" rel="noopener noreferrer">
                 <i class="bi bi-box-arrow-up-right"></i>
             </a>
+            <button class="btn btn-sm btn-outline-secondary d-none" id="btnCopyMermaid" title="Copy this view as Mermaid">
+                <i class="bi bi-clipboard"></i>
+            </button>
             <button class="btn btn-sm btn-outline-secondary" id="btnFullScreen" title="Full screen (f)">
                 <i class="bi bi-fullscreen"></i>
             </button>
@@ -589,6 +592,7 @@
         var view = structurizr.workspace.findViewByKey(key);
         var badge = document.getElementById('view-type-badge');
         var svgBtn = document.getElementById('btnDownloadSvg');
+        var mermaidBtn = document.getElementById('btnCopyMermaid');
         if (view) {
             badge.textContent = view.type || '';
             badge.classList.remove('d-none');
@@ -597,11 +601,27 @@
             svgBtn.href = '/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG) +
                           '/diagram/' + encodeURIComponent(key) + '/svg';
             svgBtn.classList.remove('d-none');
+            mermaidBtn.classList.remove('d-none');
         } else {
             badge.classList.add('d-none');
             svgBtn.classList.add('d-none');
+            mermaidBtn.classList.add('d-none');
         }
     }
+
+    // ===== COPY AS MERMAID =====
+    document.getElementById('btnCopyMermaid').addEventListener('click', function() {
+        if (!currentViewKey) return;
+        fetch('/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG) +
+              '/diagram/' + encodeURIComponent(currentViewKey) + '/mermaid')
+            .then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.text();
+            })
+            .then(function(text) { return navigator.clipboard.writeText(text); })
+            .then(function() { setStatus('Mermaid source copied to clipboard'); })
+            .catch(function(e) { setStatus('Could not copy Mermaid: ' + e.message); });
+    });
 
     function updateHash(key) {
         // Update URL fragment without triggering onhashchange

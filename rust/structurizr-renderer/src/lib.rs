@@ -6,6 +6,7 @@ pub mod mermaid;
 #[cfg(feature = "png")]
 pub mod png;
 pub mod plantuml;
+mod scope;
 pub mod svg;
 
 pub use diagram::{Diagram, DiagramFormat};

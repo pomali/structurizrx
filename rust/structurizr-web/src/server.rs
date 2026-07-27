@@ -9,7 +9,7 @@ use axum::{
 };
 use axum::extract::ws::{Message, WebSocket};
 
-use structurizr_renderer::{exporter::DiagramExporter, svg::SvgExporter};
+use structurizr_renderer::{exporter::DiagramExporter, mermaid::MermaidExporter, svg::SvgExporter};
 
 use crate::assets::Assets;
 use crate::markdown::render_markdown;
@@ -36,6 +36,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/workspace/{name}/decisions", get(api_decisions_handler))
         .route("/api/workspace/{name}/decisions/{id}", get(api_decision_handler))
         .route("/api/workspace/{name}/diagram/{key}/svg", get(api_diagram_svg_handler))
+        .route(
+            "/api/workspace/{name}/diagram/{key}/mermaid",
+            get(api_diagram_mermaid_handler),
+        )
         .route("/api/workspace/{name}/digest", get(api_digest_handler))
         .route("/api/workspace/{name}/query", get(api_query_handler))
         .route("/llms.txt", get(llms_txt_handler))
@@ -280,12 +284,37 @@ async fn api_diagram_svg_handler(
     State(state): State<AppState>,
     Path((name, key)): Path<(String, String)>,
 ) -> Response {
+    render_diagram(&state, &name, &key, &SvgExporter, "image/svg+xml; charset=utf-8")
+}
+
+/// The Mermaid source for a single diagram.
+///
+/// `GET /api/workspace/{name}/diagram/{key}/mermaid`
+///
+/// Returns `text/plain` on success, or a plain-text error with an appropriate
+/// HTTP status code on failure.
+async fn api_diagram_mermaid_handler(
+    State(state): State<AppState>,
+    Path((name, key)): Path<(String, String)>,
+) -> Response {
+    render_diagram(&state, &name, &key, &MermaidExporter, "text/plain; charset=utf-8")
+}
+
+/// Look up a workspace, export it with `exporter` and return the diagram whose
+/// key matches, or a 404 explaining which lookup failed.
+fn render_diagram(
+    state: &AppState,
+    name: &str,
+    key: &str,
+    exporter: &dyn DiagramExporter,
+    content_type: &'static str,
+) -> Response {
     let workspaces = state.workspaces.lock().unwrap();
     let Some(entry) = workspaces.iter().find(|e| e.name == name) else {
         return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
     };
 
-    let diagrams = SvgExporter.export_workspace(&entry.workspace);
+    let diagrams = exporter.export_workspace(&entry.workspace);
     let Some(diagram) = diagrams.into_iter().find(|d| d.key == key) else {
         return (
             StatusCode::NOT_FOUND,
@@ -296,7 +325,7 @@ async fn api_diagram_svg_handler(
 
     (
         StatusCode::OK,
-        [(header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")],
+        [(header::CONTENT_TYPE, content_type)],
         diagram.content,
     )
         .into_response()
