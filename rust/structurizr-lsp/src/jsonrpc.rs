@@ -56,8 +56,8 @@ impl Dispatcher {
                 json!(self.core.hover(&p.text_document.uri, p.position))
             }),
             "textDocument/completion" => decode::<CompletionParams>(params).map(|p| {
-                let uri = p.text_document_position.text_document.uri;
-                json!(self.core.completion(&uri))
+                let p = p.text_document_position;
+                json!(self.core.completion(&p.text_document.uri, p.position))
             }),
             "textDocument/definition" => decode::<GotoDefinitionParams>(params).map(|p| {
                 let p = p.text_document_position_params;
@@ -65,6 +65,25 @@ impl Dispatcher {
             }),
             "textDocument/documentSymbol" => decode::<DocumentSymbolParams>(params)
                 .map(|p| json!(self.core.document_symbol(&p.text_document.uri))),
+            "textDocument/references" => decode::<ReferenceParams>(params).map(|p| {
+                let p = p.text_document_position;
+                json!(self.core.references(&p.text_document.uri, p.position))
+            }),
+            "textDocument/documentHighlight" => decode::<DocumentHighlightParams>(params).map(|p| {
+                let p = p.text_document_position_params;
+                json!(self
+                    .core
+                    .document_highlight(&p.text_document.uri, p.position))
+            }),
+            "textDocument/prepareRename" => decode::<TextDocumentPositionParams>(params)
+                .map(|p| json!(self.core.prepare_rename(&p.text_document.uri, p.position))),
+            "textDocument/rename" => decode::<RenameParams>(params).map(|p| {
+                let new_name = p.new_name;
+                let p = p.text_document_position;
+                json!(self.core.rename(&p.text_document.uri, p.position, &new_name))
+            }),
+            "textDocument/semanticTokens/full" => decode::<SemanticTokensParams>(params)
+                .map(|p| json!(self.core.semantic_tokens(&p.text_document.uri))),
             _ => {
                 return error_response(
                     id,
@@ -231,6 +250,116 @@ mod tests {
         );
         let response: Value = serde_json::from_str(&out[0]).unwrap();
         assert_eq!(response["result"][0]["name"], "User");
+    }
+
+    /// `u` is declared on line 3 (LSP line 2, char 4) and used again as the
+    /// source of the relationship on line 5.
+    const LINKED: &str = "workspace {\n  model {\n    u = person \"User\"\n    s = softwareSystem \"S\"\n    u -> s \"Uses\"\n  }\n}\n";
+
+    fn request(dispatcher: &Dispatcher, method: &str, params: Value) -> Value {
+        let out = dispatcher.handle(
+            &json!({"jsonrpc": "2.0", "id": 7, "method": method, "params": params}).to_string(),
+        );
+        serde_json::from_str::<Value>(&out[0]).unwrap()["result"].clone()
+    }
+
+    fn at_u() -> Value {
+        json!({
+            "textDocument": { "uri": "file:///w.dsl" },
+            "position": { "line": 2, "character": 4 },
+        })
+    }
+
+    #[test]
+    fn references_include_the_declaration_and_the_relationship() {
+        let dispatcher = Dispatcher::new();
+        open(&dispatcher, LINKED);
+        let mut params = at_u();
+        params["context"] = json!({ "includeDeclaration": true });
+        let result = request(&dispatcher, "textDocument/references", params);
+        let lines: Vec<u64> = result
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l["range"]["start"]["line"].as_u64().unwrap())
+            .collect();
+        assert_eq!(lines, vec![2, 4]);
+    }
+
+    #[test]
+    fn rename_rewrites_every_occurrence() {
+        let dispatcher = Dispatcher::new();
+        open(&dispatcher, LINKED);
+        let mut params = at_u();
+        params["newName"] = json!("customer");
+        let result = request(&dispatcher, "textDocument/rename", params);
+        let edits = result["changes"]["file:///w.dsl"].as_array().unwrap();
+        assert_eq!(edits.len(), 2);
+        assert!(edits.iter().all(|e| e["newText"] == "customer"));
+    }
+
+    #[test]
+    fn rename_refuses_a_keyword() {
+        let dispatcher = Dispatcher::new();
+        open(&dispatcher, LINKED);
+        // `person` on line 3 is a keyword, not a declared identifier.
+        let params = json!({
+            "textDocument": { "uri": "file:///w.dsl" },
+            "position": { "line": 2, "character": 9 },
+        });
+        assert_eq!(
+            request(&dispatcher, "textDocument/prepareRename", params),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn document_highlight_marks_both_occurrences() {
+        let dispatcher = Dispatcher::new();
+        open(&dispatcher, LINKED);
+        let result = request(&dispatcher, "textDocument/documentHighlight", at_u());
+        assert_eq!(result.as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn semantic_tokens_are_returned_as_a_flat_int_array() {
+        let dispatcher = Dispatcher::new();
+        open(&dispatcher, LINKED);
+        let result = request(
+            &dispatcher,
+            "textDocument/semanticTokens/full",
+            json!({ "textDocument": { "uri": "file:///w.dsl" } }),
+        );
+        let data = result["data"].as_array().unwrap();
+        assert!(!data.is_empty());
+        assert_eq!(data.len() % 5, 0, "5 ints per token");
+    }
+
+    #[test]
+    fn completion_is_scoped_to_the_enclosing_block() {
+        let dispatcher = Dispatcher::new();
+        open(&dispatcher, LINKED);
+        // Inside `model { ... }`, on the blank part of the relationship line.
+        let result = request(
+            &dispatcher,
+            "textDocument/completion",
+            json!({
+                "textDocument": { "uri": "file:///w.dsl" },
+                "position": { "line": 3, "character": 4 },
+            }),
+        );
+        let labels: Vec<&str> = result
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["label"].as_str().unwrap())
+            .collect();
+        assert!(labels.contains(&"person"), "model keyword: {labels:?}");
+        assert!(
+            !labels.contains(&"systemContext"),
+            "views keyword must not leak into model: {labels:?}"
+        );
+        assert!(labels.contains(&"u"), "declared identifiers: {labels:?}");
     }
 
     #[test]

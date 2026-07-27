@@ -68,6 +68,10 @@ impl DocumentState {
     }
 
     /// The `Word` token whose span contains `pos`, if any.
+    ///
+    /// The end of the span counts as inside it: editors report the caret
+    /// *after* the word you double-clicked or right-clicked at its end, and
+    /// rename in particular is unusable if that misses.
     pub fn word_at(&self, pos: Pos) -> Option<&str> {
         self.tokens.iter().find_map(|t| {
             let structurizr_dsl::lexer::Token::Word(w) = &t.token else {
@@ -78,7 +82,7 @@ impl DocumentState {
             }
             let start = t.pos.col;
             let end = start + w.chars().count();
-            (start..end).contains(&pos.col).then_some(w.as_str())
+            (start..=end).contains(&pos.col).then_some(w.as_str())
         })
     }
 }

@@ -1,7 +1,23 @@
 # Structurizr DSL (VS Code extension)
 
-Syntax highlighting plus language-server features (diagnostics, hover,
-completion, go-to-definition, outline) for `.dsl` files.
+Language support for `.dsl` files:
+
+- **Diagnostics** — syntax and model-validation errors as you type.
+- **Hover** — kind, description, technology and tags for any element identifier.
+- **Completion** — scoped to the enclosing block, so a `views` body offers view
+  keywords and a `container` body offers container keywords. After `->` only
+  element identifiers are offered.
+- **Go to definition**, **find all references** and **highlight occurrences**
+  for element identifiers.
+- **Rename symbol** — rewrites every reference to an element. Only offered on
+  declared identifiers, so keywords and text inside quoted strings are left
+  alone.
+- **Semantic highlighting** — the lexer distinguishes keywords from identifiers
+  and `!directive`s, which the TextMate grammar can only guess at. Everything
+  else stays TextMate-coloured.
+- **Outline** — people, software systems, containers and components.
+
+See [PLAN.md](PLAN.md) for what's implemented and what's planned.
 
 ## Language server runtime
 
@@ -61,12 +77,15 @@ the `.vsix` alongside the `vscode-languageclient` runtime dependency, so the
 installed extension works with nothing else installed. The `structurizrx`
 binary is *not* bundled; install it separately to use the native runtime.
 
-## Known v1 limitations
+## Known limitations
 
 - Diagnostics from `structurizr_model::validation::validate` fall back to the
   top of the document when the underlying error can't be matched back to a
   declared element's position (validation errors don't carry a span today).
-- No semantic tokens yet — highlighting is TextMate-grammar based.
+- Rename and find-references match whole identifier tokens only. A hierarchical
+  reference (`web.api`) lexes as one word, so renaming `web` won't rewrite it —
+  that needs the parser's scoping rules rather than a token scan.
+- Rename is single-file; it doesn't follow `!include`.
 - Hover/outline cover people, software systems, containers and components;
   deployment nodes and custom elements aren't covered yet.
 - The WASM runtime is a desktop (Node extension host) build; it isn't wired up

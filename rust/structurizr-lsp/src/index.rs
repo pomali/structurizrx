@@ -50,6 +50,27 @@ pub fn build_declarations(tokens: &[Spanned]) -> Declarations {
     map
 }
 
+/// Every `Word` token that refers to `ident`, in source order, including its
+/// declaration.
+///
+/// Identifiers are matched case-insensitively and as whole tokens, mirroring
+/// how `IdentifierRegister` resolves them. Only `Word` tokens are considered,
+/// so an identifier's name appearing inside a quoted description or a comment
+/// is correctly left alone — which is what makes this safe to drive a rename.
+///
+/// Hierarchical references (`web.api`) are *not* matched: they lex as a single
+/// word, and rewriting one half of a dotted path needs the parser's scoping
+/// rules rather than a token scan.
+pub fn find_references(tokens: &[Spanned], ident: &str) -> Vec<Pos> {
+    tokens
+        .iter()
+        .filter_map(|t| match &t.token {
+            Token::Word(w) if w.eq_ignore_ascii_case(ident) => Some(t.pos),
+            _ => None,
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,5 +101,29 @@ mod tests {
         let tokens = tokenize(r#"properties { "key" "value" }"#);
         let decls = build_declarations(&tokens);
         assert!(decls.is_empty());
+    }
+
+    #[test]
+    fn references_find_declaration_and_uses_case_insensitively() {
+        let tokens = tokenize(
+            r#"
+            user = person "User"
+            web = softwareSystem "Web"
+            User -> web "Uses"
+            "#,
+        );
+        let refs = find_references(&tokens, "user");
+        assert_eq!(
+            refs.iter().map(|p| p.line).collect::<Vec<_>>(),
+            vec![2, 4],
+            "declaration plus the relationship source"
+        );
+    }
+
+    #[test]
+    fn references_ignore_quoted_text() {
+        // "user" inside the description must not be rewritten by a rename.
+        let tokens = tokenize(r#"user = person "user of the system""#);
+        assert_eq!(find_references(&tokens, "user").len(), 1);
     }
 }
