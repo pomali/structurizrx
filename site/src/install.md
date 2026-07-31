@@ -57,7 +57,7 @@ distribution and CPU, then install it with your package manager:
 Debian / Ubuntu (`.deb`) — amd64 or arm64:
 
 ```sh
-VERSION=0.1.0
+VERSION=0.1.1
 curl -LO https://github.com/pomali/structurizrx/releases/download/v${VERSION}/structurizrx_${VERSION}_amd64.deb
 sudo apt install ./structurizrx_${VERSION}_amd64.deb
 ```
@@ -65,7 +65,7 @@ sudo apt install ./structurizrx_${VERSION}_amd64.deb
 Fedora / RHEL / openSUSE (`.rpm`) — x86_64 or aarch64:
 
 ```sh
-VERSION=0.1.0
+VERSION=0.1.1
 curl -LO https://github.com/pomali/structurizrx/releases/download/v${VERSION}/structurizrx-${VERSION}-1.x86_64.rpm
 sudo dnf install ./structurizrx-${VERSION}-1.x86_64.rpm
 ```

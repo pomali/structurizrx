@@ -1,6 +1,6 @@
 [package]
 name = "structurizr-lsp-wasm"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "WebAssembly build of the Structurizr DSL language server"
 

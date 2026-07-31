@@ -1389,7 +1389,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "structurizr-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1405,7 +1405,7 @@ dependencies = [
 
 [[package]]
 name = "structurizr-dsl"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -1415,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "structurizr-lsp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "ls-types",
@@ -1429,7 +1429,7 @@ dependencies = [
 
 [[package]]
 name = "structurizr-lsp-wasm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde_json",
  "structurizr-lsp",
@@ -1438,7 +1438,7 @@ dependencies = [
 
 [[package]]
 name = "structurizr-model"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1447,7 +1447,7 @@ dependencies = [
 
 [[package]]
 name = "structurizr-query"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde_json",
  "structurizr-dsl",
@@ -1457,7 +1457,7 @@ dependencies = [
 
 [[package]]
 name = "structurizr-renderer"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "resvg",
  "structurizr-model",
@@ -1465,7 +1465,7 @@ dependencies = [
 
 [[package]]
 name = "structurizr-wasm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "js-sys",
  "serde_json",
@@ -1477,7 +1477,7 @@ dependencies = [
 
 [[package]]
 name = "structurizr-web"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
