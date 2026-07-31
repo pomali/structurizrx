@@ -74,5 +74,24 @@ declared outside it) — used by system landscape views to distinguish
 api; infrastructureNode "Load Balancer"; } }` describes what runs where, for
 deployment views — unchanged from upstream Structurizr.
 
+## Comments
+
+`//` and `#` start a line comment, and `/* … */` spans multiple lines. Unlike
+upstream Structurizr — where `//`/`#` are comments only when they are the
+first non-whitespace on a line — StructurizrX also accepts them **inline**,
+after other tokens:
+
+```text
+autolayout lr        # inline note, ignored to end of line
+background #1168bd    // the hex color is kept; this trailing comment is not
+```
+
+To keep hex colors and variable interpolation unambiguous, an inline `#`
+starts a comment only when it is followed by whitespace or the end of the
+line. `#1168bd` (a color value) and `#{VAR}` (interpolation) are therefore
+never mistaken for comments. An inline `//` always starts a comment; unquoted
+urls such as `https://example.com/theme.json` keep their `//` because it is
+part of the word, not a standalone token.
+
 Next: [Sketch mode](./sketch-mode.md) — the zero-ceremony way to start a model
 with no `workspace` block at all.
