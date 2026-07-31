@@ -63,12 +63,18 @@ structurizrx serve ws.dsl --port 3000 --open
 
 ## Install
 
-With Homebrew:
+With Homebrew (macOS & Linux, x86-64 and arm64):
 
 ```sh
 brew tap pomali/structurizrx https://github.com/pomali/structurizrx
-brew install structurizrx
+brew install pomali/structurizrx/structurizrx
 ```
+
+Or grab a prebuilt binary from the
+[latest release](https://github.com/pomali/structurizrx/releases/latest) —
+macOS (arm64/x86-64), Linux (x86-64 glibc, x86-64 static musl, arm64), and
+Windows (x86-64) archives are published for every tag. See the
+[install docs](site/src/install.md) for per-platform steps.
 
 Or build from source (Rust toolchain required):
 

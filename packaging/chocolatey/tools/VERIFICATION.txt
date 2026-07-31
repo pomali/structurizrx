@@ -1,0 +1,26 @@
+VERIFICATION
+
+This package downloads the official StructurizrX release archive published by
+the upstream project on GitHub. It is not distributed with the Chocolatey
+package itself.
+
+To verify the binary:
+
+1. Note the version and download URL used by tools\chocolateyinstall.ps1:
+
+     https://github.com/pomali/structurizrx/releases/download/v<version>/structurizrx-x86_64-pc-windows-msvc.zip
+
+2. Download that same archive from the GitHub Releases page:
+
+     https://github.com/pomali/structurizrx/releases
+
+3. Compare the SHA256 checksum of the downloaded archive against the
+   $checksum64 value in tools\chocolateyinstall.ps1, e.g. in PowerShell:
+
+     Get-FileHash structurizrx-x86_64-pc-windows-msvc.zip -Algorithm SHA256
+
+The checksum in the install script is produced by the release workflow at
+https://github.com/pomali/structurizrx from the exact archive attached to the
+GitHub release.
+
+LICENSE: Apache-2.0 — https://github.com/pomali/structurizrx/blob/main/LICENSE

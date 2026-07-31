@@ -21,6 +21,9 @@ To list every command, run `structurizrx --help`. Each subcommand has its own
 `structurizrx <cmd> --help`. Read those for exact flags. This skill covers only
 how to drive the tool well.
 
+If `structurizrx --version` fails, the CLI is not installed — see
+[install.md](install.md) for the one-line install per platform.
+
 ## Read the DSL from the tool first
 
 The tool documents the DSL and all its extensions: sketch mode, ports,

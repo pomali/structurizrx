@@ -1,0 +1,22 @@
+# nfpm config for building .deb and .rpm packages from a prebuilt binary.
+# Driven by the release workflow, which sets VERSION, ARCH, and BIN in the
+# environment before running `nfpm package --packager deb|rpm`.
+# https://nfpm.goreleaser.com/
+name: structurizrx
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: utils
+priority: optional
+maintainer: "pomali <structurizrx@users.noreply.github.com>"
+description: |
+  Structurizr DSL toolchain - Rust implementation.
+  Parse, validate, render, and serve C4 architecture models.
+vendor: pomali
+homepage: https://github.com/pomali/structurizrx
+license: Apache-2.0
+contents:
+  - src: ${BIN}
+    dst: /usr/bin/structurizrx
+    file_info:
+      mode: 0755

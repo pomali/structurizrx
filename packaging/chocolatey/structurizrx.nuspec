@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The <version> is rewritten by the release workflow on each tag. -->
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>structurizrx</id>
+    <version>0.1.0</version>
+    <title>StructurizrX</title>
+    <authors>pomali</authors>
+    <owners>pomali</owners>
+    <projectUrl>https://github.com/pomali/structurizrx</projectUrl>
+    <projectSourceUrl>https://github.com/pomali/structurizrx</projectSourceUrl>
+    <packageSourceUrl>https://github.com/pomali/structurizrx/tree/main/packaging/chocolatey</packageSourceUrl>
+    <docsUrl>https://github.com/pomali/structurizrx#readme</docsUrl>
+    <bugTrackerUrl>https://github.com/pomali/structurizrx/issues</bugTrackerUrl>
+    <licenseUrl>https://github.com/pomali/structurizrx/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <tags>structurizr c4 architecture diagrams dsl cli</tags>
+    <summary>Structurizr DSL toolchain - Rust implementation.</summary>
+    <description>
+A Rust re-implementation of the Structurizr C4-model architecture toolchain.
+Parse the Structurizr DSL, validate and query the model, render diagrams
+(SVG, PNG, PlantUML, Mermaid, DOT), and serve a live-reloading web viewer.
+    </description>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

@@ -2,7 +2,7 @@
 # To install, first add the tap:
 #
 #   brew tap pomali/structurizrx https://github.com/pomali/structurizrx
-#   brew install structurizrx
+#   brew install pomali/structurizrx/structurizrx
 class Structurizrx < Formula
   desc "Structurizr DSL toolchain - Rust implementation"
   homepage "https://github.com/pomali/structurizrx"
