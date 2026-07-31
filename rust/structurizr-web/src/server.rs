@@ -3,7 +3,7 @@
 use axum::{
     extract::{Path, State, WebSocketUpgrade},
     http::{header, StatusCode},
-    response::{Html, IntoResponse, Response},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::get,
     Json, Router,
 };
@@ -11,7 +11,7 @@ use axum::extract::ws::{Message, WebSocket};
 
 use structurizr_renderer::{exporter::DiagramExporter, mermaid::MermaidExporter, svg::SvgExporter};
 
-use crate::assets::Assets;
+use crate::assets::{Assets, DocsAssets};
 use crate::markdown::render_markdown;
 use crate::state::{AppState, BroadcastMsg, WorkspaceSummary};
 
@@ -43,6 +43,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/workspace/{name}/digest", get(api_digest_handler))
         .route("/api/workspace/{name}/query", get(api_query_handler))
         .route("/llms.txt", get(llms_txt_handler))
+        .route("/docs", get(|| async { Redirect::permanent("/docs/") }))
+        .route("/docs/", get(|| async { docs_asset_response("index.html") }))
+        .route("/docs/{*path}", get(docs_handler))
         .route("/static/{*path}", get(static_handler))
         .route("/ws", get(ws_handler))
         .layer(axum::middleware::from_fn(no_store_dynamic_responses))
@@ -331,6 +334,35 @@ fn render_diagram(
         .into_response()
 }
 
+/// Serve the pre-built mdBook documentation site embedded from `site/book/`
+/// (see `assets::DocsAssets`). `structurizr-web` never builds the book
+/// itself — it only serves whatever `mdbook build site` last produced.
+async fn docs_handler(Path(path): Path<String>) -> Response {
+    docs_asset_response(&path)
+}
+
+fn docs_asset_response(path: &str) -> Response {
+    match DocsAssets::get(path) {
+        Some(content) => {
+            let mime = mime_from_path(path);
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, mime)],
+                content.data.as_ref().to_vec(),
+            )
+                .into_response()
+        }
+        None if path == "index.html" => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            "<h1>Docs not built yet</h1><p>Run <code>mdbook build site</code> \
+             from the repository root, then restart <code>structurizrx serve</code>.</p>",
+        )
+            .into_response(),
+        None => (StatusCode::NOT_FOUND, format!("Doc page not found: {}", path)).into_response(),
+    }
+}
+
 async fn static_handler(Path(path): Path<String>) -> Response {
     match Assets::get(&path) {
         Some(content) => {
@@ -347,7 +379,9 @@ async fn static_handler(Path(path): Path<String>) -> Response {
 }
 
 fn mime_from_path(path: &str) -> &'static str {
-    if path.ends_with(".wasm") {
+    if path.ends_with(".html") {
+        "text/html; charset=utf-8"
+    } else if path.ends_with(".wasm") {
         "application/wasm"
     } else if path.ends_with(".js") {
         "application/javascript; charset=utf-8"

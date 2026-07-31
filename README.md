@@ -97,7 +97,25 @@ are legal; `!sketch` opts into leniency.
 
 The `serve` API mirrors the CLI for agents working against a live server:
 `/llms.txt`, `/api/workspaces`, `/api/workspace/{name}` (model JSON),
-`…/digest`, `…/query?expr=`, and `…/diagram/{key}/svg`.
+`…/digest`, `…/query?expr=`, and `…/diagram/{key}/svg`. `structurizrx serve`
+also hosts the full documentation site at `/docs/` (see below).
+
+## Documentation
+
+The full docs site — install, quickstart, a CLI reference, and a complete
+DSL language reference with examples — is published at
+[the GitHub Pages site](https://pomali.github.io/structurizrx/) and served
+locally at `/docs/` by `structurizrx serve`. It's an [mdBook](https://rust-lang.github.io/mdBook/)
+project under [`site/`](site/); build it yourself with:
+
+```sh
+cargo install mdbook   # if not already available
+./site/build.sh        # regenerates site/src/images/*.svg from site/examples/*.dsl,
+                        # then runs `mdbook build site` — output in site/book/
+```
+
+`.github/workflows/docs.yml` runs the same script and deploys `site/book/` to
+GitHub Pages on every push to `main` that touches `site/`.
 
 ## Design
 
@@ -124,6 +142,9 @@ All Rust code lives under [`rust/`](rust/) as a Cargo workspace:
 `original-java/` vendors upstream Structurizr sources; its DSL test fixtures
 serve as the compatibility corpus (67/84 upstream fixtures parse; the rest use
 features that are out of scope — archetypes, workspace `extends`, URL includes).
+
+[`site/`](site/) is the mdBook documentation site (see [Documentation](#documentation)
+above) — separate from `docs/SPEC.md`, which is the internal design spec.
 
 ## Status
 

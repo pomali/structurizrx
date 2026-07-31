@@ -19,6 +19,14 @@ fn main() {
     // Ensure the directory exists so rust-embed doesn't error when it is empty.
     std::fs::create_dir_all(&out_dir).ok();
 
+    // The docs site (`site/` at the repo root) is built separately with
+    // `mdbook build site` — this script never invokes mdBook. It only makes
+    // sure `site/book/` exists so the `DocsAssets` rust-embed derive doesn't
+    // fail to compile before the book has been built for the first time; the
+    // `/docs` route serves a setup message when this directory is empty.
+    let docs_out_dir = PathBuf::from(&manifest_dir).join("../../site/book");
+    std::fs::create_dir_all(&docs_out_dir).ok();
+
     let wasm_output = out_dir.join("structurizr_wasm_bg.wasm");
 
     // Only declare rerun triggers once the output already exists.
@@ -35,6 +43,15 @@ fn main() {
         );
     }
 
+    // wasm-pack always builds in release mode, shelling out to its own
+    // `cargo build --target wasm32-unknown-unknown`. Cargo's build-directory
+    // lock is keyed by profile name only (not by target triple), so if this
+    // outer build is itself `--release`, that nested cargo invocation
+    // contends for the exact same `target/release/.cargo-lock` this build
+    // script's own `cargo build` is holding — a self-deadlock. Point the
+    // nested build at its own target directory to avoid sharing the lock.
+    let wasm_target_dir = PathBuf::from(&manifest_dir).join("../target/wasm-pack");
+
     let result = Command::new("wasm-pack")
         .args([
             "build",
@@ -44,6 +61,7 @@ fn main() {
             "--out-dir",
             out_dir.to_str().unwrap(),
         ])
+        .env("CARGO_TARGET_DIR", &wasm_target_dir)
         .status();
 
     match result {

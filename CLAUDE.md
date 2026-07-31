@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-A Rust re-implementation of [Structurizr](https://structurizr.com/) — a C4 model architecture diagramming toolchain — evolving into an LLM-native architecture description system. It can parse the Structurizr DSL, export to multiple diagram formats (SVG, PNG, PlantUML, Mermaid, DOT), and serve a live-reloading local web viewer. All Rust code lives under `rust/`.
+A Rust re-implementation of [Structurizr](https://structurizr.com/) — a C4 model architecture diagramming toolchain — evolving into an LLM-native architecture description system. It can parse the Structurizr DSL, export to multiple diagram formats (SVG, PNG, PlantUML, Mermaid, DOT), and serve a live-reloading local web viewer. All Rust code lives under `rust/`. The user-facing documentation site (install/quickstart/CLI/language reference) is an mdBook project under `site/`, unrelated to the internal `docs/SPEC.md` design doc.
 
 The extended design (ports, relationship kinds, milestones, sketch mode, generated views) is specified in `docs/SPEC.md` — read it before design or implementation work on those features. Its §0 decisions log records settled design decisions; notably, upstream Structurizr interop is a non-goal (we read upstream DSL, but our extensions need not be valid upstream).
 
@@ -52,6 +52,20 @@ cargo install wasm-pack
 # then `cargo build -p structurizr-web` picks it up automatically
 ```
 
+`wasm-pack` always builds in release mode by shelling out to its own `cargo build --target wasm32-unknown-unknown`. Cargo's build-directory lock is keyed by profile name only, not by target triple, so if the *outer* build invoking `cargo build -p structurizr-web` (or anything depending on it, like `structurizr-cli`) is itself `--release`, that nested build would contend for the same `target/release/.cargo-lock` the outer build already holds — a self-deadlock (the outer build is blocked inside its own build script waiting on `wasm-pack`, which is blocked waiting for the lock). `build.rs` avoids this by pointing the nested build at its own `CARGO_TARGET_DIR` (`rust/target/wasm-pack`). Don't remove that `.env("CARGO_TARGET_DIR", ...)` call — debug builds happen not to collide (different lock file), so the deadlock only reproduces on `--release`, which makes it easy to miss.
+
+### Docs site build
+
+The mdBook project under `site/` is built separately from `cargo build` — `structurizr-web`'s `build.rs` never invokes mdBook, it only `mkdir -p`s `site/book/` so the `DocsAssets` rust-embed derive doesn't fail to compile before the book has been built for the first time.
+
+```sh
+cargo install mdbook   # if not already available
+./site/build.sh        # regenerates site/src/images/*.svg from site/examples/*.dsl
+                        # (via structurizr-cli render), then runs `mdbook build site`
+```
+
+`site/render-examples.sh` (called by `build.sh`) is the only place example diagrams are produced; `site/src/images/` and `site/book/` are both build artifacts (`.gitignore`d), not checked in. `.github/workflows/docs.yml` runs `site/build.sh` on pushes to `main` that touch `site/**` and deploys `site/book/` to GitHub Pages via `actions/deploy-pages`; the repo's Pages source must be set to "GitHub Actions" (Settings → Pages) for that to publish.
+
 ## Architecture
 
 The workspace dependency graph flows one way: `structurizr-model` ← `structurizr-dsl` / `structurizr-renderer` ← `structurizr-wasm` / `structurizr-web` ← `structurizr-cli`.
@@ -86,6 +100,7 @@ Axum HTTP server serving a workspace browser at `http://localhost:<port>`. Key r
 - `GET /workspace/{name}/diagram/{key}` — SVG diagram page
 - `GET /workspace/{name}/decisions` — ADR list
 - `GET /workspace/{name}/canvas` — Canvas demo (requires WASM build)
+- `GET /docs/` — the mdBook documentation site (see "Docs site build" above), served from `assets::DocsAssets` (embeds `site/book/`, separate from the workspace-viewer `assets::Assets` embed); `GET /docs` 308-redirects to it
 - `GET /api/workspace/{name}/diagram/{key}/svg` — raw SVG
 - `WS /ws` — live-reload WebSocket
 

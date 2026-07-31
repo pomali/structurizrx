@@ -1,0 +1,10 @@
+[book]
+title = "StructurizrX"
+description = "A Rust toolchain for describing software architecture as plain text and generating diagrams from it."
+authors = ["pom"]
+language = "en"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/pomali/structurizrx"
+edit-url-template = "https://github.com/pomali/structurizrx/edit/main/site/{path}"
