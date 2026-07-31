@@ -34,7 +34,8 @@ enum Commands {
     /// Render diagrams from a workspace file
     Render {
         file: PathBuf,
-        #[arg(long, default_value = "plantuml")]
+        /// Output format: svg, mermaid, plantuml, or dot
+        #[arg(long, default_value = "plantuml", value_name = "svg|mermaid|plantuml|dot")]
         format: String,
         #[arg(long, short, default_value = ".")]
         output: PathBuf,
