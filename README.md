@@ -61,6 +61,23 @@ structurizrx render ws.dsl --format svg --output ./out
 structurizrx serve ws.dsl --port 3000 --open
 ```
 
+`render` turns the workspace above into an SVG per generated view — landscape
+and container diagrams, side by side:
+
+<div style="display: flex; justify-content: center; gap: 1em; margin: 1em 0;">
+  <img src="docs/images/readme-landscape.svg" alt="System landscape diagram: Customer shops on Shop" height="260">
+  &nbsp;&nbsp;&nbsp;
+  <img src="docs/images/readme-containers.svg" alt="Container diagram: Web App calls API, API reads and writes Database" height="260">
+</div>
+
+`serve` hosts the same views in a live-reloading browser viewer — dark by
+default, with a sidebar of generated and focus views and click-to-drill-in
+elements:
+
+<p align="center">
+  <img src="docs/images/readme-web-viewer.png" alt="Screenshot of structurizrx serve showing the focus: API view of the Shop workspace" width="760">
+</p>
+
 ## Install
 
 With Homebrew (macOS & Linux, x86-64 and arm64):

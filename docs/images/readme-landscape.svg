@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="310" height="422" viewBox="0 0 310 422" font-family="Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#555555"/></marker>
+    <marker id="arrow-added" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#2e7d32"/></marker>
+    <marker id="arrow-removed" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#c62828"/></marker>
+  </defs>
+  <rect width="310" height="422" fill="#f8f8f8"/>
+  <text x="155" y="30" font-size="18" font-weight="bold" fill="#333333" text-anchor="middle">Shop — landscape</text>
+  <g transform="translate(40,88)">
+    <line x1="115.0" y1="128.0" x2="115.0" y2="224.0" stroke="#555555" stroke-width="1.4" marker-end="url(#arrow)"/>
+    <circle cx="115" cy="30" r="30" fill="#08427B" stroke="#052E56" stroke-width="1.5"/>
+    <rect x="0" y="58" width="230" height="70" rx="14" ry="14" fill="#08427B" stroke="#052E56" stroke-width="1.5"/>
+    <text x="115" y="90" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">Customer</text>
+    <text x="115" y="105" font-size="11" font-style="italic" fill="#ffffff" opacity="0.85" text-anchor="middle">[Person]</text>
+    <rect x="0" y="224" width="230" height="70" rx="4" ry="4" fill="#1168BD" stroke="#0B4884" stroke-width="1.5"/>
+    <text x="115" y="256" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">Shop</text>
+    <text x="115" y="271" font-size="11" font-style="italic" fill="#ffffff" opacity="0.85" text-anchor="middle">[Software System]</text>
+    <rect x="89.1" y="169.5" width="51.9" height="13" fill="#f8f8f8" opacity="0.88"/>
+    <text x="115.0" y="179.5" font-size="10.5" fill="#555555" text-anchor="middle">shops on</text>
+  </g>
+</svg>
