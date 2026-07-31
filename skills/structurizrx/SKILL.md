@@ -8,6 +8,7 @@ description: >-
   `.dsl` or workspace `.json` files, or architecture-as-code. Reach for it even
   if "structurizr" is never named but the user wants an architecture diagram, a
   C4 model, or a machine-readable description of components and how they relate.
+license: Apache-2.0
 ---
 
 # structurizrx
