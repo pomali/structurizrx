@@ -78,12 +78,28 @@ pub fn tokenize(source: &str) -> Vec<Spanned> {
 
         let pos = Pos { line, col };
 
-        // Single-line comment: a line whose first non-whitespace is `//` or `#`.
-        // `#{` is variable interpolation, never a comment.
-        if !line_has_content
-            && ((c == '/' && i + 1 < chars.len() && chars[i + 1] == '/')
-                || (c == '#' && !(i + 1 < chars.len() && chars[i + 1] == '{')))
-        {
+        // Single-line comment. Two forms both run to end of line:
+        //
+        //   * At line start (`!line_has_content`): `//` or `#` as the first
+        //     non-whitespace, matching upstream Structurizr's comment rule.
+        //     `#{` is variable interpolation, never a comment.
+        //   * Inline (after content, at a token boundary — a `#` or `//` only
+        //     reaches the top of this loop preceded by whitespace, so we don't
+        //     need to test the preceding char):
+        //       - `#` starts a comment only when the next char is whitespace or
+        //         end-of-line, so `color #ffffff` and `#{var}` stay tokens
+        //         while `auto # layout note` is a comment.
+        //       - `//` always starts a comment here; unquoted urls
+        //         (`https://…`) keep their `//` mid-word, so it never surfaces
+        //         at a token boundary.
+        let starts_line_comment = if line_has_content {
+            (c == '/' && i + 1 < chars.len() && chars[i + 1] == '/')
+                || (c == '#' && (i + 1 >= chars.len() || chars[i + 1].is_whitespace()))
+        } else {
+            (c == '/' && i + 1 < chars.len() && chars[i + 1] == '/')
+                || (c == '#' && !(i + 1 < chars.len() && chars[i + 1] == '{'))
+        };
+        if starts_line_comment {
             while i < chars.len() && chars[i] != '\n' {
                 i += 1;
                 col += 1;
@@ -293,6 +309,54 @@ mod tests {
         let tokens = tokenize("background #1168bd");
         assert_eq!(tokens.len(), 2);
         assert!(matches!(&tokens[1].token, Token::Word(w) if w == "#1168bd"));
+    }
+
+    #[test]
+    fn inline_hash_followed_by_space_is_a_comment() {
+        // `#` at a token boundary, followed by whitespace, comments the rest of
+        // the line — the keyword before it survives.
+        let tokens = tokenize("auto # this is a layout note");
+        assert_eq!(tokens.len(), 1);
+        assert!(matches!(&tokens[0].token, Token::Word(w) if w == "auto"));
+    }
+
+    #[test]
+    fn inline_hash_color_survives_alongside_inline_comment() {
+        let tokens = tokenize("background #1168bd # brand blue");
+        assert_eq!(tokens.len(), 2);
+        assert!(matches!(&tokens[0].token, Token::Word(w) if w == "background"));
+        assert!(matches!(&tokens[1].token, Token::Word(w) if w == "#1168bd"));
+    }
+
+    #[test]
+    fn inline_hash_interpolation_is_not_a_comment() {
+        // `#{` at a token boundary is variable interpolation, not a comment:
+        // the next char is `{`, not whitespace, so the rest of the line is
+        // still tokenized (the word reader splits on `{` as it always has).
+        let tokens = tokenize("name #{env}");
+        assert!(tokens.len() > 1, "got {tokens:?}");
+        assert!(matches!(&tokens[1].token, Token::Word(w) if w == "#"));
+    }
+
+    #[test]
+    fn trailing_bare_hash_is_a_comment() {
+        // A `#` as the last char on a line (nothing after it) is a comment.
+        let tokens = tokenize("auto #");
+        assert_eq!(tokens.len(), 1);
+        assert!(matches!(&tokens[0].token, Token::Word(w) if w == "auto"));
+    }
+
+    #[test]
+    fn inline_double_slash_is_a_comment_but_urls_survive() {
+        let tokens = tokenize("auto // layout note\nthemes https://example.com/t.json");
+        assert_eq!(tokens.len(), 3);
+        assert!(matches!(&tokens[0].token, Token::Word(w) if w == "auto"));
+        assert!(matches!(&tokens[1].token, Token::Word(w) if w == "themes"));
+        assert!(
+            matches!(&tokens[2].token, Token::Word(w) if w == "https://example.com/t.json"),
+            "got {:?}",
+            tokens[2].token
+        );
     }
 
     #[test]

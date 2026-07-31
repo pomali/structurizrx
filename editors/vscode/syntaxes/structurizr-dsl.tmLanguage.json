@@ -18,6 +18,16 @@
           "match": "//.*$"
         },
         {
+          "name": "comment.line.number-sign.structurizr-dsl",
+          "comment": "`#` as the first non-whitespace on a line is a comment.",
+          "match": "^\\s*#.*$"
+        },
+        {
+          "name": "comment.line.number-sign.structurizr-dsl",
+          "comment": "Inline `#` starts a comment only when followed by whitespace or end-of-line, so `#ffffff` colors and `#{var}` interpolation stay code.",
+          "match": "(?<=\\s)#(?=\\s|$).*$"
+        },
+        {
           "name": "comment.block.structurizr-dsl",
           "begin": "/\\*",
           "end": "\\*/"
