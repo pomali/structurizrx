@@ -1,0 +1,18 @@
+{
+  "id": "003-sketch-mode",
+  "title": "Firming up a sketch: Shop, Billing, ERP",
+  "prompt": "You have a vague idea, not yet a model: a customer buys something from a shop, which somehow charges the customer via a billing system, which then talks to an ERP system. Start by capturing it as a sketch (bare `source -> destination \"description\"` arrows, no `workspace` block, `?` on the uncertain relationship) to see what `structurizrx` infers. Then firm the sketch up into a full, valid workspace: give every element a real `person`/`softwareSystem` kind and a one-line description, and replace the uncertain \"somehow charges\" relationship with a concrete description of what actually happens. Run `structurizrx validate --strict` and make sure it reports zero lint findings — no leftover placeholders or `?`-marked relationships.",
+  "candidate": "candidates/003-sketch-mode.dsl",
+  "rubric": {
+    "strict_valid": true,
+    "required": [
+      "element.kind==softwaresystem && element.name==Billing",
+      "element.kind==softwaresystem && element.name==ERP",
+      "element.kind==person"
+    ],
+    "forbidden": [
+      "element.tag==Placeholder",
+      "relationship.tag==Uncertain"
+    ]
+  }
+}

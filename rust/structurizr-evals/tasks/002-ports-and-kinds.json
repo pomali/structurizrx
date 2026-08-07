@@ -1,0 +1,20 @@
+{
+  "id": "002-ports-and-kinds",
+  "title": "Ports and relationship kinds: Library catalog",
+  "prompt": "Model a Library system with two containers: a \"Web Portal\" (technology of your choice) and a \"Catalog API\" written in Rust. The Catalog API exposes a port named `catalog` for its REST interface, with protocol \"HTTPS/JSON\"; the Web Portal calls the API through that port. The Catalog API reads and writes to a \"Database\" container (technology PostgreSQL) over a synchronous relationship. Mark the Catalog API's status as `implemented`. Run `structurizrx validate --strict` before you consider it done.",
+  "candidate": "candidates/002-ports-and-kinds.dsl",
+  "rubric": {
+    "strict_valid": true,
+    "required": [
+      "element.kind==container && element.technology==Rust",
+      "element.kind==container && element.status==implemented",
+      "element.kind==container && element.technology==PostgreSQL",
+      "relationship.kind==sync"
+    ],
+    "digest_contains": [
+      "Catalog REST API",
+      "HTTPS/JSON",
+      "PostgreSQL"
+    ]
+  }
+}

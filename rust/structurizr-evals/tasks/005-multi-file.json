@@ -1,0 +1,18 @@
+{
+  "id": "005-multi-file",
+  "title": "Multi-file workspace: Orders and Customers",
+  "prompt": "Split a small microservice landscape across files using `!include`: a root workspace file that just wires subsystems together, plus one file per subsystem. A Customer (person) places orders via an Orders system; the Orders system looks up customer details from a Customers system. Put each system's own containers in its own file, and keep the cross-system relationship in the root file. Run `structurizrx validate --strict` on the root file before you consider it done.",
+  "candidate": "candidates/005-multi-file/root.dsl",
+  "rubric": {
+    "strict_valid": true,
+    "required": [
+      "element.kind==softwaresystem && element.name==Orders",
+      "element.kind==softwaresystem && element.name==Customers",
+      "element.kind==person"
+    ],
+    "digest_contains": [
+      "Orders",
+      "Customers"
+    ]
+  }
+}

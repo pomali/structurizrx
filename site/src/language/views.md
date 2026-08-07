@@ -85,6 +85,11 @@ auto slice relationship.kind==dataflow
 auto slice element.status==idea
 ```
 
+`layer` groups elements for this kind of slicing; see
+[`layers.dsl`](https://github.com/pomali/structurizrx/blob/main/site/examples/layers.dsl)
+for a worked example that groups a system into `"Core"` and `"Data"` and
+generates one `auto layer` view per group.
+
 **"What's unfinished or inconsistent?"** — model hygiene:
 
 ```text
@@ -109,7 +114,52 @@ auto delta now billingSplit     // union of both states — a migration/diff vie
 > Check the repository README's Status section for the current gap list
 > before relying on either.
 
+## Dynamic and deployment views
+
 Dynamic views (ordered interaction scenarios) and deployment views exist and
 parse using standard upstream Structurizr syntax, unchanged.
+
+A dynamic view numbers a sequence of `source -> destination "description"`
+steps in the order they're declared, for answering "what happens, in what
+order, when this use case runs":
+
+```text
+dynamic shop "checkout" "Placing an order" {
+    customer -> web "Clicks 'Buy now'"
+    web -> api "POST /orders"
+    api -> db "Inserts order row"
+    autoLayout
+}
+```
+
+A deployment view selects from a `deploymentEnvironment` — the
+infrastructure a system runs on (`deploymentNode`, `containerInstance`,
+`infrastructureNode`) — rather than from the model's structure:
+
+```text
+production = deploymentEnvironment "Production" {
+    deploymentNode "Amazon Web Services" {
+        deploymentNode "EC2 instance" {
+            apiInstance = containerInstance api
+        }
+    }
+}
+views {
+    deployment shop "Production" { include * }
+}
+```
+
+Full runnable examples:
+[`checkout-flow.dsl`](https://github.com/pomali/structurizrx/blob/main/site/examples/checkout-flow.dsl)
+and
+[`deployment.dsl`](https://github.com/pomali/structurizrx/blob/main/site/examples/deployment.dsl).
+
+> **Not yet rendered:** both view types validate and digest correctly, but
+> none of the four exporters (SVG, Mermaid, PlantUML, DOT) draws them yet —
+> `render` silently skips them with a warning today. The container view
+> below is the same underlying model, shown via a view type that *does*
+> render, as a stand-in until dynamic/deployment rendering lands.
+
+![Container view of Shop: Web App calling API, which reads and writes to Database](./images/checkout-flow/auto-container-shop.svg)
 
 Next: [Documentation and decisions](./documentation.md) for `!adrs`/`!include`.
