@@ -1414,6 +1414,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "structurizr-evals"
+version = "0.1.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "structurizr-dsl",
+ "structurizr-model",
+ "structurizr-query",
+]
+
+[[package]]
 name = "structurizr-lsp"
 version = "0.1.1"
 dependencies = [

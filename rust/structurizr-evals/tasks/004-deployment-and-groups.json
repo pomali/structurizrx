@@ -1,0 +1,17 @@
+{
+  "id": "004-deployment-and-groups",
+  "title": "Groups and a deployment view: Shop on AWS",
+  "prompt": "Model a Shop system with a Web App and an API container, both in a \"Core\" group. Add a Database container (technology PostgreSQL) in its own \"Data\" group. Then describe a Production deployment: the API and the Database both run on AWS, with the API sitting behind a Load Balancer infrastructure node. Add a `deployment` view for the Production environment. Run `structurizrx validate --strict` before you consider it done.",
+  "candidate": "candidates/004-deployment-and-groups.dsl",
+  "rubric": {
+    "strict_valid": true,
+    "required": [
+      "element.layer==Core",
+      "element.layer==Data",
+      "element.kind==container && element.technology==PostgreSQL"
+    ],
+    "digest_contains": [
+      "deployment env=Production"
+    ]
+  }
+}

@@ -26,5 +26,11 @@ Decisions are served by `structurizrx serve` at
 (single ADR, rendered from Markdown to HTML), and over the JSON API at
 `/api/workspace/{name}/decisions[/{id}]`.
 
+Full runnable example:
+[`decisions.dsl`](https://github.com/pomali/structurizrx/blob/main/site/examples/decisions.dsl)
+plus its
+[`decisions/`](https://github.com/pomali/structurizrx/tree/main/site/examples/decisions)
+directory of two MADR-format records.
+
 Next: [Multi-file workspaces](./multi-file.md) — splitting a large model
 across files with `!include`.
