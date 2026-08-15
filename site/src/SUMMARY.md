@@ -12,6 +12,7 @@
     - [query](./cli/query.md)
     - [export](./cli/export.md)
     - [docs](./cli/docs.md)
+    - [mcp](./cli/mcp.md)
 - [Language reference](./language/README.md)
     - [Core structure](./language/core-structure.md)
     - [Sketch mode](./language/sketch-mode.md)

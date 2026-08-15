@@ -12,6 +12,7 @@ The `structurizrx` binary (package `structurizr-cli`) accepts both `.dsl` and
 | [`query`](./query.md) | Run a selector expression against a workspace |
 | [`export`](./export.md) | Workspace JSON (superset of the Structurizr JSON schema) |
 | [`docs`](./docs.md) | Print the DSL cheat sheet |
+| [`mcp`](./mcp.md) | Run an MCP server over stdio with structured workspace tools |
 
 There's also `structurizrx lsp`, which runs the DSL language server over
 stdio for editor integration (see the VS Code extension under

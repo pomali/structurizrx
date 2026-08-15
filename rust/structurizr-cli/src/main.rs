@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+mod mcp;
 
 use structurizr_dsl::parse_file;
 use structurizr_model::{validation, ViewSet, Workspace};
@@ -80,9 +81,15 @@ enum Commands {
     /// Run the DSL language server over stdio (for editor integration, e.g.
     /// the VS Code extension in editors/vscode)
     Lsp,
+    /// Run an MCP server over stdio for agent tooling integration
+    Mcp {
+        /// Base directory used to resolve relative file/path arguments in tool calls
+        #[arg(default_value = ".")]
+        path: PathBuf,
+    },
 }
 
-fn load_workspace(path: &PathBuf) -> Result<Workspace> {
+pub(crate) fn load_workspace(path: &PathBuf) -> Result<Workspace> {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -299,6 +306,9 @@ async fn main() -> Result<()> {
         }
         Commands::Lsp => {
             structurizr_lsp::run_stdio().await?;
+        }
+        Commands::Mcp { path } => {
+            mcp::run(path)?;
         }
     }
 
