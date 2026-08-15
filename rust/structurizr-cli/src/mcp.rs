@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     fs,
     hash::{Hash, Hasher},
-    io::{self, BufRead, BufReader, Read, Write},
+    io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
 };
 
@@ -83,10 +83,16 @@ impl McpServer {
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_string();
-                let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+                let args = params
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_else(|| json!({}));
                 match self.call_tool(&name, &args) {
                     Ok(v) => rpc_ok(id, v),
-                    Err(e) => rpc_ok(id, tool_error("tool-call-failed", &format!("{:#}", e), &[], &[])),
+                    Err(e) => rpc_ok(
+                        id,
+                        tool_error("tool-call-failed", &format!("{:#}", e), &[], &[]),
+                    ),
                 }
             }
             "ping" => rpc_ok(id, json!({})),
@@ -217,7 +223,9 @@ impl McpServer {
                 "unknown-tool",
                 &format!("unknown tool '{name}'"),
                 &[],
-                &[String::from("Call tools/list to discover supported tool names.")],
+                &[String::from(
+                    "Call tools/list to discover supported tool names.",
+                )],
             )),
         }
     }
@@ -225,6 +233,7 @@ impl McpServer {
     fn workspace_list(&self, args: &Value) -> Result<Value> {
         let path = optional_str(args, "path")
             .map(|s| self.resolve_path(s))
+            .transpose()?
             .unwrap_or_else(|| self.root.clone());
         let entries = structurizr_web::resolver::resolve(&path)?;
         let out: Vec<Value> = entries
@@ -239,6 +248,7 @@ impl McpServer {
                 })
             })
             .collect();
+        let count = out.len();
         Ok(tool_ok(
             json!({
                 "ok": true,
@@ -246,14 +256,14 @@ impl McpServer {
                 "path": path.display().to_string(),
                 "workspaces": out,
             }),
-            format!("{} workspace(s)", out.len()),
+            format!("{} workspace(s)", count),
         ))
     }
 
     fn workspace_validate(&self, args: &Value) -> Result<Value> {
         let file = required_str(args, "file")?;
         let strict = args.get("strict").and_then(Value::as_bool).unwrap_or(false);
-        let path = self.resolve_path(file);
+        let path = self.resolve_path(file)?;
         let parsed = load_workspace_with_parse_details(&path);
 
         let mut errors = Vec::new();
@@ -303,7 +313,9 @@ impl McpServer {
         }
 
         let failed = !valid || (strict && !lint.is_empty());
-        let mut next_steps = vec![String::from("Fix reported errors and re-run workspace.validate.")];
+        let mut next_steps = vec![String::from(
+            "Fix reported errors and re-run workspace.validate.",
+        )];
         if strict && !lint.is_empty() {
             next_steps.push(String::from("Address lint findings because strict=true."));
         }
@@ -332,7 +344,7 @@ impl McpServer {
     fn workspace_query(&self, args: &Value) -> Result<Value> {
         let file = required_str(args, "file")?;
         let expression = required_str(args, "expression")?;
-        let path = self.resolve_path(file);
+        let path = self.resolve_path(file)?;
         let workspace = crate::load_workspace(&path)?;
         match structurizr_query::query(expression, &workspace) {
             Ok(selection) => {
@@ -347,8 +359,7 @@ impl McpServer {
                         })
                     })
                     .collect();
-                let relationships: Vec<String> =
-                    selection.relationships.iter().cloned().collect();
+                let relationships: Vec<String> = selection.relationships.iter().cloned().collect();
                 Ok(tool_ok(
                     json!({
                         "ok": true,
@@ -375,7 +386,9 @@ impl McpServer {
                     structurizr_query::QueryError::Parse { offset, .. } => (
                         "query-parse",
                         json!({ "offset": offset }),
-                        vec![String::from("Fix selector syntax and retry workspace.query.")],
+                        vec![String::from(
+                            "Fix selector syntax and retry workspace.query.",
+                        )],
                     ),
                     structurizr_query::QueryError::UnknownPath { .. } => (
                         "query-unknown-path",
@@ -418,14 +431,16 @@ impl McpServer {
             .unwrap_or("medium")
             .to_lowercase();
         let selector = optional_str(args, "selector");
-        let path = self.resolve_path(file);
+        let path = self.resolve_path(file)?;
         let mut workspace = crate::load_workspace(&path)?;
         if let Err(e) = structurizr_query::generate_views(&mut workspace) {
             return Ok(tool_error(
                 "view-generation",
                 &format!("view generation failed: {e}"),
                 &[path.display().to_string()],
-                &[String::from("Fix view-generation errors, then call workspace.digest again.")],
+                &[String::from(
+                    "Fix view-generation errors, then call workspace.digest again.",
+                )],
             ));
         }
         let max_chars = match size.as_str() {
@@ -465,7 +480,7 @@ impl McpServer {
                     "size": size,
                     "selector": expr,
                     "truncated": truncated,
-                    "text": text,
+                    "text": text.clone(),
                     "elementCount": selection.elements.len(),
                     "relationshipCount": selection.relationships.len(),
                 }),
@@ -481,7 +496,7 @@ impl McpServer {
                 "file": path.display().to_string(),
                 "size": size,
                 "truncated": truncated,
-                "text": text,
+                "text": text.clone(),
             }),
             text,
         ))
@@ -494,9 +509,10 @@ impl McpServer {
             .and_then(Value::as_str)
             .unwrap_or("svg")
             .to_lowercase();
-        let path = self.resolve_path(file);
+        let path = self.resolve_path(file)?;
         let output_dir = optional_str(args, "output")
             .map(|p| self.resolve_path(p))
+            .transpose()?
             .unwrap_or_else(|| self.root.join("out"));
         let mut workspace = crate::load_workspace(&path)?;
         let generated = structurizr_query::generate_views(&mut workspace)
@@ -545,7 +561,7 @@ impl McpServer {
 
     fn patch_preview(&mut self, args: &Value) -> Result<Value> {
         let file = required_str(args, "file")?;
-        let path = self.resolve_path(file);
+        let path = self.resolve_path(file)?;
         let old_content = fs::read_to_string(&path)
             .with_context(|| format!("Failed to read {}", path.display()))?;
         let new_content = if let Some(new_text) = args.get("newText").and_then(Value::as_str) {
@@ -570,7 +586,7 @@ impl McpServer {
                 "transactionId": tx_id,
                 "file": path.display().to_string(),
                 "changed": old_content != new_content,
-                "preview": preview,
+                "preview": preview.clone(),
                 "nextSteps": ["Call patch.apply with transactionId to write this change."],
             }),
             preview,
@@ -584,7 +600,9 @@ impl McpServer {
                 "unknown-transaction",
                 &format!("transaction '{tx}' not found"),
                 &[],
-                &[String::from("Run patch.preview first to create a transaction.")],
+                &[String::from(
+                    "Run patch.preview first to create a transaction.",
+                )],
             ));
         };
         let current = fs::read_to_string(&pending.file)
@@ -613,13 +631,16 @@ impl McpServer {
         ))
     }
 
-    fn resolve_path(&self, raw: &str) -> PathBuf {
+    fn resolve_path(&self, raw: &str) -> Result<PathBuf> {
         let p = PathBuf::from(raw);
-        if p.is_absolute() {
+        let joined = if p.is_absolute() {
             p
         } else {
             self.root.join(p)
-        }
+        };
+        let normalized = normalize_path(joined);
+        ensure_within_root(&normalized, &self.root, raw)?;
+        Ok(normalized)
     }
 }
 
@@ -677,10 +698,15 @@ fn validate_next_steps(code: &str, suggestions: &[String]) -> Vec<String> {
         "unknown-milestone" => out.push(String::from(
             "Declare the milestone in `milestones { ... }` or remove the reference.",
         )),
-        _ => out.push(String::from("Fix the reported issue and re-run workspace.validate.")),
+        _ => out.push(String::from(
+            "Fix the reported issue and re-run workspace.validate.",
+        )),
     }
     if let Some(first) = suggestions.first() {
-        out.push(format!("Try replacing with suggested identifier: '{}'.", first));
+        out.push(format!(
+            "Try replacing with suggested identifier: '{}'.",
+            first
+        ));
     }
     out
 }
@@ -701,7 +727,12 @@ fn tool_ok(structured: Value, text: String) -> Value {
     })
 }
 
-fn tool_error(code: &str, message: &str, affected_paths: &[String], next_steps: &[String]) -> Value {
+fn tool_error(
+    code: &str,
+    message: &str,
+    affected_paths: &[String],
+    next_steps: &[String],
+) -> Value {
     json!({
         "isError": true,
         "content": [{"type":"text","text": format!("[{}] {}", code, message)}],
@@ -789,7 +820,7 @@ fn extract_did_you_mean(message: &str) -> Vec<String> {
     let mut i = 0usize;
     while i + 13 < bytes.len() {
         if message[i..].starts_with("did you mean '") {
-            let start = i + 13;
+            let start = i + 14;
             if let Some(end_rel) = message[start..].find('\'') {
                 out.push(message[start..start + end_rel].to_string());
                 i = start + end_rel + 1;
@@ -817,10 +848,22 @@ fn apply_range_edits(content: &str, edits_value: &Value) -> Result<String> {
             .get("text")
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow!("edit.text must be a string"))?;
-        let s_line = start.get("line").and_then(Value::as_u64).ok_or_else(|| anyhow!("start.line missing"))? as usize;
-        let s_col = start.get("column").and_then(Value::as_u64).ok_or_else(|| anyhow!("start.column missing"))? as usize;
-        let e_line = end.get("line").and_then(Value::as_u64).ok_or_else(|| anyhow!("end.line missing"))? as usize;
-        let e_col = end.get("column").and_then(Value::as_u64).ok_or_else(|| anyhow!("end.column missing"))? as usize;
+        let s_line = start
+            .get("line")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| anyhow!("start.line missing"))? as usize;
+        let s_col = start
+            .get("column")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| anyhow!("start.column missing"))? as usize;
+        let e_line = end
+            .get("line")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| anyhow!("end.line missing"))? as usize;
+        let e_col = end
+            .get("column")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| anyhow!("end.column missing"))? as usize;
         let start_offset = line_col_to_offset(content, s_line, s_col)?;
         let end_offset = line_col_to_offset(content, e_line, e_col)?;
         if end_offset < start_offset {
@@ -909,6 +952,47 @@ fn content_hash(content: &str) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     content.hash(&mut hasher);
     hasher.finish()
+}
+
+fn normalize_path(path: PathBuf) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+fn ensure_within_root(path: &Path, root: &Path, raw: &str) -> Result<()> {
+    let resolved_anchor = if path.exists() {
+        fs::canonicalize(path)?
+    } else {
+        let mut ancestor = path.to_path_buf();
+        while !ancestor.exists() {
+            if !ancestor.pop() {
+                break;
+            }
+        }
+        if !ancestor.exists() {
+            root.to_path_buf()
+        } else {
+            fs::canonicalize(ancestor)?
+        }
+    };
+    if !resolved_anchor.starts_with(root) {
+        return Err(anyhow!(
+            "path '{}' resolves outside the MCP root '{}'",
+            raw,
+            root.display()
+        ));
+    }
+    Ok(())
 }
 
 fn read_message<R: BufRead>(reader: &mut R) -> Result<Option<String>> {
