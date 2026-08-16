@@ -39,6 +39,9 @@ extract, and put `structurizrx` on `PATH`:
 # Linux/macOS example — swap the asset name for the matching platform
 curl -LO https://github.com/pomali/structurizrx/releases/latest/download/structurizrx-x86_64-unknown-linux-gnu.tar.gz
 curl -LO https://github.com/pomali/structurizrx/releases/latest/download/structurizrx-x86_64-unknown-linux-gnu.tar.gz.sha256
+# Note: both files are served from the same host. For stronger assurance, cross-check
+# the hash against the signed release announcement or a GPG/Sigstore signature if
+# published alongside the release.
 sha256sum --check structurizrx-x86_64-unknown-linux-gnu.tar.gz.sha256
 tar xzf structurizrx-*.tar.gz
 
