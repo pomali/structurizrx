@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+mod mcp;
 
 use structurizr_dsl::parse_file;
 use structurizr_model::{validation, ViewSet, Workspace};
@@ -35,7 +36,11 @@ enum Commands {
     Render {
         file: PathBuf,
         /// Output format: svg, mermaid, plantuml, or dot
-        #[arg(long, default_value = "plantuml", value_name = "svg|mermaid|plantuml|dot")]
+        #[arg(
+            long,
+            default_value = "plantuml",
+            value_name = "svg|mermaid|plantuml|dot"
+        )]
         format: String,
         #[arg(long, short, default_value = ".")]
         output: PathBuf,
@@ -47,9 +52,7 @@ enum Commands {
         output: PathBuf,
     },
     /// Print a compact plain-text summary of the model, sized for LLM context
-    Digest {
-        file: PathBuf,
-    },
+    Digest { file: PathBuf },
     /// Run a selector expression against a workspace (spec §6.2),
     /// e.g. `query ws.dsl "element.tag==Database"` or `query ws.dsl "->api->2"`
     Query {
@@ -80,9 +83,15 @@ enum Commands {
     /// Run the DSL language server over stdio (for editor integration, e.g.
     /// the VS Code extension in editors/vscode)
     Lsp,
+    /// Run an MCP server over stdio for agent tooling integration
+    Mcp {
+        /// Base directory used to resolve relative file/path arguments in tool calls
+        #[arg(default_value = ".")]
+        path: PathBuf,
+    },
 }
 
-fn load_workspace(path: &PathBuf) -> Result<Workspace> {
+pub(crate) fn load_workspace(path: &PathBuf) -> Result<Workspace> {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -96,21 +105,38 @@ fn load_workspace(path: &PathBuf) -> Result<Workspace> {
             .with_context(|| format!("Failed to parse JSON from {}", path.display()))?;
         Ok(ws)
     } else {
-        parse_file(path)
-            .with_context(|| format!("Failed to parse DSL from {}", path.display()))
+        parse_file(path).with_context(|| format!("Failed to parse DSL from {}", path.display()))
     }
 }
 
 /// View-type name paired with how many views of that type are defined.
 fn view_type_counts(views: &ViewSet) -> Vec<(&'static str, usize)> {
     vec![
-        ("systemLandscape", views.system_landscape_views.as_ref().map_or(0, Vec::len)),
-        ("systemContext", views.system_context_views.as_ref().map_or(0, Vec::len)),
-        ("container", views.container_views.as_ref().map_or(0, Vec::len)),
-        ("component", views.component_views.as_ref().map_or(0, Vec::len)),
+        (
+            "systemLandscape",
+            views.system_landscape_views.as_ref().map_or(0, Vec::len),
+        ),
+        (
+            "systemContext",
+            views.system_context_views.as_ref().map_or(0, Vec::len),
+        ),
+        (
+            "container",
+            views.container_views.as_ref().map_or(0, Vec::len),
+        ),
+        (
+            "component",
+            views.component_views.as_ref().map_or(0, Vec::len),
+        ),
         ("dynamic", views.dynamic_views.as_ref().map_or(0, Vec::len)),
-        ("deployment", views.deployment_views.as_ref().map_or(0, Vec::len)),
-        ("filtered", views.filtered_views.as_ref().map_or(0, Vec::len)),
+        (
+            "deployment",
+            views.deployment_views.as_ref().map_or(0, Vec::len),
+        ),
+        (
+            "filtered",
+            views.filtered_views.as_ref().map_or(0, Vec::len),
+        ),
         ("image", views.image_views.as_ref().map_or(0, Vec::len)),
         ("custom", views.custom_views.as_ref().map_or(0, Vec::len)),
     ]
@@ -211,7 +237,11 @@ async fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
-        Commands::Render { file, format, output } => {
+        Commands::Render {
+            file,
+            format,
+            output,
+        } => {
             let mut workspace = load_workspace(&file)?;
             let generated = structurizr_query::generate_views(&mut workspace)
                 .map_err(|e| anyhow::anyhow!("view generation: {}", e))?;
@@ -257,7 +287,11 @@ async fn main() -> Result<()> {
             }
             print!("{}", structurizr_query::digest(&workspace));
         }
-        Commands::Query { file, expression, json } => {
+        Commands::Query {
+            file,
+            expression,
+            json,
+        } => {
             let workspace = load_workspace(&file)?;
             let selection = structurizr_query::query(&expression, &workspace)
                 .map_err(|e| anyhow::anyhow!("{}", e))?;
@@ -299,6 +333,9 @@ async fn main() -> Result<()> {
         }
         Commands::Lsp => {
             structurizr_lsp::run_stdio().await?;
+        }
+        Commands::Mcp { path } => {
+            mcp::run(path)?;
         }
     }
 
