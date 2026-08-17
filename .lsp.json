@@ -1,0 +1,10 @@
+{
+  "structurizr-dsl": {
+    "command": "structurizrx",
+    "args": ["lsp"],
+    "extensionToLanguage": {
+      ".dsl": "structurizr-dsl",
+      ".c4sx": "structurizr-dsl"
+    }
+  }
+}

@@ -14,5 +14,7 @@
     "architecture",
     "diagrams",
     "dsl"
-  ]
+  ],
+  "skills": "./skills/",
+  "lspServers": "./.lsp.json"
 }
