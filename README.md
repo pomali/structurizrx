@@ -101,6 +101,19 @@ cd structurizrx/rust
 cargo build --release -p structurizr-cli    # binary: target/release/structurizrx
 ```
 
+### Claude Code plugin
+
+This repo doubles as a [Claude Code plugin](https://code.claude.com/docs/en/plugins)
+and marketplace: installing it gives Claude the `structurizrx` skill, which
+teaches it to write and inspect DSL through the CLI (docs-first authoring, the
+validate/digest loop, sketch mode) instead of guessing at the format from
+memory. It still expects the `structurizrx` binary above to be on `PATH`.
+
+```
+/plugin marketplace add pomali/structurizrx
+/plugin install structurizrx@structurizrx
+```
+
 ## Commands
 
 | Command | What it does |

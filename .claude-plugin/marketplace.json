@@ -1,0 +1,23 @@
+{
+  "name": "structurizrx",
+  "description": "The structurizrx Claude Code plugin: author and inspect C4 architecture models with the structurizrx CLI.",
+  "owner": {
+    "name": "pomali",
+    "url": "https://github.com/pomali/structurizrx"
+  },
+  "plugins": [
+    {
+      "name": "structurizrx",
+      "source": "./",
+      "description": "Author, inspect, validate, query, and render C4 software-architecture models with the structurizrx CLI (a Structurizr DSL toolchain).",
+      "category": "documentation",
+      "tags": [
+        "structurizr",
+        "c4-model",
+        "architecture",
+        "diagrams",
+        "dsl"
+      ]
+    }
+  ]
+}
