@@ -586,8 +586,19 @@ impl Parser {
             if self.endpoint_resolves(&p.ident) {
                 let (id, port) = self.resolve_endpoint(&p.ident);
                 rewrite_rel_endpoint(model, &mut self.deferred_rels, &p.rel_id, p.source_side, &id, port);
-            } else if element_ids.contains(&p.ident) || self.sketch {
-                // Literal element id, or sketch mode (lenient by design).
+            } else if element_ids.contains(&p.ident) {
+                // Literal element id used directly; nothing to rewrite.
+            } else if self.sketch {
+                // Unresolved identifier reached here from a relationship nested
+                // inside an element body (top-level relationships already
+                // vivify at parse time, in `parse_relationship_in_model`,
+                // where `endpoint_resolves` above would already succeed).
+                // Create the placeholder now so the relationship doesn't end
+                // up pointing at a nonexistent id.
+                self.vivify_placeholder(model, &p.ident);
+                if let Some(id) = self.register.resolve_id(&p.ident) {
+                    rewrite_rel_endpoint(model, &mut self.deferred_rels, &p.rel_id, p.source_side, &id, None);
+                }
             } else {
                 first_pos.get_or_insert((p.line, p.col));
                 let mut msg = format!("unknown element identifier '{}' in relationship", p.ident);
@@ -2303,18 +2314,24 @@ impl Parser {
                     }
                 } else if !has_ident && self.peek_at_arrow_after_word() {
                     // Relationship between deployment nodes at environment level.
+                    let src_pos = self.current_pos();
                     let src = self.consume_string().unwrap_or_default();
                     self.advance(); // ->
+                    let dst_pos = self.current_pos();
                     let dst = self.consume_string().unwrap_or_default();
                     let desc = self.consume_string_if_not_brace();
                     let tech = self.consume_string_if_not_brace();
                     let rel_id = self.next_id();
-                    let src_id = self.resolve_identifier(&src);
-                    let dst_id = self.resolve_identifier(&dst);
+                    let (src_id, src_port) =
+                        self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos);
+                    let (dst_id, dst_port) =
+                        self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos);
                     env_rels.push(Relationship {
                         id: rel_id,
-                        source_id: src_id.clone(),
+                        source_id: src_id,
                         destination_id: dst_id,
+                        source_port_id: src_port,
+                        destination_port_id: dst_port,
                         description: desc,
                         technology: tech,
                         tags: Some("Relationship".to_string()),
@@ -2336,61 +2353,76 @@ impl Parser {
             self.expect_close_brace()?;
         }
 
-        // Attach environment-level relationships to their source nodes.
+        // Attach environment-level relationships to their source nodes. Any
+        // relationship whose source is a forward reference (not yet resolved
+        // to a real node id) is parked on the first node so it still lands in
+        // the model tree — `finalize_model` locates it by `rel_id` later and
+        // patches `source_id`/`destination_id` once the identifier resolves.
         if !env_rels.is_empty() {
-            Self::attach_deployment_rels(&mut nodes, &env_rels);
+            let unmatched = Self::attach_deployment_rels(&mut nodes, &env_rels);
+            if !unmatched.is_empty() {
+                if let Some(first) = nodes.first_mut() {
+                    first.relationships.get_or_insert_with(Vec::new).extend(unmatched);
+                }
+            }
         }
 
         Ok(nodes)
     }
 
     /// Recursively search deployment node trees for a source node and attach
-    /// unresolved environment-level relationships to it.
-    fn attach_deployment_rels(nodes: &mut Vec<DeploymentNode>, rels: &[Relationship]) {
-        for node in nodes.iter_mut() {
-            // Attach any relationship whose source matches this deployment node.
-            let to_attach: Vec<Relationship> = rels
-                .iter()
-                .filter(|r| r.source_id == node.id)
-                .cloned()
-                .collect();
-            if !to_attach.is_empty() {
-                let existing = node.relationships.get_or_insert_with(Vec::new);
-                existing.extend(to_attach);
-            }
-            // Also check infrastructure nodes within this deployment node.
-            if let Some(infra_nodes) = node.infrastructure_nodes.as_mut() {
-                for inf in infra_nodes.iter_mut() {
-                    let to_attach: Vec<Relationship> = rels
-                        .iter()
-                        .filter(|r| r.source_id == inf.id)
-                        .cloned()
-                        .collect();
-                    if !to_attach.is_empty() {
-                        let existing = inf.relationships.get_or_insert_with(Vec::new);
-                        existing.extend(to_attach);
+    /// unresolved environment-level relationships to it. Returns the subset of
+    /// `rels` whose source didn't match any node in this subtree, so the
+    /// caller can still park them somewhere in the model — a relationship
+    /// with a forward-referenced (not yet resolved) source has a placeholder
+    /// `source_id` that won't match any real node id yet, but it still needs
+    /// to land in the model tree for `finalize_model`'s end-of-parse retry to
+    /// find it by `rel_id` and patch its endpoints; dropping it here would
+    /// silently lose the relationship instead.
+    fn attach_deployment_rels(
+        nodes: &mut [DeploymentNode],
+        rels: &[Relationship],
+    ) -> Vec<Relationship> {
+        let mut unmatched: Vec<Relationship> = Vec::new();
+        for r in rels {
+            let mut matched = false;
+            for node in nodes.iter_mut() {
+                if r.source_id == node.id {
+                    node.relationships
+                        .get_or_insert_with(Vec::new)
+                        .push(r.clone());
+                    matched = true;
+                    break;
+                }
+                if let Some(infra_nodes) = node.infrastructure_nodes.as_mut() {
+                    if let Some(inf) = infra_nodes.iter_mut().find(|inf| inf.id == r.source_id) {
+                        inf.relationships.get_or_insert_with(Vec::new).push(r.clone());
+                        matched = true;
+                        break;
+                    }
+                }
+                if let Some(cis) = node.container_instances.as_mut() {
+                    if let Some(ci) = cis.iter_mut().find(|ci| ci.id == r.source_id) {
+                        ci.relationships.get_or_insert_with(Vec::new).push(r.clone());
+                        matched = true;
+                        break;
                     }
                 }
             }
-            // Also check container instances within this deployment node.
-            if let Some(cis) = node.container_instances.as_mut() {
-                for ci in cis.iter_mut() {
-                    let to_attach: Vec<Relationship> = rels
-                        .iter()
-                        .filter(|r| r.source_id == ci.id)
-                        .cloned()
-                        .collect();
-                    if !to_attach.is_empty() {
-                        let existing = ci.relationships.get_or_insert_with(Vec::new);
-                        existing.extend(to_attach);
-                    }
-                }
-            }
-            // Recurse into children.
-            if let Some(children) = node.children.as_mut() {
-                Self::attach_deployment_rels(children, rels);
+            if !matched {
+                unmatched.push(r.clone());
             }
         }
+
+        for node in nodes.iter_mut() {
+            if let Some(children) = node.children.as_mut() {
+                unmatched = Self::attach_deployment_rels(children, &unmatched);
+                if unmatched.is_empty() {
+                    return unmatched;
+                }
+            }
+        }
+        unmatched
     }
 
     fn parse_deployment_node(&mut self, identifier: &str, env: &str) -> Result<DeploymentNode, ParseError> {

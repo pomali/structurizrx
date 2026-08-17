@@ -435,10 +435,10 @@ fn gen_focus(
     };
 
     // BFS.
-    let mut visited: BTreeSet<String> = BTreeSet::new();
+    let mut depths: BTreeMap<String, u32> = BTreeMap::new();
     let mut rels: BTreeSet<String> = BTreeSet::new();
     let mut frontier = VecDeque::new();
-    visited.insert(target_id.clone());
+    depths.insert(target_id.clone(), 0);
     frontier.push_back((target_id.clone(), 0u32));
     while let Some((id, d)) = frontier.pop_front() {
         if d >= depth {
@@ -457,12 +457,14 @@ fn gen_focus(
             };
             if let Some(next) = next {
                 rels.insert(r.id.clone());
-                if visited.insert(next.clone()) {
+                if !depths.contains_key(next) {
+                    depths.insert(next.clone(), d + 1);
                     frontier.push_back((next.clone(), d + 1));
                 }
             }
         }
     }
+    let visited: BTreeSet<String> = depths.keys().cloned().collect();
 
     match spec.split_by.as_deref() {
         None => {
@@ -489,8 +491,12 @@ fn gen_focus(
                         if t.is_empty() { vec!["untagged".to_string()] } else { t }
                     }
                     _ /* layer */ => {
-                        // layer of the far endpoint (the one that isn't the focus target)
-                        let far = if r.source_id == target_id { &r.dest_id } else { &r.source_id };
+                        // layer of the far endpoint (the one with greater BFS distance
+                        // from the focus target; at depth > 1 neither endpoint need be
+                        // the target itself)
+                        let src_depth = depths.get(&r.source_id).copied().unwrap_or(u32::MAX);
+                        let dst_depth = depths.get(&r.dest_id).copied().unwrap_or(u32::MAX);
+                        let far = if dst_depth >= src_depth { &r.dest_id } else { &r.source_id };
                         let layer = idx.by_id.get(far).and_then(|i| {
                             let e = &idx.elements[*i];
                             e.properties.get("layer").cloned().or_else(|| e.group.clone())

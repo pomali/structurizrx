@@ -525,12 +525,7 @@ fn render_landscape(title: &str, view: &SystemLandscapeView, workspace: &Workspa
     let mut edges = lift_edges(edges, model, &visible);
     apply_delta_styling(view.properties.as_ref(), &mut nodes, &mut edges);
 
-    // Only use auto-layout when no stored positions are available.  Running layout
-    // when some nodes already have explicit coordinates would overwrite those values.
-    let positioned = apply_stored_positions(&mut nodes, &elem_pos);
-    if positioned == 0 {
-        layout(&mut nodes, &edges, None);
-    }
+    layout_respecting_stored_positions(&mut nodes, &edges, None, &elem_pos);
     render_svg(title, &nodes, &edges, None)
 }
 
@@ -565,10 +560,7 @@ fn render_system_context(title: &str, view: &SystemContextView, workspace: &Work
     let visible: HashSet<String> = nodes.iter().map(|n| n.id.clone()).collect();
     let mut edges = lift_edges(edges, model, &visible);
     apply_delta_styling(view.properties.as_ref(), &mut nodes, &mut edges);
-    let positioned = apply_stored_positions(&mut nodes, &elem_pos);
-    if positioned == 0 {
-        layout(&mut nodes, &edges, None);
-    }
+    layout_respecting_stored_positions(&mut nodes, &edges, None, &elem_pos);
     render_svg(title, &nodes, &edges, None)
 }
 
@@ -610,10 +602,7 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
     let visible: HashSet<String> = nodes.iter().map(|n| n.id.clone()).collect();
     let mut edges = lift_edges(edges, model, &visible);
     apply_delta_styling(view.properties.as_ref(), &mut nodes, &mut edges);
-    let positioned = apply_stored_positions(&mut nodes, &elem_pos);
-    if positioned == 0 {
-        layout(&mut nodes, &edges, Some(&container_ids));
-    }
+    layout_respecting_stored_positions(&mut nodes, &edges, Some(&container_ids), &elem_pos);
 
     let boundary = if container_ids.is_empty() {
         None
@@ -670,10 +659,7 @@ fn render_component_view(title: &str, view: &ComponentView, workspace: &Workspac
     let visible: HashSet<String> = nodes.iter().map(|n| n.id.clone()).collect();
     let mut edges = lift_edges(edges, model, &visible);
     apply_delta_styling(view.properties.as_ref(), &mut nodes, &mut edges);
-    let positioned = apply_stored_positions(&mut nodes, &elem_pos);
-    if positioned == 0 {
-        layout(&mut nodes, &edges, Some(&component_ids));
-    }
+    layout_respecting_stored_positions(&mut nodes, &edges, Some(&component_ids), &elem_pos);
 
     let boundary = if component_ids.is_empty() {
         None
@@ -1098,6 +1084,30 @@ fn collect_rels(rels: &Option<Vec<Relationship>>, edges: &mut Vec<Edge>, rel_fil
 }
 
 // ── View filter helpers ───────────────────────────────────────────────────────
+
+/// Position `nodes`, respecting any stored x/y positions in `pos`.
+///
+/// A view can mix elements with a stored position (the user dragged them, or
+/// they came from a previous render) and elements with none. Running
+/// auto-layout only when *no* node has a stored position would leave the
+/// unpositioned ones stacked on top of each other at `(0, 0)` as soon as a
+/// single node in the view had one — so whenever some but not all nodes are
+/// positioned, auto-layout still runs for the whole view and the stored
+/// positions are then re-applied on top, overriding the computed ones.
+fn layout_respecting_stored_positions(
+    nodes: &mut [Node],
+    edges: &[Edge],
+    boundary_ids: Option<&HashSet<String>>,
+    pos: &HashMap<String, (i32, i32)>,
+) {
+    let positioned = apply_stored_positions(nodes, pos);
+    if positioned == 0 {
+        layout(nodes, edges, boundary_ids);
+    } else if positioned < nodes.len() {
+        layout(nodes, edges, boundary_ids);
+        apply_stored_positions(nodes, pos);
+    }
+}
 
 /// Apply stored x/y positions from the element-position map to `nodes`.
 ///
@@ -2244,6 +2254,53 @@ mod tests {
         // normalises the canvas.  The 300px horizontal offset must survive.
         assert!(svg.contains(r#"x="100""#), "first box keeps stored x=100");
         assert!(svg.contains(r#"x="400""#), "second box keeps stored x=400");
+    }
+
+    #[test]
+    fn unpositioned_elements_are_auto_laid_out_alongside_stored_ones() {
+        // A view mixing one explicitly positioned element with two unpositioned
+        // ones must not leave the unpositioned pair stacked on top of each
+        // other at (0, 0) — auto-layout should still place them sensibly.
+        let mut workspace = Workspace::default();
+        workspace.name = "MixedPosTest".to_string();
+        workspace.model.software_systems = Some(vec![
+            SoftwareSystem { id: "1".to_string(), name: "SysA".to_string(), ..Default::default() },
+            SoftwareSystem { id: "2".to_string(), name: "SysB".to_string(), ..Default::default() },
+            SoftwareSystem { id: "3".to_string(), name: "SysC".to_string(), ..Default::default() },
+        ]);
+        workspace.views.system_landscape_views = Some(vec![SystemLandscapeView {
+            key: Some("Landscape".to_string()),
+            element_views: Some(vec![
+                ElementView { id: "1".to_string(), x: Some(500), y: Some(500) },
+                ElementView { id: "2".to_string(), x: None, y: None },
+                ElementView { id: "3".to_string(), x: None, y: None },
+            ]),
+            ..Default::default()
+        }]);
+
+        let exporter = SvgExporter;
+        let diagrams = exporter.export_workspace(&workspace);
+        let svg = &diagrams[0].content;
+
+        // The explicitly positioned box keeps its stored x.
+        assert!(svg.contains(r#"x="500""#), "positioned box keeps stored x=500");
+
+        // SysB and SysC must not end up at the same coordinates as each other.
+        let xs: Vec<&str> = svg
+            .match_indices(r#"x=""#)
+            .filter_map(|(i, _)| {
+                let rest = &svg[i + 3..];
+                let end = rest.find('"')?;
+                Some(&rest[..end])
+            })
+            .collect();
+        let mut sorted = xs.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert!(
+            sorted.len() > 1,
+            "unpositioned elements must not collapse onto the same coordinates: {xs:?}"
+        );
     }
 
     #[test]

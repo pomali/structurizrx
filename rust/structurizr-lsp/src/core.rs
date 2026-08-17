@@ -12,7 +12,7 @@ use structurizr_dsl::lexer::Pos;
 use structurizr_model::Workspace;
 
 use crate::context::context_at;
-use crate::convert::{point_range, position_to_pos};
+use crate::convert::{point_range, pos_to_position, position_to_pos};
 use crate::document::DocumentState;
 use crate::semantic;
 
@@ -162,11 +162,24 @@ impl Core {
         Some(build_symbols(&analyzed.workspace, &analyzed.id_to_pos))
     }
 
-    pub fn references(&self, uri: &Uri, position: Position) -> Option<Vec<Location>> {
-        let (_, ranges) = self.identifier_ranges(uri, position)?;
+    pub fn references(
+        &self,
+        uri: &Uri,
+        position: Position,
+        include_declaration: bool,
+    ) -> Option<Vec<Location>> {
+        let (word, ranges) = self.identifier_ranges(uri, position)?;
+        let decl_pos = if include_declaration {
+            None
+        } else {
+            let documents = self.documents.read().unwrap();
+            documents.get(uri)?.declarations.get(&word.to_lowercase()).copied()
+        };
+        let decl_start = decl_pos.map(pos_to_position);
         Some(
             ranges
                 .into_iter()
+                .filter(|range| Some(range.start) != decl_start)
                 .map(|range| Location {
                     uri: uri.clone(),
                     range,

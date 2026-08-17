@@ -719,6 +719,36 @@ workspace "WS" {
     assert!(systems[1].tags.as_deref().unwrap().contains("Placeholder"));
 }
 
+/// Vivification (spec §4.1) isn't limited to top-level model relationships:
+/// an unresolved endpoint on a relationship nested inside a `softwareSystem`
+/// body must also get a real placeholder element instead of being left as a
+/// dangling reference to a nonexistent id.
+#[test]
+fn sketch_directive_vivifies_nested_relationship_targets() {
+    let dsl = r#"
+workspace "WS" {
+    !sketch
+    model {
+        shop = softwareSystem "Shop" {
+            -> billing "charges"
+        }
+    }
+}
+"#;
+    let ws = parse_str(dsl).expect("should parse");
+    let systems = ws.model.software_systems.as_ref().unwrap();
+    assert_eq!(systems.len(), 2, "billing vivified");
+    let billing = systems.iter().find(|s| s.name == "billing").unwrap();
+    assert!(billing.tags.as_deref().unwrap().contains("Placeholder"));
+
+    let shop = systems.iter().find(|s| s.name == "Shop").unwrap();
+    let rel = &shop.relationships.as_ref().unwrap()[0];
+    assert_eq!(
+        rel.destination_id, billing.id,
+        "relationship must point at the vivified element's real id, not the raw identifier"
+    );
+}
+
 #[test]
 fn strict_workspace_rejects_unknown_relationship_target() {
     let dsl = r#"
@@ -1379,4 +1409,36 @@ workspace "Deploy" {
     // …and the view picks the replicated relationship up.
     let view = &ws.views.deployment_views.as_ref().unwrap()[0];
     assert_eq!(view.relationship_views.as_ref().unwrap().len(), 1);
+}
+
+/// A relationship written directly inside `deploymentEnvironment {}` whose
+/// source node is declared *later* in the same block is a forward reference:
+/// at the point the `->` line is parsed, neither identifier is registered
+/// yet. The relationship still has to survive into the final model with both
+/// endpoints resolved to real node ids, not silently vanish.
+#[test]
+fn forward_referenced_deployment_node_relationship_resolves() {
+    let dsl = r#"
+workspace "Deploy" {
+    model {
+        deploymentEnvironment "Live" {
+            a -> b "Talks to"
+            a = deploymentNode "A"
+            b = deploymentNode "B"
+        }
+    }
+}
+"#;
+    let ws = parse_str(dsl).expect("should parse");
+    let nodes = ws.model.deployment_nodes.as_ref().unwrap();
+    let a = nodes.iter().find(|n| n.name == "A").unwrap();
+    let b = nodes.iter().find(|n| n.name == "B").unwrap();
+
+    let rel = nodes
+        .iter()
+        .flat_map(|n| n.relationships.iter().flatten())
+        .find(|r| r.description.as_deref() == Some("Talks to"))
+        .expect("forward-referenced relationship should not be dropped");
+    assert_eq!(rel.source_id, a.id);
+    assert_eq!(rel.destination_id, b.id);
 }

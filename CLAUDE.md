@@ -87,7 +87,7 @@ pub trait DiagramExporter {
 ```
 Exporters: `SvgExporter`, `PlantUmlExporter`, `MermaidExporter`, `DotExporter`. All four respect workspace element styles (tag-based colour/stroke overrides). The optional `png` feature gates the `png` module, which exposes `svg_to_png(svg: &str) -> Vec<u8>` and `svg_to_rgba()` via `resvg` — there is no separate `PngExporter` struct. This feature is enabled by `structurizr-wasm` and not by any other crate.
 
-The SVG renderer does its own layout — a simplified Sugiyama hierarchical layout (longest-path layering → barycentric ordering → coordinate assignment), falling back to a grid when there are no edges. Layout is only run when no stored `x`/`y` positions exist on `ElementView`s.
+The SVG renderer does its own layout — a simplified Sugiyama hierarchical layout (longest-path layering → barycentric ordering → coordinate assignment), falling back to a grid when there are no edges. Auto-layout is skipped only when every element in the view has a stored `x`/`y` position; if some but not all do, auto-layout still runs for the whole view and the stored positions are then re-applied on top, so unpositioned elements don't collapse onto `(0, 0)`.
 
 ### `structurizr-wasm`
 Thin `wasm-bindgen` shim over the native renderer. Exposes `render_svg`, `render_png`, `render_first_svg`, `render_first_png`, and `render_to_canvas` (WASM-only). The crate is both a `cdylib` (WASM) and `rlib` (native tests).

@@ -97,8 +97,11 @@ impl LanguageServer for Backend {
     }
 
     async fn references(&self, params: ReferenceParams) -> RpcResult<Option<Vec<Location>>> {
+        let include_declaration = params.context.include_declaration;
         let p = params.text_document_position;
-        Ok(self.core.references(&p.text_document.uri, p.position))
+        Ok(self
+            .core
+            .references(&p.text_document.uri, p.position, include_declaration))
     }
 
     async fn document_highlight(

@@ -93,12 +93,22 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, String> {
                         b'\\' => s.push('\\'),
                         b'n'  => s.push('\n'),
                         b't'  => s.push('\t'),
-                        other => { s.push('\\'); s.push(other as char); }
+                        other if other.is_ascii() => { s.push('\\'); s.push(other as char); }
+                        _ => s.push('\\'),
                     }
-                } else {
+                    i += 1;
+                } else if bytes[i].is_ascii() {
                     s.push(bytes[i] as char);
+                    i += 1;
+                } else {
+                    let ch = std::str::from_utf8(&bytes[i..])
+                        .map_err(|_| format!("invalid utf-8 in string at offset {i}"))?
+                        .chars()
+                        .next()
+                        .ok_or_else(|| format!("invalid utf-8 in string at offset {i}"))?;
+                    s.push(ch);
+                    i += ch.len_utf8();
                 }
-                i += 1;
             }
             if i >= bytes.len() {
                 return Err(format!("unterminated string starting at offset {start}"));
@@ -112,7 +122,11 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, String> {
         if bytes[i].is_ascii_digit() {
             let mut n: u32 = 0;
             while i < bytes.len() && bytes[i].is_ascii_digit() {
-                n = n * 10 + (bytes[i] - b'0') as u32;
+                let digit = (bytes[i] - b'0') as u32;
+                n = n
+                    .checked_mul(10)
+                    .and_then(|n| n.checked_add(digit))
+                    .ok_or_else(|| format!("integer literal too large at offset {start}"))?;
                 i += 1;
             }
             out.push(Spanned { token: Token::Int(n), offset: start });

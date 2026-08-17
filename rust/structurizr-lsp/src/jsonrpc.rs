@@ -65,9 +65,12 @@ impl Dispatcher {
             }),
             "textDocument/documentSymbol" => decode::<DocumentSymbolParams>(params)
                 .map(|p| json!(self.core.document_symbol(&p.text_document.uri))),
-            "textDocument/references" => decode::<ReferenceParams>(params).map(|p| {
-                let p = p.text_document_position;
-                json!(self.core.references(&p.text_document.uri, p.position))
+            "textDocument/references" => decode::<ReferenceParams>(params).map(|full| {
+                let include_declaration = full.context.include_declaration;
+                let p = full.text_document_position;
+                json!(self
+                    .core
+                    .references(&p.text_document.uri, p.position, include_declaration))
             }),
             "textDocument/documentHighlight" => decode::<DocumentHighlightParams>(params).map(|p| {
                 let p = p.text_document_position_params;
@@ -284,6 +287,22 @@ mod tests {
             .map(|l| l["range"]["start"]["line"].as_u64().unwrap())
             .collect();
         assert_eq!(lines, vec![2, 4]);
+    }
+
+    #[test]
+    fn references_exclude_the_declaration_when_asked() {
+        let dispatcher = Dispatcher::new();
+        open(&dispatcher, LINKED);
+        let mut params = at_u();
+        params["context"] = json!({ "includeDeclaration": false });
+        let result = request(&dispatcher, "textDocument/references", params);
+        let lines: Vec<u64> = result
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l["range"]["start"]["line"].as_u64().unwrap())
+            .collect();
+        assert_eq!(lines, vec![4]);
     }
 
     #[test]

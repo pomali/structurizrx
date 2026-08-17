@@ -106,6 +106,7 @@ async fn decisions_handler(Path(name): Path<String>) -> Html<String> {
     Html(
         DECISIONS_HTML
             .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
             .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
     )
 }
@@ -114,6 +115,7 @@ async fn decision_handler(Path((name, id)): Path<(String, String)>) -> Html<Stri
     Html(
         DECISION_HTML
             .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
             .replace("{{WORKSPACE_SLUG}}", &js_escape(&name))
             .replace("{{DECISION_ID}}", &js_escape(&id)),
     )
@@ -123,6 +125,7 @@ async fn canvas_handler(Path(name): Path<String>) -> Html<String> {
     Html(
         CANVAS_HTML
             .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
             .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
     )
 }
