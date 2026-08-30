@@ -125,6 +125,7 @@ memory. It still expects the `structurizrx` binary above to be on `PATH`.
 | `query <ws> "<selector>" [--json]` | Run a selector expression, e.g. `element.tag==Database` or `->api->2` |
 | `export <ws>` | Workspace JSON (superset of the Structurizr JSON schema) |
 | `docs` | Print the DSL cheat sheet ([llms.txt](llms.txt)) |
+| `mcp [path]` | Run an MCP server over stdio exposing validate/digest/query/render/workspace tools |
 
 Errors are **strict by default**: unknown identifiers, misplaced or misspelled
 keywords fail with the offending file and line (include-aware), the accepted
