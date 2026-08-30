@@ -63,6 +63,9 @@ softwareSystem "Shop" {
 }
 ```
 
+Full runnable example, including an `auto layer` view per group:
+[`layers.dsl`](https://github.com/pomali/structurizrx/blob/main/site/examples/layers.dsl).
+
 ## Enterprise and deployment nodes
 
 `enterprise "Name" { ... }` scopes a block of `softwareSystem`/`person`
@@ -72,7 +75,11 @@ declared outside it) — used by system landscape views to distinguish
 
 `deploymentEnvironment "Name" { deploymentNode "Name" { containerInstance
 api; infrastructureNode "Load Balancer"; } }` describes what runs where, for
-deployment views — unchanged from upstream Structurizr.
+deployment views — unchanged from upstream Structurizr. Full runnable
+example:
+[`deployment.dsl`](https://github.com/pomali/structurizrx/blob/main/site/examples/deployment.dsl)
+(see [Views](./views.md#dynamic-and-deployment-views) for what does and
+doesn't render today).
 
 ## Comments
 

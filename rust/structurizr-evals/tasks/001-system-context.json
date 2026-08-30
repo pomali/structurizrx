@@ -1,0 +1,19 @@
+{
+  "id": "001-system-context",
+  "title": "System context: Delivery Platform",
+  "prompt": "Model a food-delivery platform in the Structurizr DSL: a Customer (a `person`) who uses your own software system called \"Delivery Platform\". The Delivery Platform in turn depends on an external software system called \"Payment Gateway\" to process card payments over a synchronous call — tag the Payment Gateway system \"External\". Add a views block. Run `structurizrx validate --strict` before you consider it done.",
+  "candidate": "candidates/001-system-context.dsl",
+  "rubric": {
+    "strict_valid": true,
+    "required": [
+      "element.kind==person",
+      "element.kind==softwaresystem && element.name==\"Delivery Platform\"",
+      "element.kind==softwaresystem && element.tag==External",
+      "relationship.kind==sync"
+    ],
+    "digest_contains": [
+      "Delivery Platform",
+      "Payment Gateway"
+    ]
+  }
+}

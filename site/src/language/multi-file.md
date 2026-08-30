@@ -31,3 +31,15 @@ change.
 Parse errors inside an included file report **that file's own path and line
 number**, not the root file's — so "line 5 of shop.dsl" points exactly where
 an agent needs to look, even several `!include` levels deep.
+
+Full runnable example: a root workspace
+[`catalog.dsl`](https://github.com/pomali/structurizrx/blob/main/site/examples/catalog.dsl)
+that `!include`s two subsystem files from a
+[`catalog/`](https://github.com/pomali/structurizrx/tree/main/site/examples/catalog)
+subdirectory and wires a cross-subsystem relationship between them. Note
+that identifiers declared inside an included file (`ordersApi`, `db`, ...)
+are flat, top-level names once included — not accessed as `orders.api` —
+so give elements you need to reference from outside their own file a
+globally unique identifier.
+
+![System landscape view: Customer, Orders and Customers systems](./images/catalog/auto-landscape.svg)
