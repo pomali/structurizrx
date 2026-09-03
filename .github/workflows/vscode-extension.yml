@@ -1,0 +1,137 @@
+name: VS Code extension
+
+# Builds the extension on every change to it, and publishes to the VS Code
+# Marketplace and Open VSX when a `vscode-v*` tag is pushed (e.g. vscode-v0.3.0).
+#
+# Required repository secrets for publishing:
+#   VSCE_PAT  - Azure DevOps PAT, scope "Marketplace > Manage", organization
+#               "All accessible organizations". https://marketplace.visualstudio.com/manage
+#   OVSX_PAT  - Open VSX access token. https://open-vsx.org/user-settings/tokens
+# The Open VSX step is skipped when OVSX_PAT is unset, so the Marketplace
+# release still goes out on its own.
+
+on:
+  # No `paths` filter on push: it would apply to the tag pushes too, and a
+  # release tag that happens to point at a commit touching nothing under
+  # editors/ would then silently skip the whole release.
+  push:
+    branches: [main]
+    tags:
+      - 'vscode-v*'
+  pull_request:
+    paths:
+      - 'editors/vscode/**'
+      - 'rust/structurizr-lsp/**'
+      - 'rust/structurizr-lsp-wasm/**'
+      - '.github/workflows/vscode-extension.yml'
+  workflow_dispatch:
+
+jobs:
+  package:
+    name: Build & package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-wasm32-cargo-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-wasm32-cargo-
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: Install dependencies
+        working-directory: editors/vscode
+        run: npm ci
+
+      - name: Check the tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/vscode-v')
+        working-directory: editors/vscode
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#vscode-v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME implies version $TAG_VERSION but package.json says $PKG_VERSION" >&2
+            exit 1
+          fi
+
+      # `vsce package` runs vscode:prepublish, which builds the WASM language
+      # server and then type-checks and bundles the TypeScript.
+      - name: Package
+        working-directory: editors/vscode
+        run: npx vsce package --out structurizr-dsl.vsix
+
+      - name: Upload VSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: structurizr-dsl-vsix
+          path: editors/vscode/structurizr-dsl.vsix
+
+  publish:
+    name: Publish
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/vscode-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    environment: vscode-marketplace
+    env:
+      # Job-level so the Open VSX step's `if:` can see whether it is set.
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+
+      - name: Install dependencies
+        working-directory: editors/vscode
+        run: npm ci
+
+      - name: Download VSIX
+        uses: actions/download-artifact@v4
+        with:
+          name: structurizr-dsl-vsix
+          path: editors/vscode
+
+      # Publishing the already-built .vsix means the artifact attached to the
+      # GitHub release is byte-for-byte what the marketplaces serve.
+      - name: Publish to the VS Code Marketplace
+        working-directory: editors/vscode
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx vsce publish --packagePath structurizr-dsl.vsix
+
+      - name: Publish to Open VSX
+        if: env.OVSX_PAT != ''
+        working-directory: editors/vscode
+        run: npx ovsx publish structurizr-dsl.vsix --pat "$OVSX_PAT"
+
+      - name: Attach the VSIX to a GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: editors/vscode/structurizr-dsl.vsix

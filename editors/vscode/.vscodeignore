@@ -1,9 +1,15 @@
 .vscode/**
 src/**
+esbuild.js
 tsconfig.json
 PLAN.md
 **/*.map
 .gitignore
 package-lock.json
-# node_modules is deliberately not ignored: vsce bundles only the production
-# dependencies, and vscode-languageclient is required at runtime.
+# The extension is bundled by esbuild into out/extension.js, so the runtime
+# dependencies are already inlined and node_modules has nothing left to ship.
+# The one exception is wasm/, which stays as loose files (see esbuild.js).
+node_modules/**
+wasm/*.d.ts
+wasm/package.json
+wasm/.gitignore
