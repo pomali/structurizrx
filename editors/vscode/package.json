@@ -1,9 +1,11 @@
 {
   "name": "structurizr-dsl",
-  "displayName": "StructurizrX DSL",
+  "displayName": "StructurizrX",
   "description": "Rich language support for the Structurizr DSL: diagnostics, hover, completion, go-to-definition, find references, rename, semantic highlighting and outline — no binary install required.",
   "version": "0.3.0",
-  "publisher": "structurizrx",
+  "private": true,
+  "publisher": "parnicky",
+  "pricing": "Free",
   "license": "Apache-2.0",
   "icon": "icon.png",
   "repository": {

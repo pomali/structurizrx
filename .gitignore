@@ -55,3 +55,5 @@ editors/vscode/wasm/
 .playwright-mcp/
 
 .DS_Store
+.env
+.env.*
