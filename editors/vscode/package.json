@@ -3,7 +3,6 @@
   "displayName": "StructurizrX DSL",
   "description": "Rich language support for the Structurizr DSL: diagnostics, hover, completion, go-to-definition, find references, rename, semantic highlighting and outline — no binary install required.",
   "version": "0.3.0",
-  "private": true,
   "publisher": "structurizrx",
   "license": "Apache-2.0",
   "icon": "icon.png",
@@ -88,10 +87,13 @@
   },
   "scripts": {
     "build:wasm": "wasm-pack build ../../rust/structurizr-lsp-wasm --release --target nodejs --out-dir ../../editors/vscode/wasm --out-name structurizr_lsp_wasm",
-    "compile": "tsc -p ./",
-    "watch": "tsc -w -p ./",
-    "vscode:prepublish": "npm run build:wasm && npm run compile",
-    "package": "vsce package --allow-missing-repository"
+    "check-types": "tsc --noEmit -p ./",
+    "compile": "node esbuild.js",
+    "compile:production": "node esbuild.js --production",
+    "watch": "node esbuild.js --watch",
+    "vscode:prepublish": "npm run build:wasm && npm run check-types && npm run compile:production",
+    "package": "vsce package",
+    "publish": "vsce publish"
   },
   "dependencies": {
     "vscode-jsonrpc": "^9.0.0",
@@ -100,7 +102,9 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.91.0",
-    "typescript": "^5.5.0",
-    "@vscode/vsce": "^3.9.2"
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.25.0",
+    "ovsx": "^0.10.1",
+    "typescript": "^5.5.0"
   }
 }
