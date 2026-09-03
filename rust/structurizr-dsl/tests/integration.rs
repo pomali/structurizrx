@@ -1442,3 +1442,18 @@ workspace "Deploy" {
     assert_eq!(rel.source_id, a.id);
     assert_eq!(rel.destination_id, b.id);
 }
+
+#[test]
+fn empty_file_is_an_empty_sketch_not_an_error() {
+    for dsl in ["", "\n\n   \n", "// nothing here yet\n"] {
+        let ws = parse_str(dsl).expect("empty/comment-only file should parse as an empty sketch");
+        assert_eq!(ws.name, "Sketch");
+        let views = ws
+            .views
+            .system_landscape_views
+            .as_ref()
+            .expect("default sketch view");
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].key.as_deref(), Some("sketch"));
+    }
+}

@@ -958,7 +958,10 @@ impl Parser {
 
         // A file with no `workspace` block is a sketch (spec §4.1): bare model
         // statements, auto-vivified placeholders, one default landscape view.
-        if !self.peek_word("workspace") && self.peek().is_some() {
+        // An empty (or comment-only) file is the degenerate case — an empty
+        // sketch, not a parse error, so `serve` can watch a file you have not
+        // started writing yet.
+        if !self.peek_word("workspace") {
             return self.parse_sketch();
         }
 
