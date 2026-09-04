@@ -28,6 +28,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/", get(index_handler))
         .route("/workspace/{name}", get(workspace_handler))
         .route("/workspace/{name}/diagram/{key}", get(diagram_handler))
+        .route("/workspace/{name}/graph", get(graph_handler))
         .route("/workspace/{name}/decisions", get(decisions_handler))
         .route("/workspace/{name}/decisions/{id}", get(decision_handler))
         .route("/workspace/{name}/canvas", get(canvas_handler))
@@ -89,6 +90,7 @@ async fn workspace_handler(Path(name): Path<String>) -> Html<String> {
     Html(
         WORKSPACE_HTML
             .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
+            .replace("{{WORKSPACE_PATH}}", &url_path_segment(&name))
             .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
     )
 }
@@ -100,6 +102,23 @@ async fn diagram_handler(Path((name, key)): Path<(String, String)>) -> Html<Stri
             .replace("{{WORKSPACE_SLUG}}", &js_escape(&name))
             .replace("{{DIAGRAM_KEY}}", &js_escape(&key)),
     )
+}
+
+async fn graph_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Response {
+    let workspaces = state.workspaces.lock().unwrap();
+    let Some(entry) = workspaces.iter().find(|e| e.name == name) else {
+        return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
+    };
+    match crate::static_site::graph_page(
+        &entry.workspace,
+        &format!("/workspace/{}", url_path_segment(&name)),
+    ) {
+        Ok(page) => Html(page).into_response(),
+        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+    }
 }
 
 async fn decisions_handler(Path(name): Path<String>) -> Html<String> {
@@ -456,4 +475,16 @@ fn js_escape(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('\'', "\\'")
         .replace('"', "\\\"")
+}
+
+fn url_path_segment(value: &str) -> String {
+    value
+        .bytes()
+        .flat_map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                vec![byte as char]
+            }
+            _ => format!("%{byte:02X}").chars().collect(),
+        })
+        .collect()
 }

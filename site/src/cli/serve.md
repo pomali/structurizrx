@@ -24,6 +24,7 @@ WebSocket automatically — no manual refresh.
 | `GET /` | Workspace list |
 | `GET /workspace/{name}` | Workspace overview |
 | `GET /workspace/{name}/diagram/{key}` | A single diagram |
+| `GET /workspace/{name}/graph` | Interactive relationship graph |
 | `GET /workspace/{name}/decisions` | ADR list (from `!adrs`) |
 | `GET /workspace/{name}/decisions/{id}` | A single ADR |
 | `GET /workspace/{name}/canvas` | In-browser WASM rendering demo |

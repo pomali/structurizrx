@@ -41,23 +41,29 @@ pub fn export(workspace: &Workspace, output: &Path) -> Result<()> {
     std::fs::write(output.join("index.html"), index)
         .with_context(|| format!("Cannot write {}", output.join("index.html").display()))?;
 
+    std::fs::write(output.join("graph.html"), graph_page(workspace, "index.html")?)
+        .with_context(|| format!("Cannot write {}", output.join("graph.html").display()))?;
+    Ok(())
+}
+
+/// Render the standalone interactive relationship graph page.
+pub fn graph_page(workspace: &Workspace, overview_href: &str) -> Result<String> {
+    let title = html_escape(&workspace.name);
     let workspace_json = serde_json::to_string(workspace)?.replace('<', "\\u003c");
-    let graph = format!(
+    Ok(format!(
         r#"<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title} relationship graph – StructurizrX</title>
 <style>{} #graph{{width:100%;height:calc(100vh - 130px);border:1px solid #ddd}} .node{{cursor:pointer}} text{{pointer-events:none;font:12px sans-serif}}</style>
-<main><nav><a href="index.html">← Overview</a></nav><h1>{title} relationship graph</h1>
+<main><nav><a href="{}">← Overview</a></nav><h1>{title} relationship graph</h1>
 <p>Drag nodes to explore relationships. Scroll to zoom and drag the background to pan.</p>
 <svg id="graph" aria-label="Interactive relationship graph"></svg></main>
 <script id="workspace-data" type="application/json">{workspace_json}</script>
 <script>{}</script></html>"#,
         base_css(),
+        html_escape(overview_href),
         graph_script()
-    );
-    std::fs::write(output.join("graph.html"), graph)
-        .with_context(|| format!("Cannot write {}", output.join("graph.html").display()))?;
-    Ok(())
+    ))
 }
 
 fn safe_filename(name: &str) -> String {
