@@ -117,3 +117,7 @@ Selector-expression engine (spec §6.2) and view generation (`generate_views`, s
 
 ### `structurizr-cli`
 Entry point `structurizrx`. Subcommands: `validate [--strict]`, `render`, `export`, `digest`, `query`, `serve`. Accepts both `.dsl` and `.json` workspace files. `render` and `serve` materialize generated (`auto`) views before rendering.
+
+
+### `editors/vscode`
+VS Code extension. `README.md` is marketplace description. Technicalities go to `DEVELOPER.md`.

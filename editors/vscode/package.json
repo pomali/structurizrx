@@ -1,8 +1,8 @@
 {
   "name": "structurizr-dsl",
-  "displayName": "StructurizrX",
-  "description": "Rich language support for the Structurizr DSL: diagnostics, hover, completion, go-to-definition, find references, rename, semantic highlighting and outline — no binary install required.",
-  "version": "0.3.0",
+  "displayName": "StructurizrX - Better C4",
+  "description": "Rich language support for the Structurizr DSL: diagnostics, hover, completion, go-to-definition, find references, rename, semantic highlighting and outline — no binary install required. With StructurizrX extension.",
+  "version": "0.3.1",
   "private": true,
   "publisher": "parnicky",
   "pricing": "Free",
