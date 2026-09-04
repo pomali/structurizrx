@@ -58,10 +58,10 @@ pub fn graph_page(workspace: &Workspace, overview_href: &str, asset_prefix: &str
         r#"<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title} relationship graph – StructurizrX</title>
-<style>{} #graph{{width:100%;height:calc(100vh - 130px);border:1px solid #ddd}}</style>
+<style>{} .graph-layout{{display:flex;gap:1rem;height:calc(100vh - 170px)}}#graph{{flex:1;min-width:0;border:1px solid #ddd}}#node-details{{width:260px;padding:1rem;border:1px solid #ddd;background:#fff;overflow:auto}}#node-details pre{{white-space:pre-wrap;word-break:break-word;font-size:.8rem}}@media(max-width:700px){{.graph-layout{{height:auto;flex-direction:column}}#graph{{height:60vh}}#node-details{{width:auto}}}}</style>
 <main><nav><a href="{}">← Overview</a></nav><h1>{title} relationship graph</h1>
-<p>Drag nodes to explore relationships. Scroll to zoom and drag the background to pan.</p>
-<div id="graph" aria-label="Interactive relationship graph"></div></main>
+<p>Drag nodes to explore relationships. Select a node to copy a reference for an LLM agent.</p>
+<div class="graph-layout"><div id="graph" aria-label="Interactive relationship graph"></div><aside id="node-details" aria-live="polite"><strong>Select a node</strong><p>Its ID, name, type, and description can be copied here.</p></aside></div></main>
 <script id="workspace-data" type="application/json">{workspace_json}</script>
 <script src="{asset_prefix}/jquery-3.7.1.min.js"></script>
 <script src="{asset_prefix}/jointjs-Core-4.1.3.js"></script>
@@ -116,9 +116,13 @@ function relationships(items){(items||[]).forEach(x=>{(x.relationships||[]).forE
 relationships(ws.model.people);relationships(ws.model.softwareSystems);relationships(ws.model.customElements);
 const graph=new joint.dia.Graph(), paper=new joint.dia.Paper({el:document.getElementById('graph'),model:graph,width:'100%',height:'100%',gridSize:10,drawGrid:true,interactive:true,async:true});
 const nodeById=new Map();
-elements.forEach((element,index)=>{const node=new joint.shapes.standard.Rectangle({position:{x:80+(index%5)*200,y:80+Math.floor(index/5)*120},size:{width:150,height:58},attrs:{body:{fill:'#438dd5',stroke:'#1168bd',rx:6,ry:6},label:{text:element.name||element.id,fill:'#fff',fontSize:13,textWrap:{width:-16,height:-16}}}});nodeById.set(element.id,node);graph.addCell(node)});
+function reference(element){return ['Element','ID: '+element.id,'Name: '+(element.name||''),'Type: '+(element.type||''),element.technology?'Technology: '+element.technology:'',element.description?'Description: '+element.description:''].filter(Boolean).join('\n')}
+function copy(text){if(navigator.clipboard&&window.isSecureContext)return navigator.clipboard.writeText(text);const area=document.createElement('textarea');area.value=text;area.style.position='fixed';area.style.opacity='0';document.body.append(area);area.select();document.execCommand('copy');area.remove();return Promise.resolve()}
+function showDetails(element){const panel=document.getElementById('node-details'), text=reference(element);panel.replaceChildren();const heading=document.createElement('strong');heading.textContent=element.name||element.id;const details=document.createElement('pre');details.textContent=text;const button=document.createElement('button');button.type='button';button.textContent='Copy reference';button.onclick=()=>copy(text).then(()=>{button.textContent='Copied'}).catch(()=>{button.textContent='Copy failed'});panel.append(heading,details,button)}
+elements.forEach((element,index)=>{const node=new joint.shapes.standard.Rectangle({position:{x:80+(index%5)*200,y:80+Math.floor(index/5)*120},size:{width:150,height:58},attrs:{body:{fill:'#438dd5',stroke:'#1168bd',rx:6,ry:6},label:{text:element.name||element.id,fill:'#fff',fontSize:13,textWrap:{width:-16,height:-16}}}});nodeById.set(element.id,node);node.set('element',element);graph.addCell(node)});
 links.forEach(relationship=>{const source=nodeById.get(relationship.sourceId),target=nodeById.get(relationship.destinationId);if(!source||!target)return;graph.addCell(new joint.shapes.standard.Link({source:{id:source.id},target:{id:target.id},attrs:{line:{stroke:'#6c757d',targetMarker:{type:'path',d:'M 10 -5 0 0 10 5 z'}}}}))});
 joint.layout.DirectedGraph.layout(graph,{dagre,graphlib,setVertices:true,nodeSep:50,rankSep:80,marginX:40,marginY:40});
+paper.on('cell:pointerclick',cellView=>showDetails(cellView.model.get('element')));
 paper.on('blank:pointerdown',(evt,x,y)=>paper.setInteractivity(false));
 paper.on('cell:pointerup',()=>paper.setInteractivity(true));
 })()"#
