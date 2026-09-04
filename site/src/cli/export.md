@@ -27,3 +27,15 @@ Exported workspace to ws.json
 `export` does **not** materialize generated (`auto`) views the way
 `render`/`serve`/`digest` do — it exports the workspace's model and views
 exactly as authored (or as separately generated and re-imported).
+
+## Static website
+
+Export a portable, server-free HTML artifact with rendered SVG diagrams and an
+interactive relationship graph:
+
+```sh
+structurizrx export-site ws.dsl --output ./site
+```
+
+Open `site/index.html` in any browser. Generated views are materialized, just
+as they are for `render` and `serve`.
