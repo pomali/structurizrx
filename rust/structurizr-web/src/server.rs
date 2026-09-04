@@ -115,6 +115,7 @@ async fn graph_handler(
     match crate::static_site::graph_page(
         &entry.workspace,
         &format!("/workspace/{}", url_path_segment(&name)),
+        "/static/js",
     ) {
         Ok(page) => Html(page).into_response(),
         Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
