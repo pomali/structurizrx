@@ -952,11 +952,11 @@ fn layout_grid(nodes: &mut [Node], cols: usize) {
         place_row(nodes, chunk, 0, y, ch);
         y += ch + V_GAP;
     }
+}
 
-    fn preferred_grid_cols(node_count: usize) -> usize {
-        let cols = (node_count as f64).sqrt().ceil() as usize;
-        cols.clamp(1, GRID_COLS)
-    }
+fn preferred_grid_cols(node_count: usize) -> usize {
+    let cols = (node_count as f64).sqrt().ceil() as usize;
+    cols.clamp(1, GRID_COLS)
 }
 
 // ── Edge collection ───────────────────────────────────────────────────────────
