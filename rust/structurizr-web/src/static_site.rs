@@ -6,48 +6,69 @@ use anyhow::{Context, Result};
 use structurizr_model::Workspace;
 use structurizr_renderer::{exporter::DiagramExporter, svg::SvgExporter};
 
-/// Write a self-contained, browsable workspace artifact to `output`.
-///
-/// The artifact contains an overview, one SVG per supported diagram, and an
-/// interactive relationship graph. It needs no web server or third-party CDN.
+/// Write a single-page SVG technical report to `output`.
 pub fn export(workspace: &Workspace, output: &Path) -> Result<()> {
     std::fs::create_dir_all(output)
         .with_context(|| format!("Cannot create output dir {}", output.display()))?;
-    copy_jointjs_assets(output)?;
 
     let diagrams = SvgExporter.export_workspace(workspace);
-    let mut diagram_links = String::new();
+    let mut index = String::new();
+    let mut content = String::new();
     for diagram in &diagrams {
-        let filename = format!("{}.svg", safe_filename(&diagram.key));
-        std::fs::write(output.join(&filename), &diagram.content)
-            .with_context(|| format!("Cannot write {}", output.join(&filename).display()))?;
-        diagram_links.push_str(&format!(
-            r#"<li><a href="{filename}">{}</a></li>"#,
+        let id = safe_filename(&diagram.key);
+        index.push_str(&format!(
+            r##"<li><a href="#{id}">{}</a></li>"##,
             html_escape(&diagram.key)
+        ));
+        content.push_str(&format!(
+            r#"<section id="{id}"><h2>{}</h2>{}</section>"#,
+            html_escape(&diagram.key),
+            diagram.content
         ));
     }
 
     let title = html_escape(&workspace.name);
     let description = workspace.description.as_deref().map(html_escape).unwrap_or_default();
-    let index = format!(
+    let report = format!(
         r#"<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title} – StructurizrX</title>
-<style>{}</style>
+<style>{} section{{margin:3rem 0}}section svg{{display:block;max-width:100%;height:auto;border:1px solid #ddd;background:#fff}}</style>
 <main><header><h1>{title}</h1><p>{description}</p></header>
-<nav><a href="graph.html">Relationship graph</a></nav>
-<h2>Diagrams</h2><ul>{diagram_links}</ul></main></html>"#,
+<nav><h2>Index</h2><ol>{index}</ol></nav>{content}</main></html>"#,
         base_css()
     );
-    std::fs::write(output.join("index.html"), index)
+    std::fs::write(output.join("index.html"), report)
         .with_context(|| format!("Cannot write {}", output.join("index.html").display()))?;
-
-    std::fs::write(
-        output.join("graph.html"),
-        graph_page(workspace, "index.html", "static/js")?,
-    )
-        .with_context(|| format!("Cannot write {}", output.join("graph.html").display()))?;
     Ok(())
+}
+
+/// Write a portable viewer application with workspace JSON and bundled assets.
+pub fn export_viewer(workspace: &Workspace, output: &Path) -> Result<()> {
+    std::fs::create_dir_all(output)
+        .with_context(|| format!("Cannot create output dir {}", output.display()))?;
+    copy_assets(output)?;
+    std::fs::write(
+        output.join("workspace.json"),
+        serde_json::to_string_pretty(workspace).context("Failed to serialize workspace")?,
+    )
+    .with_context(|| format!("Cannot write {}", output.join("workspace.json").display()))?;
+    std::fs::write(output.join("index.html"), viewer_page(workspace))
+        .with_context(|| format!("Cannot write {}", output.join("index.html").display()))?;
+    Ok(())
+}
+
+fn viewer_page(workspace: &Workspace) -> String {
+    include_str!("templates/workspace.html")
+        .replace("{{WORKSPACE_NAME}}", &html_escape(&workspace.name))
+        .replace("{{WORKSPACE_PATH}}", ".")
+        .replace("{{GRAPH_LINK}}", "")
+        .replace("{{WORKSPACE_SLUG}}", "")
+        .replace("/static/", "static/")
+        .replace(
+            "fetch('/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG))",
+            "fetch('workspace.json')",
+        )
 }
 
 /// Render the standalone interactive relationship graph page.
@@ -75,24 +96,37 @@ pub fn graph_page(workspace: &Workspace, overview_href: &str, asset_prefix: &str
     ))
 }
 
-fn copy_jointjs_assets(output: &Path) -> Result<()> {
-    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/js");
-    let target = output.join("static/js");
-    std::fs::create_dir_all(&target)
-        .with_context(|| format!("Cannot create asset dir {}", target.display()))?;
-    for name in [
-        "jquery-3.7.1.min.js",
-        "jointjs-Core-4.1.3.js",
-        "dagre-1.1.8.js",
-        "graphlib-2.2.4.min.js",
-        "jointjs-DirectedGraph-4.1.3.min.js",
-    ] {
-        std::fs::copy(source.join(name), target.join(name))
-            .with_context(|| format!("Cannot copy static asset {name}"))?;
+fn copy_assets(output: &Path) -> Result<()> {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
+    let target = output.join("static");
+    for entry in std::fs::read_dir(&source)
+        .with_context(|| format!("Cannot read asset dir {}", source.display()))?
+    {
+        let entry = entry?;
+        let target_path = target.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &target_path)?;
+        } else {
+            std::fs::create_dir_all(&target)?;
+            std::fs::copy(entry.path(), target_path)?;
+        }
     }
     Ok(())
 }
 
+fn copy_dir(source: &Path, target: &Path) -> Result<()> {
+    std::fs::create_dir_all(target)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let target_path = target.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &target_path)?;
+        } else {
+            std::fs::copy(entry.path(), target_path)?;
+        }
+    }
+    Ok(())
+}
 fn safe_filename(name: &str) -> String {
     name.chars()
         .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') { c } else { '_' })

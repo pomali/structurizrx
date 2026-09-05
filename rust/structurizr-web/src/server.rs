@@ -91,6 +91,13 @@ async fn workspace_handler(Path(name): Path<String>) -> Html<String> {
         WORKSPACE_HTML
             .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
             .replace("{{WORKSPACE_PATH}}", &url_path_segment(&name))
+            .replace(
+                "{{GRAPH_LINK}}",
+                &format!(
+                    r#"<a class="btn btn-sm btn-outline-secondary me-2" href="/workspace/{}/graph">Graph</a>"#,
+                    url_path_segment(&name)
+                ),
+            )
             .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
     )
 }
