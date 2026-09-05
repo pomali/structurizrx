@@ -21,6 +21,7 @@ pub mod assets;
 pub mod markdown;
 pub mod resolver;
 pub mod server;
+pub mod static_site;
 pub mod state;
 pub mod watcher;
 

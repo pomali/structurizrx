@@ -38,6 +38,29 @@ workspace "Apple Banana Engine" "Generic workspace description" {
             node_quince = container "Shared Module" "Type A" "Generic container description"
         }
 
+        system_long = softwareSystem "Long list of names" "Generic external system" {
+            node_a1 = container "A1" "Type A" "Generic container description"
+            node_a2 = container "A2" "Type A" "Generic container description"
+            node_a3 = container "A3" "Type A" "Generic container description"
+            node_a4 = container "A4" "Type A" "Generic container description"
+            node_a5 = container "A5" "Type A" "Generic container description"
+            node_a6 = container "A6" "Type A" "Generic container description"
+            node_a7 = container "A7" "Type A" "Generic container description"
+            node_a8 = container "A8" "Type A" "Generic container description"
+            node_a9 = container "A9" "Type A" "Generic container description"
+            node_a10 = container "A10" "Type A" "Generic container description"
+            node_a11 = container "A11" "Type A" "Generic container description"
+            node_a12 = container "A12" "Type A" "Generic container description"
+            node_a13 = container "A13" "Type A" "Generic container description"
+            node_a14 = container "A14" "Type A" "Generic container description"
+            node_a15 = container "A15" "Type A" "Generic container description"
+            node_a16 = container "A16" "Type A" "Generic container description"
+            node_a17 = container "A17" "Type A" "Generic container description"
+            node_a18 = container "A18" "Type A" "Generic container description"
+            node_a19 = container "A19" "Type A" "Generic container description"
+            node_a20 = container "A20" "Type A" "Generic container description"
+        }
+
         person_apple -> system_orange "Apple link"
         person_apple -> system_peach.node_cherry "Banana link"
         person_apple -> system_peach.node_date "Cherry link"
@@ -121,6 +144,11 @@ workspace "Apple Banana Engine" "Generic workspace description" {
             include system_peach.node_apple
             include system_peach.node_banana
             autolayout lr
+        }
+        
+
+        container system_long "LongList" {
+            include *
         }
 
         styles {

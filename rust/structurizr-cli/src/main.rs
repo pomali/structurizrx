@@ -46,6 +46,20 @@ enum Commands {
         #[arg(long, short, default_value = "workspace.json")]
         output: PathBuf,
     },
+    /// Export a portable static HTML website for a workspace
+    ExportSite {
+        file: PathBuf,
+        /// Directory to write the website artifact into
+        #[arg(long, short, default_value = "site")]
+        output: PathBuf,
+    },
+    /// Export a portable interactive workspace viewer with bundled assets
+    ExportViewer {
+        file: PathBuf,
+        /// Directory to write the viewer artifact into
+        #[arg(long, short, default_value = "viewer")]
+        output: PathBuf,
+    },
     /// Print a compact plain-text summary of the model, sized for LLM context
     Digest {
         file: PathBuf,
@@ -247,6 +261,26 @@ async fn main() -> Result<()> {
             std::fs::write(&output, &json)
                 .with_context(|| format!("Cannot write {}", output.display()))?;
             println!("Exported workspace to {}", output.display());
+        }
+        Commands::ExportSite { file, output } => {
+            let mut workspace = load_workspace(&file)?;
+            let generated = structurizr_query::generate_views(&mut workspace)
+                .map_err(|e| anyhow::anyhow!("view generation: {}", e))?;
+            if !generated.is_empty() {
+                println!("Generated views: {}", generated.join(", "));
+            }
+            structurizr_web::static_site::export(&workspace, &output)?;
+            println!("Exported static report to {}", output.display());
+        }
+        Commands::ExportViewer { file, output } => {
+            let mut workspace = load_workspace(&file)?;
+            let generated = structurizr_query::generate_views(&mut workspace)
+                .map_err(|e| anyhow::anyhow!("view generation: {}", e))?;
+            if !generated.is_empty() {
+                println!("Generated views: {}", generated.join(", "));
+            }
+            structurizr_web::static_site::export_viewer(&workspace, &output)?;
+            println!("Exported static viewer to {}", output.display());
         }
         Commands::Digest { file } => {
             let mut workspace = load_workspace(&file)?;

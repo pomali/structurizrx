@@ -16,6 +16,7 @@ const V_GAP: i32 = 96;
 const MARGIN: i32 = 40;
 const TITLE_H: i32 = 48;
 const GRID_COLS: usize = 4;
+const MAX_VERTICAL_LAYERS: usize = 4;
 const BOUNDARY_PAD: i32 = 26;
 const BOUNDARY_LABEL_HEIGHT: i32 = 18;
 const PERSON_HEAD_RADIUS: i32 = 30;
@@ -769,7 +770,7 @@ fn layout(nodes: &mut [Node], edges: &[Edge], boundary_ids: Option<&HashSet<Stri
     }
 
     if pairs.is_empty() {
-        layout_grid(nodes, GRID_COLS);
+        layout_grid(nodes, preferred_grid_cols(nodes.len()));
         return;
     }
 
@@ -803,6 +804,14 @@ fn layout(nodes: &mut [Node], edges: &[Edge], boundary_ids: Option<&HashSet<Stri
     for i in 0..n {
         if connected[i] {
             layers[layer[i]].push(i);
+        }
+
+        // A long, narrow dependency chain is technically a good layered layout,
+        // but impractical for component diagrams: it turns into a very tall
+        // column. Spread dense chains across both axes instead.
+        if num_layers > MAX_VERTICAL_LAYERS && layers.iter().all(|row| row.len() == 1) {
+            layout_grid(nodes, preferred_grid_cols(n));
+            return;
         }
     }
 
@@ -943,6 +952,11 @@ fn layout_grid(nodes: &mut [Node], cols: usize) {
         place_row(nodes, chunk, 0, y, ch);
         y += ch + V_GAP;
     }
+}
+
+fn preferred_grid_cols(node_count: usize) -> usize {
+    let cols = (node_count as f64).sqrt().ceil() as usize;
+    cols.clamp(1, GRID_COLS)
 }
 
 // ── Edge collection ───────────────────────────────────────────────────────────

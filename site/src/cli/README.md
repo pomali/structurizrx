@@ -11,6 +11,8 @@ The `structurizrx` binary (package `structurizr-cli`) accepts both `.dsl` and
 | [`digest`](./digest.md) | Compact plain-text model + view summary, sized for LLM context |
 | [`query`](./query.md) | Run a selector expression against a workspace |
 | [`export`](./export.md) | Workspace JSON (superset of the Structurizr JSON schema) |
+| `export-site` | Single-page SVG technical report |
+| `export-viewer` | Portable interactive viewer with bundled assets and workspace JSON |
 | [`docs`](./docs.md) | Print the DSL cheat sheet |
 
 There's also `structurizrx lsp`, which runs the DSL language server over
