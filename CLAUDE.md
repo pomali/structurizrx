@@ -100,8 +100,10 @@ Axum HTTP server serving a workspace browser at `http://localhost:<port>`. Key r
 - `GET /workspace/{name}/diagram/{key}` — SVG diagram page
 - `GET /workspace/{name}/decisions` — ADR list
 - `GET /workspace/{name}/canvas` — Canvas demo (requires WASM build)
+- `GET /workspace/{name}/graph` — universe graph: the whole workspace as one force-directed graph (`assets/js/structurizr-universe-graph.js` + `templates/graph.html`), fed by `/api/workspace/{name}/graph`
 - `GET /docs/` — the mdBook documentation site (see "Docs site build" above), served from `assets::DocsAssets` (embeds `site/book/`, separate from the workspace-viewer `assets::Assets` embed); `GET /docs` 308-redirects to it
 - `GET /api/workspace/{name}/diagram/{key}/svg` — raw SVG
+- `GET /api/workspace/{name}/graph` — `structurizr_query::graph` output as JSON
 - `WS /ws` — live-reload WebSocket
 
 HTML templates live in `structurizr-web/src/templates/`. Static assets (CSS, JS, icons, WASM output) are embedded at compile time via `rust-embed` from `structurizr-web/assets/`. The WASM output files land in `assets/wasm/` and are produced by the `build.rs` script.
@@ -113,7 +115,7 @@ Language server for the DSL, built on the `structurizr-dsl` lexer/parser. All lo
 `wasm-bindgen` shim exposing `jsonrpc::Dispatcher` to JavaScript as `LspServer.handle(message) -> string` (a JSON array of outgoing messages). The host owns the message loop; there is no transport in the crate. Built by the VS Code extension's `npm run build:wasm` (`wasm-pack --target nodejs` → `editors/vscode/wasm/`), which lets the extension run the language server with no `structurizrx` binary installed.
 
 ### `structurizr-query`
-Selector-expression engine (spec §6.2) and view generation (`generate_views`, spec §6.3). Depends only on `structurizr-model`; used by `structurizr-cli` and `structurizr-web`.
+Selector-expression engine (spec §6.2), view generation (`generate_views`, spec §6.3) and the whole-workspace graph projection (`graph`, in `graph.rs` — every element/view/ADR as a node, every relationship/containment/instance/membership as a link; backs the web universe-graph page). Depends only on `structurizr-model`; used by `structurizr-cli` and `structurizr-web`.
 
 ### `structurizr-cli`
 Entry point `structurizrx`. Subcommands: `validate [--strict]`, `render`, `export`, `digest`, `query`, `serve`. Accepts both `.dsl` and `.json` workspace files. `render` and `serve` materialize generated (`auto`) views before rendering.

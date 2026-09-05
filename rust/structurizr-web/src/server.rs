@@ -22,6 +22,7 @@ const DIAGRAM_HTML: &str = include_str!("templates/diagram.html");
 const DECISIONS_HTML: &str = include_str!("templates/decisions.html");
 const DECISION_HTML: &str = include_str!("templates/decision.html");
 const CANVAS_HTML: &str = include_str!("templates/canvas.html");
+const GRAPH_HTML: &str = include_str!("templates/graph.html");
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
@@ -31,6 +32,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/workspace/{name}/decisions", get(decisions_handler))
         .route("/workspace/{name}/decisions/{id}", get(decision_handler))
         .route("/workspace/{name}/canvas", get(canvas_handler))
+        .route("/workspace/{name}/graph", get(graph_handler))
         .route("/api/workspaces", get(api_workspaces_handler))
         .route("/api/workspace/{name}", get(api_workspace_handler))
         .route("/api/workspace/{name}/decisions", get(api_decisions_handler))
@@ -40,6 +42,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/workspace/{name}/diagram/{key}/mermaid",
             get(api_diagram_mermaid_handler),
         )
+        .route("/api/workspace/{name}/graph", get(api_graph_handler))
         .route("/api/workspace/{name}/digest", get(api_digest_handler))
         .route("/api/workspace/{name}/query", get(api_query_handler))
         .route("/llms.txt", get(llms_txt_handler))
@@ -124,6 +127,15 @@ async fn decision_handler(Path((name, id)): Path<(String, String)>) -> Html<Stri
 async fn canvas_handler(Path(name): Path<String>) -> Html<String> {
     Html(
         CANVAS_HTML
+            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
+    )
+}
+
+async fn graph_handler(Path(name): Path<String>) -> Html<String> {
+    Html(
+        GRAPH_HTML
             .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
             .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
             .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
@@ -240,6 +252,22 @@ async fn api_digest_handler(
         structurizr_query::digest(&entry.workspace),
     )
         .into_response()
+}
+
+/// The whole workspace as one graph — every element, view and documentation
+/// artefact as a node, every relationship, containment and membership as a
+/// link. Backs the universe-graph page.
+///
+/// `GET /api/workspace/{name}/graph`
+async fn api_graph_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Response {
+    let workspaces = state.workspaces.lock().unwrap();
+    let Some(entry) = workspaces.iter().find(|e| e.name == name) else {
+        return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
+    };
+    Json(structurizr_query::graph(&entry.workspace)).into_response()
 }
 
 #[derive(serde::Deserialize)]

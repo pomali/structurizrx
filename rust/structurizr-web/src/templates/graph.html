@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="auto">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Graph – {{WORKSPACE_NAME}} – Structurizr</title>
+    <link rel="icon" type="image/png" href="/static/img/favicon.png"/>
+    <link rel="stylesheet" href="/static/css/bootstrap-5.3.7.min.css"/>
+    <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
+    <style>
+        html, body { height: 100%; margin: 0; overflow: hidden; }
+        #app { display: flex; flex-direction: column; height: 100vh; }
+        #stage { position: relative; flex: 1; overflow: hidden; }
+        #graph-canvas {
+            display: block; width: 100%; height: 100%; cursor: grab;
+            --graph-fg: #1c1e21;
+            --graph-link: rgba(120, 125, 140, .45);
+            --graph-bg: #ffffff;
+            background:
+                radial-gradient(circle at 50% 45%, rgba(120,140,200,.10), transparent 70%),
+                var(--bs-body-bg);
+        }
+        [data-bs-theme="dark"] #graph-canvas {
+            --graph-fg: #e6e8ec;
+            --graph-link: rgba(150, 160, 185, .40);
+            --graph-bg: #14161a;
+            background:
+                radial-gradient(circle at 50% 45%, rgba(90,130,220,.16), transparent 70%),
+                var(--bs-body-bg);
+        }
+        .panel {
+            position: absolute; z-index: 5;
+            background: color-mix(in srgb, var(--bs-body-bg) 88%, transparent);
+            border: 1px solid var(--bs-border-color);
+            border-radius: .5rem;
+            box-shadow: 0 6px 20px rgba(0,0,0,.15);
+            backdrop-filter: blur(6px);
+        }
+        #controls { top: .75rem; left: .75rem; width: 270px; max-height: calc(100% - 1.5rem); overflow-y: auto; }
+        #details   { top: .75rem; right: .75rem; width: 300px; max-height: calc(100% - 1.5rem); overflow-y: auto; display: none; }
+        #legend    { bottom: .75rem; right: .75rem; padding: .5rem .65rem; max-width: 340px; }
+        .panel-section { padding: .6rem .75rem; border-bottom: 1px solid var(--bs-border-color); }
+        .panel-section:last-child { border-bottom: 0; }
+        .panel-title {
+            font-size: .7rem; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--bs-secondary-color); font-weight: 600; margin-bottom: .4rem;
+        }
+        .form-check-label, .form-label { font-size: .8rem; }
+        .form-check { margin-bottom: .1rem; }
+        .swatch { display: inline-block; width: .65rem; height: .65rem; border-radius: 50%; margin-right: .35rem; }
+        .legend-row { font-size: .72rem; color: var(--bs-secondary-color); white-space: nowrap; }
+        #stats { font-size: .72rem; }
+        #tip {
+            position: absolute; z-index: 6; pointer-events: none; display: none;
+            font-size: .75rem; padding: .3rem .5rem; border-radius: .3rem;
+            background: var(--bs-body-bg); border: 1px solid var(--bs-border-color);
+            box-shadow: 0 2px 8px rgba(0,0,0,.2); max-width: 260px;
+        }
+        #reload-banner { display: none; position: fixed; bottom: 1rem; right: 1rem; z-index: 9999; }
+        kbd {
+            background: var(--bs-tertiary-bg); color: var(--bs-body-color);
+            border: 1px solid var(--bs-border-color); border-bottom-width: 2px;
+            border-radius: .25rem; padding: .05rem .3rem; font-size: .75em;
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom py-1 px-3 flex-shrink-0">
+        <a class="navbar-brand fw-semibold me-2" href="/">
+            <img src="/static/img/structurizr-logo.png" alt="Structurizr" height="24"/>
+        </a>
+        <ol class="breadcrumb mb-0 ms-1">
+            <li class="breadcrumb-item"><a href="/">Workspaces</a></li>
+            <li class="breadcrumb-item"><a href="/workspace/{{WORKSPACE_SLUG_ATTR}}">{{WORKSPACE_NAME}}</a></li>
+            <li class="breadcrumb-item active">Graph</li>
+        </ol>
+        <div class="ms-auto d-flex align-items-center gap-2">
+            <span id="stats" class="text-secondary me-1"></span>
+            <div class="btn-group btn-group-sm">
+                <button class="btn btn-outline-secondary" id="btnZoomOut" title="Zoom out"><i class="bi bi-zoom-out"></i></button>
+                <button class="btn btn-outline-secondary" id="btnFit" title="Zoom to fit (f)"><i class="bi bi-arrows-angle-contract"></i></button>
+                <button class="btn btn-outline-secondary" id="btnZoomIn" title="Zoom in"><i class="bi bi-zoom-in"></i></button>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary" id="themeToggle" title="Toggle dark mode">
+                <i class="bi bi-circle-half"></i>
+            </button>
+        </div>
+    </nav>
+
+    <div id="stage">
+        <canvas id="graph-canvas"></canvas>
+        <div id="tip"></div>
+
+        <!-- Graph settings -->
+        <div id="controls" class="panel">
+            <div class="panel-section">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input id="search" type="search" class="form-control" placeholder="Search  ( / )" autocomplete="off"/>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-title">Nodes</div>
+                <div id="kind-filters"></div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-title">Links</div>
+                <div id="link-filters"></div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-title">Focus</div>
+                <div id="focus-empty" class="text-secondary" style="font-size:.75rem">
+                    Double-click a node to explore its neighbourhood.
+                </div>
+                <div id="focus-active" class="d-none">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <span class="text-truncate fw-semibold" id="focus-name" style="font-size:.8rem"></span>
+                        <button class="btn btn-sm btn-outline-secondary ms-auto py-0 px-1" id="focus-clear" title="Clear focus">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                    <label class="form-label mb-0">Depth <span id="depth-value">1</span></label>
+                    <input type="range" class="form-range" id="focus-depth" min="1" max="5" step="1" value="1"/>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-title">Forces</div>
+                <label class="form-label mb-0">Repel</label>
+                <input type="range" class="form-range" id="s-repel" min="200" max="8000" step="100" value="2400"/>
+                <label class="form-label mb-0">Link distance</label>
+                <input type="range" class="form-range" id="s-distance" min="30" max="320" step="5" value="120"/>
+                <label class="form-label mb-0">Link force</label>
+                <input type="range" class="form-range" id="s-link" min="0.02" max="1" step="0.02" value="0.35"/>
+                <label class="form-label mb-0">Center</label>
+                <input type="range" class="form-range" id="s-center" min="0" max="0.4" step="0.01" value="0.05"/>
+                <label class="form-label mb-0">Node size</label>
+                <input type="range" class="form-range" id="s-size" min="0.5" max="3" step="0.1" value="1"/>
+            </div>
+
+            <div class="panel-section">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="s-labels" checked/>
+                    <label class="form-check-label" for="s-labels">Labels</label>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="s-arrows" checked/>
+                    <label class="form-check-label" for="s-arrows">Arrows</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Selected node -->
+        <div id="details" class="panel"></div>
+
+        <div id="legend" class="panel"></div>
+    </div>
+
+    <div class="border-top bg-body-tertiary px-3 py-1 flex-shrink-0 text-secondary" style="font-size:.72rem">
+        drag to pan · scroll to zoom · drag a node to pin it · click to inspect ·
+        double-click to focus · <kbd>f</kbd> fit · <kbd>Esc</kbd> clear
+    </div>
+</div>
+
+<div id="reload-banner">
+    <div class="alert alert-info alert-dismissible mb-0 shadow" role="alert">
+        <i class="bi bi-arrow-clockwise me-1"></i> Workspace reloaded
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+</div>
+
+<script src="/static/js/bootstrap-5.3.7.min.js"></script>
+<script src="/static/js/structurizr-universe-graph.js"></script>
+<script>
+(function () {
+    var WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
+
+    // ---- theme ----
+    var THEME_KEY = 'structurizrx-theme';
+    function applyTheme(t) {
+        document.documentElement.setAttribute('data-bs-theme', t);
+        localStorage.setItem(THEME_KEY, t);
+        if (window.graph) window.graph.refreshTheme();
+    }
+    applyTheme(localStorage.getItem(THEME_KEY) ||
+        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+    document.getElementById('themeToggle').addEventListener('click', function () {
+        applyTheme(document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark');
+    });
+
+    // ---- node kinds, in the order they are offered as filters ----
+    var KIND_LABELS = [
+        ['person', 'People'],
+        ['softwareSystem', 'Software systems'],
+        ['container', 'Containers'],
+        ['component', 'Components'],
+        ['custom', 'Custom elements'],
+        ['deploymentNode', 'Deployment nodes'],
+        ['infrastructureNode', 'Infrastructure'],
+        ['containerInstance', 'Container instances'],
+        ['softwareSystemInstance', 'System instances'],
+        ['view', 'Views'],
+        ['decision', 'Decisions'],
+        ['section', 'Doc sections']
+    ];
+    var LINK_LABELS = [
+        ['relationship', 'Relationships'],
+        ['containment', 'Containment'],
+        ['instance', 'Instance of'],
+        ['membership', 'Shown in view'],
+        ['documents', 'Documented by']
+    ];
+    // Views and documentation are off by default: they are true parts of the
+    // workspace, but they crowd out the model on first sight.
+    var DEFAULT_OFF = { view: false, decision: false, section: false };
+
+    var kindFilters = {}, linkFilters = {};
+    KIND_LABELS.forEach(function (k) { kindFilters[k[0]] = DEFAULT_OFF[k[0]] !== false; });
+    LINK_LABELS.forEach(function (l) { linkFilters[l[0]] = true; });
+
+    function escHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    var canvas = document.getElementById('graph-canvas');
+    var tip = document.getElementById('tip');
+    var details = document.getElementById('details');
+
+    var graph = new UniverseGraph(canvas, {
+        onSelect: showDetails,
+        onOpen: focusOn,
+        onHover: showTip
+    });
+    window.graph = graph;
+    graph.setFilter('kinds', kindFilters);
+    graph.setFilter('linkClasses', linkFilters);
+
+    // ---- filter checkboxes ----
+    function buildFilters(hostId, entries, state, filterKey) {
+        var host = document.getElementById(hostId);
+        host.innerHTML = '';
+        entries.forEach(function (entry) {
+            var key = entry[0], label = entry[1];
+            var color = UniverseGraph.KIND_COLORS[key];
+            var id = filterKey + '-' + key;
+            var wrap = document.createElement('div');
+            wrap.className = 'form-check form-check-sm';
+            wrap.innerHTML =
+                '<input class="form-check-input" type="checkbox" id="' + id + '"' +
+                (state[key] ? ' checked' : '') + '/>' +
+                '<label class="form-check-label" for="' + id + '">' +
+                (color ? '<span class="swatch" style="background:' + color + '"></span>' : '') +
+                escHtml(label) + ' <span class="text-secondary" id="count-' + id + '"></span></label>';
+            wrap.querySelector('input').addEventListener('change', function (e) {
+                state[key] = e.target.checked;
+                graph.setFilter(filterKey, state);
+                updateStats();
+            });
+            host.appendChild(wrap);
+        });
+    }
+    buildFilters('kind-filters', KIND_LABELS, kindFilters, 'kinds');
+    buildFilters('link-filters', LINK_LABELS, linkFilters, 'linkClasses');
+
+    // ---- legend ----
+    document.getElementById('legend').innerHTML =
+        '<div class="d-flex flex-wrap gap-2">' +
+        KIND_LABELS.map(function (k) {
+            return '<span class="legend-row"><span class="swatch" style="background:' +
+                UniverseGraph.KIND_COLORS[k[0]] + '"></span>' + escHtml(k[1]) + '</span>';
+        }).join('') + '</div>';
+
+    // ---- details panel ----
+    function showDetails(node) {
+        if (!node) { details.style.display = 'none'; return; }
+        var rows = [];
+        function row(label, value) {
+            if (value === undefined || value === null || value === '') return;
+            rows.push('<div class="mb-1"><span class="text-secondary" style="font-size:.7rem">' +
+                escHtml(label) + '</span><br>' + escHtml(value) + '</div>');
+        }
+        row('Kind', node.kind);
+        row('Description', node.description);
+        row('Technology', node.technology);
+        row('Group', node.group);
+        row('Status', node.status);
+        row('Environment', node.environment);
+        if (node.tags && node.tags.length) {
+            rows.push('<div class="mb-1">' + node.tags.map(function (t) {
+                return '<span class="badge text-bg-secondary me-1">' + escHtml(t) + '</span>';
+            }).join('') + '</div>');
+        }
+        row('Connections', String(node.degree));
+
+        var actions = [];
+        var open = openUrlFor(node);
+        if (open) {
+            actions.push('<a class="btn btn-sm btn-primary" href="' + escHtml(open) + '">' +
+                '<i class="bi bi-box-arrow-up-right me-1"></i>Open</a>');
+        }
+        actions.push('<button class="btn btn-sm btn-outline-secondary" id="btn-focus-node">' +
+            '<i class="bi bi-bullseye me-1"></i>Focus</button>');
+        if (node.url) {
+            actions.push('<a class="btn btn-sm btn-outline-secondary" href="' + escHtml(node.url) +
+                '" target="_blank" rel="noopener noreferrer"><i class="bi bi-link-45deg"></i></a>');
+        }
+
+        details.innerHTML =
+            '<div class="panel-section"><div class="d-flex align-items-start gap-2">' +
+            '<span class="swatch mt-1" style="background:' +
+            (UniverseGraph.KIND_COLORS[node.kind] || '#888') + '"></span>' +
+            '<div class="fw-semibold flex-grow-1">' + escHtml(node.name) + '</div>' +
+            '<button class="btn-close" id="details-close"></button></div></div>' +
+            '<div class="panel-section" style="font-size:.8rem">' + rows.join('') + '</div>' +
+            '<div class="panel-section d-flex gap-2 flex-wrap">' + actions.join('') + '</div>';
+        details.style.display = 'block';
+        document.getElementById('details-close').addEventListener('click', function () {
+            graph.selected = null;
+            details.style.display = 'none';
+        });
+        document.getElementById('btn-focus-node').addEventListener('click', function () {
+            focusOn(node);
+        });
+    }
+
+    /** Where a node leads when opened: views go to their diagram page,
+     *  decisions to their ADR page. Model elements have no page of their own. */
+    function openUrlFor(node) {
+        var base = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG);
+        if (node.kind === 'view') return base + '/diagram/' + encodeURIComponent(node.refId);
+        if (node.kind === 'decision') return base + '/decisions/' + encodeURIComponent(node.refId);
+        return null;
+    }
+
+    // ---- focus (local graph) ----
+    function focusOn(node) {
+        graph.setFilter('focusId', node.id);
+        document.getElementById('focus-empty').classList.add('d-none');
+        document.getElementById('focus-active').classList.remove('d-none');
+        document.getElementById('focus-name').textContent = node.name;
+        setTimeout(function () { graph.zoomToFit(); }, 350);
+        updateStats();
+    }
+    function clearFocus() {
+        graph.setFilter('focusId', null);
+        document.getElementById('focus-empty').classList.remove('d-none');
+        document.getElementById('focus-active').classList.add('d-none');
+        updateStats();
+    }
+    document.getElementById('focus-clear').addEventListener('click', clearFocus);
+    document.getElementById('focus-depth').addEventListener('input', function (e) {
+        document.getElementById('depth-value').textContent = e.target.value;
+        graph.setFilter('focusDepth', parseInt(e.target.value, 10));
+        updateStats();
+    });
+
+    // ---- hover tooltip ----
+    function showTip(node, at) {
+        if (!node) { tip.style.display = 'none'; return; }
+        var meta = [node.kind, node.technology, node.group].filter(Boolean).join(' · ');
+        tip.innerHTML = '<div class="fw-semibold">' + escHtml(node.name) + '</div>' +
+            '<div class="text-secondary">' + escHtml(meta) + '</div>' +
+            (node.description ? '<div>' + escHtml(node.description) + '</div>' : '');
+        var rect = canvas.getBoundingClientRect();
+        tip.style.display = 'block';
+        tip.style.left = Math.min(at.x - rect.left + 14, rect.width - 270) + 'px';
+        tip.style.top = (at.y - rect.top + 14) + 'px';
+    }
+
+    // ---- settings sliders ----
+    function slider(id, key, parse) {
+        document.getElementById(id).addEventListener('input', function (e) {
+            graph.setSetting(key, parse(e.target.value));
+        });
+    }
+    slider('s-repel', 'repelStrength', parseFloat);
+    slider('s-distance', 'linkDistance', parseFloat);
+    slider('s-link', 'linkStrength', parseFloat);
+    slider('s-center', 'centerStrength', parseFloat);
+    slider('s-size', 'nodeSize', parseFloat);
+    document.getElementById('s-labels').addEventListener('change', function (e) {
+        graph.setSetting('showLabels', e.target.checked);
+    });
+    document.getElementById('s-arrows').addEventListener('change', function (e) {
+        graph.setSetting('showArrows', e.target.checked);
+    });
+
+    // ---- search ----
+    var search = document.getElementById('search');
+    search.addEventListener('input', function (e) {
+        graph.setFilter('search', e.target.value);
+    });
+
+    // ---- toolbar & keys ----
+    document.getElementById('btnZoomIn').addEventListener('click', function () { graph.zoomBy(1.25); });
+    document.getElementById('btnZoomOut').addEventListener('click', function () { graph.zoomBy(1 / 1.25); });
+    document.getElementById('btnFit').addEventListener('click', function () { graph.zoomToFit(); });
+    document.addEventListener('keydown', function (e) {
+        if (e.target.tagName === 'INPUT') {
+            if (e.key === 'Escape') { e.target.blur(); }
+            return;
+        }
+        if (e.key === '/') { e.preventDefault(); search.focus(); }
+        else if (e.key === 'f') { graph.zoomToFit(); }
+        else if (e.key === 'Escape') {
+            graph.selected = null;
+            details.style.display = 'none';
+            if (graph.filters.focusId) clearFocus();
+        }
+    });
+
+    // ---- stats ----
+    function updateStats() {
+        document.getElementById('stats').textContent =
+            graph.visibleNodes.length + ' nodes · ' + graph.visibleLinks.length + ' links';
+        var counts = {};
+        graph.nodes.forEach(function (n) { counts[n.kind] = (counts[n.kind] || 0) + 1; });
+        KIND_LABELS.forEach(function (k) {
+            var el = document.getElementById('count-kinds-' + k[0]);
+            if (el) el.textContent = counts[k[0]] ? '(' + counts[k[0]] + ')' : '';
+        });
+        var linkCounts = {};
+        graph.links.forEach(function (l) { linkCounts[l.class] = (linkCounts[l.class] || 0) + 1; });
+        LINK_LABELS.forEach(function (l) {
+            var el = document.getElementById('count-linkClasses-' + l[0]);
+            if (el) el.textContent = linkCounts[l[0]] ? '(' + linkCounts[l[0]] + ')' : '';
+        });
+    }
+
+    // ---- data ----
+    function load(firstLoad) {
+        fetch('/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/graph')
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                graph.setData(data);
+                updateStats();
+                if (firstLoad) setTimeout(function () { graph.zoomToFit(); }, 600);
+            })
+            .catch(function (e) {
+                document.getElementById('stats').textContent = 'Failed to load graph: ' + e.message;
+            });
+    }
+    load(true);
+
+    // ---- live reload ----
+    (function connectWs() {
+        var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        var ws = new WebSocket(proto + '://' + location.host + '/ws');
+        ws.onmessage = function (e) {
+            if (JSON.parse(e.data).type !== 'reload') return;
+            load(false);
+            var banner = document.getElementById('reload-banner');
+            banner.style.display = '';
+            setTimeout(function () { banner.style.display = 'none'; }, 3000);
+        };
+        ws.onclose = function () { setTimeout(connectWs, 2000); };
+    })();
+})();
+</script>
+</body>
+</html>

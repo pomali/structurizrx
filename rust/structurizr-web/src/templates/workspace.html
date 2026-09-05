@@ -488,6 +488,13 @@
         canvasHdr.textContent = 'Tools';
         list.appendChild(canvasHdr);
 
+        var graphLink = document.createElement('a');
+        graphLink.className = 'view-item';
+        graphLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/graph';
+        graphLink.innerHTML = '<i class="bi bi-diagram-3 me-1"></i>Universe graph';
+        graphLink.title = 'Force-directed graph of every element, relationship, view and decision';
+        list.appendChild(graphLink);
+
         var canvasLink = document.createElement('a');
         canvasLink.className = 'view-item';
         canvasLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/canvas';

@@ -26,6 +26,7 @@ WebSocket automatically — no manual refresh.
 | `GET /workspace/{name}/diagram/{key}` | A single diagram |
 | `GET /workspace/{name}/decisions` | ADR list (from `!adrs`) |
 | `GET /workspace/{name}/decisions/{id}` | A single ADR |
+| `GET /workspace/{name}/graph` | Universe graph — the whole workspace as one force-directed graph |
 | `GET /workspace/{name}/canvas` | In-browser WASM rendering demo |
 | `GET /docs/` | This documentation site |
 | `GET /llms.txt` | The DSL cheat sheet, as plain text |
@@ -42,5 +43,33 @@ working against a live server:
 | `GET /api/workspace/{name}/decisions[/{id}]` | ADR data |
 | `GET /api/workspace/{name}/diagram/{key}/svg` | `render --format svg`, one diagram |
 | `GET /api/workspace/{name}/diagram/{key}/mermaid` | `render --format mermaid`, one diagram |
+| `GET /api/workspace/{name}/graph` | the universe graph as `{nodes, links}` JSON |
 | `GET /api/workspace/{name}/digest` | [`digest`](./digest.md) |
 | `GET /api/workspace/{name}/query?expr=...` | [`query`](./query.md) |
+
+## Universe graph
+
+`GET /workspace/{name}/graph` shows the entire workspace as one
+force-directed graph, in the spirit of Obsidian's graph view: every element,
+view, ADR and documentation section is a node, and every relationship,
+containment, deployment instance and view membership is a link. It is the
+one page that shows how everything in a workspace hangs together, rather
+than one C4 scope at a time.
+
+| Interaction | Effect |
+|---|---|
+| hover | Highlights the node and its immediate neighbours, dimming the rest |
+| click | Opens the details panel (kind, description, technology, tags, connections) |
+| double-click | Focuses the node's neighbourhood — a local graph, depth adjustable 1–5 |
+| drag a node | Pins it where you drop it; click it without moving to release |
+| drag / scroll | Pan and zoom; `f` zooms to fit, `Esc` clears focus and selection |
+| `/` | Jumps to the search box; matches stay bright while everything else dims |
+
+The **Nodes** and **Links** checkboxes filter what the graph contains.
+Views, decisions and documentation sections start switched off — they belong
+to the workspace, but they crowd out the model on first sight. The **Forces**
+sliders (repel, link distance, link force, centre, node size) tune the
+layout live.
+
+Nodes are coloured by kind and sized by how many connections they have, so
+the hubs of a model are visible before you read a single label.

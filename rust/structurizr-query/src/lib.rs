@@ -12,6 +12,7 @@ pub mod lexer;
 mod parser;
 mod eval;
 pub mod digest;
+pub mod graph;
 pub mod generate;
 pub mod lint;
 
@@ -19,6 +20,7 @@ use std::collections::BTreeSet;
 use structurizr_model::Workspace;
 
 pub use digest::{digest, element_names};
+pub use graph::{graph, Graph, GraphLink, GraphNode};
 pub use generate::generate_views;
 pub use lint::{lint, LintFinding};
 
