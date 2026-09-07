@@ -16,10 +16,47 @@
         #content { display: flex; flex: 1; overflow: hidden; }
         #sidebar {
             width: 280px; min-width: 200px; max-width: 400px;
-            flex-shrink: 0; overflow-y: auto;
+            flex-shrink: 0; overflow: hidden;
+            display: flex; flex-direction: column;
             border-right: 1px solid var(--bs-border-color);
             background: var(--bs-body-bg);
         }
+        /* Top part: the workspace's views. Takes whatever height is left. */
+        #view-list { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+        /* Bottom part: the high-level elements of the current view only. */
+        #outline-panel {
+            flex: 0 0 auto; max-height: 40%; overflow-y: auto;
+            border-top: 1px solid var(--bs-border-color);
+        }
+        #outline-panel .view-group-header {
+            position: sticky; top: 0; background: var(--bs-body-bg); z-index: 1;
+            padding-top: .4rem;
+        }
+        .outline-item {
+            display: flex; align-items: center; gap: .35rem;
+            padding: .2rem .75rem; border-radius: .25rem;
+            font-size: .8125rem; color: var(--bs-body-color);
+            text-decoration: none;
+        }
+        .outline-item .outline-name {
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .outline-item .outline-count {
+            margin-left: auto; font-size: .7rem; color: var(--bs-secondary-color);
+        }
+        .outline-item i { color: var(--bs-secondary-color); flex-shrink: 0; }
+        .outline-item:hover { background: var(--bs-tertiary-bg); }
+        .outline-item:hover i { color: inherit; }
+        a.outline-item { cursor: pointer; }
+        /* Hovering an outline row highlights the matching boundary on the
+           diagram. The stroke is a presentation attribute on the cell, so CSS
+           needs !important to win. */
+        #diagram .structurizrBoundary.outlineHighlighted {
+            stroke: var(--bs-primary) !important;
+            stroke-width: 4 !important;
+            stroke-dasharray: none !important;
+        }
+        #outline-empty { font-size: .8125rem; padding: .2rem .75rem .5rem; }
         #sidebar-toggle-btn { display: none; }
         #diagram-area { flex: 1; overflow: hidden; position: relative; background: var(--bs-body-bg); }
         #diagram { width: 100%; height: 100%; }
@@ -63,7 +100,7 @@
         }
         @media (max-width: 600px) {
             #sidebar { display: none; }
-            #sidebar.open { display: block; position: fixed; left: 0; top: 0; bottom: 0; z-index: 1000; }
+            #sidebar.open { display: flex; position: fixed; left: 0; top: 0; bottom: 0; z-index: 1000; }
             #sidebar-toggle-btn { display: inline-block; }
         }
     </style>
@@ -126,8 +163,12 @@
     <!-- Main content -->
     <div id="content">
         <!-- Sidebar -->
-        <nav id="sidebar" class="py-2">
-            <div id="view-list"></div>
+        <nav id="sidebar">
+            <div id="view-list" class="py-2"></div>
+            <div id="outline-panel" class="pb-2">
+                <div class="view-group-header">In this view</div>
+                <div id="outline-list"></div>
+            </div>
         </nav>
 
         <!-- Diagram area — id must match the first arg to structurizr.ui.Diagram() -->
@@ -396,6 +437,7 @@
                     updateHash(key);
                     updateSidebarActive(key);
                     updateViewBadge(key);
+                    buildOutline(key);
                 });
 
                 initInteraction();
@@ -424,6 +466,7 @@
         updateHash(key);
         updateSidebarActive(key);
         updateViewBadge(key);
+        buildOutline(key);
         diagram.changeView(key, function() {
             fitDiagram();
             updateAnimationControls();
@@ -560,6 +603,201 @@
         });
 
         buildQuickNavigation();
+    }
+
+    // ===== OUTLINE (bottom of the sidebar) =====
+    // The high-level structure of the *current* view only: the boundaries the
+    // diagram draws around what is on screen (the software system of a
+    // container view, the containers of a component view, deployment nodes)
+    // plus the groups the displayed elements belong to.
+    function buildOutline(key) {
+        var list = document.getElementById('outline-list');
+        list.innerHTML = '';
+        clearBoundaryHighlights();
+
+        var view = key ? structurizr.workspace.findViewByKey(key) : undefined;
+        var elementsInView = (view && view.elements) ? view.elements : [];
+        if (elementsInView.length === 0) {
+            showOutlineEmpty(view ? 'Nothing on this diagram.' : 'No view selected.');
+            return;
+        }
+
+        // Boundaries: any element that is the parent of something on screen.
+        // The diagram draws those as a box around their children, whether or
+        // not they are themselves listed in the view (a container view's
+        // software system is not, a deployment node is).
+        var boundariesById = {};
+        var boundaries = [];
+        var groupCounts = {};
+        var groupNames = [];
+
+        elementsInView.forEach(function(elementInView) {
+            var element = structurizr.workspace.findElementById(elementInView.id);
+            if (!element) return;
+
+            if (element.group !== undefined && element.group !== '') {
+                if (groupCounts[element.group] === undefined) {
+                    groupCounts[element.group] = 0;
+                    groupNames.push(element.group);
+                }
+                groupCounts[element.group]++;
+            }
+
+            if (!element.parentId) return;
+            var boundary = boundariesById[element.parentId];
+            if (boundary === undefined) {
+                var parent = structurizr.workspace.findElementById(element.parentId);
+                if (!parent) return;
+                boundary = { element: parent, count: 0 };
+                boundariesById[element.parentId] = boundary;
+                boundaries.push(boundary);
+            }
+            boundary.count++;
+        });
+
+        if (boundaries.length === 0 && groupNames.length === 0) {
+            showOutlineEmpty('No groups or boundaries on this diagram.');
+            return;
+        }
+
+        // Depth = how many of an element's ancestors are boundaries here, so
+        // nested deployment nodes indent under their parent.
+        function boundaryDepth(element) {
+            var depth = 0;
+            var parentId = element.parentId;
+            while (parentId && boundariesById[parentId]) {
+                depth++;
+                parentId = boundariesById[parentId].element.parentId;
+            }
+            return depth;
+        }
+
+        boundaries.sort(function(a, b) {
+            var byDepth = boundaryDepth(a.element) - boundaryDepth(b.element);
+            return byDepth !== 0 ? byDepth : a.element.name.localeCompare(b.element.name);
+        });
+        boundaries.forEach(function(boundary) {
+            addOutlineItem({
+                name: boundary.element.name,
+                metadata: structurizr.ui.getMetadataForElement(boundary.element),
+                icon: iconForElementType(boundary.element.type),
+                count: boundary.count,
+                depth: boundaryDepth(boundary.element),
+                viewKey: findViewKeyForElement(boundary.element)
+            });
+        });
+
+        var modelProperties = structurizr.workspace.model.properties || {};
+        var separator = modelProperties['structurizr.groupSeparator'];
+        groupNames.sort();
+        groupNames.forEach(function(name) {
+            var depth = separator ? name.split(separator).length - 1 : 0;
+            var label = separator ? name.substring(name.lastIndexOf(separator) + separator.length) : name;
+            addOutlineItem({
+                name: label,
+                metadata: separator && depth > 0 ? name : 'Group',
+                icon: 'bi-collection',
+                count: groupCounts[name],
+                depth: depth
+            });
+        });
+    }
+
+    // The diagram draws boundaries and groups as JointJS cells whose name is a
+    // <text class="structurizrName"> inside the cell; that name is all we have
+    // to tie a sidebar row back to a box on the canvas. Two boundaries with the
+    // same name (a pair of identically named deployment nodes, say) both light
+    // up — there is nothing in the rendered cell that tells them apart.
+    function highlightBoundary(name, on) {
+        var diagramEl = document.getElementById('diagram');
+        if (!diagramEl) return;
+        diagramEl.querySelectorAll('.structurizrBoundary').forEach(function(shape) {
+            var cell = shape.closest('.joint-cell') || shape.parentNode;
+            var label = cell ? cell.querySelector('.structurizrName') : null;
+            if (!label) return;
+            if (label.textContent.replace(/\s+/g, ' ').trim() === name) {
+                shape.classList.toggle('outlineHighlighted', on);
+            }
+        });
+    }
+
+    function clearBoundaryHighlights() {
+        var diagramEl = document.getElementById('diagram');
+        if (!diagramEl) return;
+        diagramEl.querySelectorAll('.outlineHighlighted').forEach(function(shape) {
+            shape.classList.remove('outlineHighlighted');
+        });
+    }
+
+    function showOutlineEmpty(text) {
+        var el = document.createElement('div');
+        el.id = 'outline-empty';
+        el.className = 'text-secondary';
+        el.textContent = text;
+        document.getElementById('outline-list').appendChild(el);
+    }
+
+    // A boundary is worth clicking when the workspace has a view of its own
+    // for it — e.g. the container a component view is scoped to.
+    function findViewKeyForElement(element) {
+        var candidates = [];
+        try {
+            if (element.type === structurizr.constants.SOFTWARE_SYSTEM_ELEMENT_TYPE) {
+                candidates = structurizr.workspace.findContainerViewsForSoftwareSystem(element.id)
+                    .concat(structurizr.workspace.findSystemContextViewsForSoftwareSystem(element.id));
+            } else if (element.type === structurizr.constants.CONTAINER_ELEMENT_TYPE) {
+                candidates = structurizr.workspace.findComponentViewsForContainer(element.id);
+            }
+        } catch (e) {
+            return undefined;
+        }
+        candidates = candidates.filter(function(v) { return v.key !== currentViewKey; });
+        return candidates.length > 0 ? candidates[0].key : undefined;
+    }
+
+    function iconForElementType(type) {
+        switch (type) {
+            case structurizr.constants.SOFTWARE_SYSTEM_ELEMENT_TYPE: return 'bi-box';
+            case structurizr.constants.CONTAINER_ELEMENT_TYPE:       return 'bi-hdd';
+            case structurizr.constants.COMPONENT_ELEMENT_TYPE:       return 'bi-puzzle';
+            case structurizr.constants.DEPLOYMENT_NODE_ELEMENT_TYPE: return 'bi-hdd-stack';
+            default:                                                 return 'bi-bounding-box';
+        }
+    }
+
+    function addOutlineItem(item) {
+        var el = document.createElement(item.viewKey ? 'a' : 'div');
+        el.className = 'outline-item';
+        el.style.paddingLeft = (0.75 + item.depth * 0.75) + 'rem';
+        el.title = item.name + (item.metadata ? ' — ' + item.metadata : '');
+
+        var icon = document.createElement('i');
+        icon.className = 'bi ' + item.icon;
+        el.appendChild(icon);
+
+        var name = document.createElement('span');
+        name.className = 'outline-name';
+        name.textContent = item.name;
+        el.appendChild(name);
+
+        var count = document.createElement('span');
+        count.className = 'outline-count';
+        count.textContent = item.count;
+        el.appendChild(count);
+
+        el.addEventListener('mouseenter', function() { highlightBoundary(item.name, true); });
+        el.addEventListener('mouseleave', function() { highlightBoundary(item.name, false); });
+
+        if (item.viewKey) {
+            el.href = '#' + item.viewKey;
+            el.title += ' — click to open its own view';
+            el.addEventListener('click', function(e) {
+                e.preventDefault();
+                if (diagramReady) activateView(item.viewKey);
+            });
+        }
+
+        document.getElementById('outline-list').appendChild(el);
     }
 
     function updateSidebarActive(key) {
