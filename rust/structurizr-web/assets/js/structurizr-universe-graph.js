@@ -174,6 +174,15 @@
             return visible[l.sourceId] && visible[l.targetId];
         });
 
+        // Visible-link counts drive spring normalisation in _tick: a hub with
+        // dozens of links must not receive dozens of full-strength spring
+        // kicks per tick, or the integrator diverges and coordinates explode.
+        this.visibleNodes.forEach(function (n) { n.linkCount = 0; });
+        this.visibleLinks.forEach(function (l) {
+            l.source.linkCount++;
+            l.target.linkCount++;
+        });
+
         // Search dims rather than hides, the way Obsidian highlights matches.
         this.visibleNodes.forEach(function (n) {
             n.matched = !needle || (n.name || '').toLowerCase().indexOf(needle) >= 0 ||
@@ -205,9 +214,11 @@
         for (i = 0; i < nodes.length; i++) {
             n = nodes[i];
             var cx = Math.round(n.x / cell), cy = Math.round(n.y / cell);
-            for (var gx = cx - 1; gx <= cx + 1; gx++) {
-                for (var gy = cy - 1; gy <= cy + 1; gy++) {
-                    var bucket = grid[gx + ',' + gy];
+            // Iterate cell offsets, not raw cell indices: above 2^53,
+            // `gx++` on a cell index is a no-op and the loop never exits.
+            for (var ox = -1; ox <= 1; ox++) {
+                for (var oy = -1; oy <= 1; oy++) {
+                    var bucket = grid[(cx + ox) + ',' + (cy + oy)];
                     if (!bucket) continue;
                     for (var j = 0; j < bucket.length; j++) {
                         var m = bucket[j];
@@ -226,19 +237,29 @@
 
         // Link springs. Containment is drawn tighter than a plain
         // relationship so systems visibly cluster with their internals.
+        // Strength is normalised by the endpoints' link counts (as in
+        // d3-force): the summed spring stiffness on a node must stay below
+        // the integrator's stability limit or hub positions diverge to
+        // infinity within a second.
         for (i = 0; i < this.visibleLinks.length; i++) {
             var l = this.visibleLinks[i];
             var target = l.class === 'containment' ? s.linkDistance * 0.6 : s.linkDistance;
             var ldx = l.target.x - l.source.x, ldy = l.target.y - l.source.y;
             var dist = Math.sqrt(ldx * ldx + ldy * ldy) || 0.01;
-            var force = ((dist - target) / dist) * s.linkStrength * this.alpha * 0.5;
-            l.source.vx += ldx * force;
-            l.source.vy += ldy * force;
-            l.target.vx -= ldx * force;
-            l.target.vy -= ldy * force;
+            var sc = l.source.linkCount || 1, tc = l.target.linkCount || 1;
+            var strength = s.linkStrength / Math.min(sc, tc);
+            var force = ((dist - target) / dist) * strength * this.alpha * 0.5;
+            var bias = sc / (sc + tc);   // the busier endpoint moves less
+            l.source.vx += ldx * force * (1 - bias);
+            l.source.vy += ldy * force * (1 - bias);
+            l.target.vx -= ldx * force * bias;
+            l.target.vy -= ldy * force * bias;
         }
 
-        // Centering + integration.
+        // Centering + integration, with a speed cap as a final backstop so
+        // no combination of slider settings can send coordinates towards
+        // the float range where the physics (and the spatial hash) break.
+        var maxSpeed = s.linkDistance;
         for (i = 0; i < nodes.length; i++) {
             n = nodes[i];
             if (n.pinned) { n.vx = n.vy = 0; continue; }
@@ -246,6 +267,11 @@
             n.vy -= n.y * s.centerStrength * this.alpha * 0.1;
             n.vx *= 0.82;
             n.vy *= 0.82;
+            var speed = Math.sqrt(n.vx * n.vx + n.vy * n.vy);
+            if (speed > maxSpeed) {
+                n.vx *= maxSpeed / speed;
+                n.vy *= maxSpeed / speed;
+            }
             n.x += n.vx;
             n.y += n.vy;
         }
@@ -287,7 +313,9 @@
             minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y);
         });
         var w = Math.max(maxX - minX, 1), h = Math.max(maxY - minY, 1);
-        var k = Math.min((this.width - pad * 2) / w, (this.height - pad * 2) / h, 3);
+        // Floor the zoom: 1/k scales fonts and line widths in _draw, so a
+        // near-zero k would ask the canvas for astronomically large glyphs.
+        var k = Math.max(0.02, Math.min((this.width - pad * 2) / w, (this.height - pad * 2) / h, 3));
         this.transform.k = k;
         this.transform.x = this.width / 2 - ((minX + maxX) / 2) * k;
         this.transform.y = this.height / 2 - ((minY + maxY) / 2) * k;
