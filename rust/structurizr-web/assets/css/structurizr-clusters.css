@@ -1,0 +1,240 @@
+/*
+ * Cluster analysis page for /workspace/{name}/clusters.
+ *
+ * Four readings of the same analysis: a summary strip, the communities and how
+ * they compare with what the model declares, a dependency-structure matrix
+ * reordered by community, and a per-element metrics table.
+ */
+
+body.clusters-body {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+#clusters-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.85rem;
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+    position: sticky;
+    top: 0;
+    background: var(--bs-body-bg, #fff);
+    z-index: 5;
+}
+
+#clusters-header .control {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+#clusters-body {
+    padding: 1rem 1.25rem 4rem;
+}
+
+/* ---- summary ---- */
+
+#summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+}
+
+.stat {
+    flex: 0 0 auto;
+    min-width: 8.5rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: 0.35rem;
+}
+
+.stat .stat-value {
+    font-size: 1.35rem;
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.stat .stat-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+.stat.weak .stat-value { color: var(--bs-warning-text-emphasis, #997404); }
+.stat.bad .stat-value { color: var(--bs-danger-text-emphasis, #b02a37); }
+
+section.panel {
+    margin-bottom: 1.75rem;
+}
+
+section.panel > h2 {
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+section.panel > .panel-note {
+    color: var(--bs-secondary-color, #6c757d);
+    margin-bottom: 0.6rem;
+}
+
+/* ---- communities ---- */
+
+#communities {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    gap: 0.75rem;
+}
+
+.community-card {
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-left-width: 4px;
+    border-radius: 0.35rem;
+    padding: 0.6rem 0.75rem;
+}
+
+.community-card h3 {
+    font-size: 0.85rem;
+    margin: 0 0 0.15rem;
+}
+
+.community-card .declared {
+    font-size: 0.78rem;
+    color: var(--bs-secondary-color, #6c757d);
+    margin-bottom: 0.4rem;
+}
+
+.community-card ul {
+    margin: 0;
+    padding-left: 1.1rem;
+}
+
+.community-card li.mismatch {
+    color: var(--bs-danger-text-emphasis, #b02a37);
+    font-weight: 500;
+}
+
+/* ---- dependency structure matrix ---- */
+
+#dsm-scroll {
+    overflow: auto;
+    max-height: 34rem;
+    border: 1px solid var(--bs-border-color, #dee2e6);
+}
+
+table.dsm {
+    border-collapse: collapse;
+    font-size: 0.7rem;
+}
+
+table.dsm th {
+    font-weight: 400;
+    white-space: nowrap;
+}
+
+table.dsm th.row-label {
+    position: sticky;
+    left: 0;
+    background: var(--bs-body-bg, #fff);
+    text-align: right;
+    padding: 0 0.4rem;
+    max-width: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    z-index: 1;
+}
+
+table.dsm th.col-label {
+    height: 8rem;
+    vertical-align: bottom;
+    padding: 0 0 0.25rem;
+}
+
+/* Column headings are rotated so a wide matrix still fits the screen. */
+table.dsm th.col-label > span {
+    display: block;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    max-height: 7.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+table.dsm td {
+    width: 1.1rem;
+    height: 1.1rem;
+    border: 1px solid var(--bs-border-color, #f1f3f5);
+    text-align: center;
+    color: transparent;
+}
+
+/* Inside a community: the dependencies the structure predicts. */
+table.dsm td.intra { background: var(--bs-primary, #0d6efd); }
+/* Across communities: the dependencies that make the split imperfect. */
+table.dsm td.inter { background: var(--bs-warning, #ffc107); }
+table.dsm td.diagonal { background: var(--bs-tertiary-bg, #e9ecef); }
+
+/* The block boundary between communities. */
+table.dsm td.boundary-right, table.dsm th.boundary-right { border-right: 2px solid var(--bs-secondary, #6c757d); }
+table.dsm td.boundary-bottom { border-bottom: 2px solid var(--bs-secondary, #6c757d); }
+
+#dsm-legend {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.4rem;
+    font-size: 0.78rem;
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+#dsm-legend .swatch {
+    display: inline-block;
+    width: 0.8rem;
+    height: 0.8rem;
+    vertical-align: -0.1rem;
+    margin-right: 0.25rem;
+    border: 1px solid var(--bs-border-color, #dee2e6);
+}
+
+/* ---- tables ---- */
+
+table.metrics {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+table.metrics th {
+    text-align: left;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--bs-secondary-color, #6c757d);
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+    padding: 0.25rem 0.5rem 0.25rem 0;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+table.metrics td {
+    padding: 0.25rem 0.5rem 0.25rem 0;
+    border-bottom: 1px solid var(--bs-border-color, #f1f3f5);
+}
+
+table.metrics td.numeric, table.metrics th.numeric {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.empty-note {
+    color: var(--bs-secondary-color, #6c757d);
+    font-style: italic;
+}
+
+.finding-row {
+    padding: 0.3rem 0.5rem;
+    border-left: 3px solid var(--bs-danger, #dc3545);
+    background: var(--bs-danger-bg-subtle, #f8d7da);
+    margin-bottom: 0.25rem;
+}

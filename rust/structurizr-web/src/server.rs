@@ -25,6 +25,7 @@ const CANVAS_HTML: &str = include_str!("templates/canvas.html");
 const GRAPH_HTML: &str = include_str!("templates/graph.html");
 const PRINT_HTML: &str = include_str!("templates/print.html");
 const REVIEW_HTML: &str = include_str!("templates/review.html");
+const CLUSTERS_HTML: &str = include_str!("templates/clusters.html");
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
@@ -37,6 +38,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/workspace/{name}/graph", get(graph_handler))
         .route("/workspace/{name}/print", get(print_handler))
         .route("/workspace/{name}/review", get(review_handler))
+        .route("/workspace/{name}/clusters", get(clusters_handler))
         .route("/api/workspaces", get(api_workspaces_handler))
         .route("/api/workspace/{name}", get(api_workspace_handler))
         .route("/api/workspace/{name}/decisions", get(api_decisions_handler))
@@ -48,6 +50,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/workspace/{name}/graph", get(api_graph_handler))
         .route("/api/workspace/{name}/review", get(api_review_handler))
+        .route("/api/workspace/{name}/clusters", get(api_clusters_handler))
         .route("/api/workspace/{name}/digest", get(api_digest_handler))
         .route("/api/workspace/{name}/query", get(api_query_handler))
         .route("/llms.txt", get(llms_txt_handler))
@@ -162,6 +165,16 @@ async fn print_handler(Path(name): Path<String>) -> Html<String> {
 async fn review_handler(Path(name): Path<String>) -> Html<String> {
     Html(
         REVIEW_HTML
+            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
+    )
+}
+
+/// The cluster analysis page.
+async fn clusters_handler(Path(name): Path<String>) -> Html<String> {
+    Html(
+        CLUSTERS_HTML
             .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
             .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
             .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
@@ -286,6 +299,83 @@ async fn api_review_handler(
         |c, v| c.review_json = Some(v),
         || {
             serde_json::to_string(&structurizr_query::review(&workspace))
+                .unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"))
+        },
+    );
+
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        body.as_str().to_owned(),
+    )
+        .into_response()
+}
+
+/// Query parameters for the cluster analysis.
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct ClusterParams {
+    /// `softwareSystem`, `container` (default) or `component`.
+    level: Option<String>,
+    /// Comma-separated tag lists.
+    include: Option<String>,
+    exclude: Option<String>,
+    /// `false` to analyse only relationships declared directly between nodes
+    /// at the chosen level.
+    implied: Option<String>,
+}
+
+fn tag_list(value: &Option<String>) -> Vec<String> {
+    value
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
+/// Structural analysis, communities and conformance for one workspace.
+///
+/// `GET /api/workspace/{name}/clusters?level=container&implied=true`
+async fn api_clusters_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    axum::extract::Query(params): axum::extract::Query<ClusterParams>,
+) -> Response {
+    let workspace = {
+        let workspaces = state.workspaces.lock().unwrap();
+        match workspaces.iter().find(|e| e.name == name) {
+            Some(entry) => entry.workspace.clone(),
+            None => return (StatusCode::NOT_FOUND, "Workspace not found").into_response(),
+        }
+    };
+
+    let options = structurizr_query::ClusterOptions {
+        level: structurizr_query::Level::parse(params.level.as_deref().unwrap_or("container")),
+        include_tags: tag_list(&params.include),
+        exclude_tags: tag_list(&params.exclude),
+        implied: params.implied.as_deref() != Some("false"),
+    };
+
+    // The analysis depends on the options as well as the workspace, so they
+    // are part of the cache key.
+    let key = format!(
+        "{}|{}|{}|{}",
+        options.level.kind_name(),
+        options.include_tags.join(","),
+        options.exclude_tags.join(","),
+        options.implied
+    );
+
+    let body = state.cached(
+        &name,
+        |c| c.cluster_json.get(&key).cloned(),
+        |c, v| {
+            c.cluster_json.insert(key.clone(), v);
+        },
+        || {
+            serde_json::to_string(&structurizr_query::cluster(&workspace, &options))
                 .unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"))
         },
     );

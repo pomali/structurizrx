@@ -71,6 +71,10 @@ pub enum BroadcastMsg {
 pub struct DerivedCache {
     /// Serialised body of `/api/workspace/{name}/review`.
     pub review_json: Option<Arc<String>>,
+    /// Serialised bodies of `/api/workspace/{name}/clusters`, keyed by the
+    /// analysis options — the same workspace yields a different analysis per
+    /// level, tag filter and rollup setting.
+    pub cluster_json: HashMap<String, Arc<String>>,
 }
 
 /// Shared application state (wrapped in `Arc` for clone-ability).
@@ -95,8 +99,10 @@ impl AppState {
     ///
     /// `produce` runs while no lock is held, so a slow computation for one
     /// workspace never blocks requests for another.
-    pub fn cached<F>(&self, name: &str, read: fn(&DerivedCache) -> Option<Arc<String>>, write: fn(&mut DerivedCache, Arc<String>), produce: F) -> Arc<String>
+    pub fn cached<R, W, F>(&self, name: &str, read: R, write: W, produce: F) -> Arc<String>
     where
+        R: FnOnce(&DerivedCache) -> Option<Arc<String>>,
+        W: FnOnce(&mut DerivedCache, Arc<String>),
         F: FnOnce() -> String,
     {
         if let Ok(cache) = self.derived.lock() {

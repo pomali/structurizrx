@@ -12,6 +12,7 @@ pub mod lexer;
 mod parser;
 mod eval;
 pub mod digest;
+pub mod cluster;
 pub mod index;
 pub mod graph;
 pub mod generate;
@@ -22,6 +23,7 @@ use std::collections::BTreeSet;
 use structurizr_model::Workspace;
 
 pub use digest::{digest, element_names};
+pub use cluster::{cluster, ClusterAnalysis, ClusterOptions, Level};
 pub use index::{build_index, ElementEntry, Index, RelationshipEntry, ViewEntry};
 pub use graph::{graph, Graph, GraphLink, GraphNode};
 pub use generate::generate_views;

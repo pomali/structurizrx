@@ -511,6 +511,13 @@
         graphLink.title = 'Force-directed graph of every element, relationship, view and decision';
         list.appendChild(graphLink);
 
+        var clustersLink = document.createElement('a');
+        clustersLink.className = 'view-item';
+        clustersLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/clusters';
+        clustersLink.innerHTML = '<i class="bi bi-grid-3x3 me-1"></i>Cluster analysis';
+        clustersLink.title = 'Communities, cycles, coupling and how they compare with the declared structure';
+        list.appendChild(clustersLink);
+
         var reviewLink = document.createElement('a');
         reviewLink.className = 'view-item';
         reviewLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/review';

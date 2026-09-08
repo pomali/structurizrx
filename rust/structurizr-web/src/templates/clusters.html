@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Clusters – {{WORKSPACE_NAME}}</title>
+    <link rel="icon" type="image/png" href="/static/img/favicon.png"/>
+    <link rel="stylesheet" href="/static/css/bootstrap-5.3.7.min.css"/>
+    <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-clusters.css"/>
+</head>
+<body class="clusters-body" data-workspace="{{WORKSPACE_SLUG_ATTR}}">
+
+<header id="clusters-header">
+    <a href="/workspace/{{WORKSPACE_SLUG_ATTR}}" title="Back to the workspace">&larr; {{WORKSPACE_NAME}}</a>
+    <strong>Clusters</strong>
+
+    <span class="control">
+        <label for="opt-level">Level</label>
+        <select id="opt-level" class="form-select form-select-sm">
+            <option value="softwareSystem">Software systems</option>
+            <option value="container" selected>Containers</option>
+            <option value="component">Components</option>
+        </select>
+    </span>
+
+    <span class="control">
+        <label for="opt-include">Include tags</label>
+        <input id="opt-include" class="form-control form-control-sm" type="text" size="12" placeholder="any"/>
+    </span>
+
+    <span class="control">
+        <label for="opt-exclude">Exclude tags</label>
+        <input id="opt-exclude" class="form-control form-control-sm" type="text" size="12" placeholder="none"/>
+    </span>
+
+    <span class="control">
+        <input id="opt-implied" class="form-check-input" type="checkbox" checked/>
+        <label for="opt-implied" title="Attribute relationships between descendants to their ancestor at this level">Roll up</label>
+    </span>
+
+    <span id="clusters-status" class="text-body-secondary ms-auto"></span>
+</header>
+
+<div id="clusters-body">
+    <div id="summary"></div>
+
+    <section class="panel">
+        <h2>Conformance</h2>
+        <p class="panel-note">
+            Where the structure the model <em>declares</em> — groups, or the parent element — disagrees
+            with the communities its dependencies actually form.
+        </p>
+        <div id="conformance"></div>
+    </section>
+
+    <section class="panel">
+        <h2>Communities</h2>
+        <p class="panel-note">
+            Detected with Louvain over the undirected dependency graph. Deterministic: the same
+            workspace always produces the same communities.
+        </p>
+        <div id="communities"></div>
+    </section>
+
+    <section class="panel">
+        <h2>Dependency structure matrix</h2>
+        <p class="panel-note">
+            Rows depend on columns, ordered by community. A clean modularisation fills blocks along
+            the diagonal and leaves little outside them.
+        </p>
+        <div id="dsm-scroll"></div>
+        <div id="dsm-legend">
+            <span><span class="swatch" style="background: var(--bs-primary, #0d6efd)"></span>within a community</span>
+            <span><span class="swatch" style="background: var(--bs-warning, #ffc107)"></span>crosses a community boundary</span>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Structure</h2>
+        <p class="panel-note">
+            Cycles are strongly connected components; bridges and articulation points are the single
+            edges and elements whose removal splits the model.
+        </p>
+        <div id="structure"></div>
+    </section>
+
+    <section class="panel">
+        <h2>Metrics</h2>
+        <p class="panel-note">Click a heading to sort.</p>
+        <div id="metrics"></div>
+    </section>
+</div>
+
+<script>
+    window.CLUSTERS_WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
+</script>
+<script src="/static/js/structurizr-clusters.js"></script>
+</body>
+</html>
