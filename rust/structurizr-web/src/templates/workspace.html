@@ -511,6 +511,20 @@
         graphLink.title = 'Force-directed graph of every element, relationship, view and decision';
         list.appendChild(graphLink);
 
+        var reviewLink = document.createElement('a');
+        reviewLink.className = 'view-item';
+        reviewLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/review';
+        reviewLink.innerHTML = '<i class="bi bi-list-check me-1"></i>Review elements';
+        reviewLink.title = 'Walk the model element by element, with hygiene findings';
+        list.appendChild(reviewLink);
+
+        var printLink = document.createElement('a');
+        printLink.className = 'view-item';
+        printLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/print';
+        printLink.innerHTML = '<i class="bi bi-printer me-1"></i>Print document';
+        printLink.title = 'Every view as a paginated document, ready to print';
+        list.appendChild(printLink);
+
         var canvasLink = document.createElement('a');
         canvasLink.className = 'view-item';
         canvasLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/canvas';

@@ -37,6 +37,8 @@ pub fn start(path: PathBuf, state: AppState) -> Result<()> {
                     if let Ok(mut ws) = state.workspaces.lock() {
                         *ws = entries;
                     }
+                    // Anything derived from the old workspaces is now stale.
+                    state.invalidate_derived();
                 }
                 Err(e) => {
                     eprintln!("Warning: failed to reload workspaces: {}", e);

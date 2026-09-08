@@ -1,71 +1,260 @@
-body {
-    font-size: 18px;
+/*
+ * Print document stylesheet for /workspace/{name}/print.
+ *
+ * The page is assembled on screen first (each view rendered by the JointJS
+ * diagram, then serialised via exportCurrentDiagramToSVG) and printed from the
+ * browser. Pagination is one <section class="print-figure"> per sheet.
+ *
+ * Page geometry lives in a JS-injected <style id="print-page-rules"> block,
+ * because @page rules cannot read CSS custom properties.
+ */
+
+/* ---- screen: control bar + document preview ---- */
+
+body.print-body {
+    margin: 0;
+    background: #eceff1;
+    color: #000;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
-#diagramControls, #keyModal, #embedModal {
-    display: none !important;
+
+#print-controls {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: #fff;
+    border-bottom: 1px solid #cfd8dc;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
-#diagramContainer, #diagramViewport, #diagramCanvas {
+
+#print-controls .control-group {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.875rem;
+}
+
+#print-controls label { white-space: nowrap; }
+#print-controls select { font-size: 0.875rem; padding: 0.15rem 0.3rem; }
+#print-controls .spacer { flex: 1 1 auto; }
+
+#print-status {
+    font-size: 0.875rem;
+    color: #546e7a;
+    min-width: 14em;
+}
+
+#print-doc {
+    /* Mirror the printed sheet on screen so oversized diagrams are visible
+       before anyone spends paper on them. Sized to content, because portrait
+       and landscape sheets can be mixed in one document. */
+    margin: 1.5rem auto;
+    width: fit-content;
+}
+
+.print-sheet {
+    background: #fff;
+    box-sizing: border-box;
+    width: var(--sheet-width, 210mm);
+    /* A definite height, not a minimum: the diagram is fitted to the space
+       left over on the sheet, and that space has to be measurable. */
+    height: var(--sheet-height, 297mm);
+    padding: var(--sheet-margin, 14mm);
+    margin: 0 auto 1rem;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+}
+
+/* ---- cover ---- */
+
+.print-cover-title {
+    font-size: 28pt;
+    font-weight: 600;
+    margin: 25mm 0 4mm;
+    line-height: 1.15;
+}
+
+.print-cover-desc {
+    font-size: 12pt;
+    color: #37474f;
+    margin: 0 0 12mm;
+    max-width: 60ch;
+}
+
+.print-cover-meta {
+    font-size: 10pt;
+    color: #546e7a;
+    border-top: 1px solid #b0bec5;
+    padding-top: 3mm;
+}
+
+.print-cover-meta div { margin-bottom: 1mm; }
+
+/* ---- table of contents ---- */
+
+.print-toc-heading {
+    font-size: 16pt;
+    font-weight: 600;
+    margin: 0 0 6mm;
+}
+
+.print-toc {
+    list-style: none;
     padding: 0;
     margin: 0;
-    border: 0;
-}
-#progressBar {
-    display: none;
+    font-size: 10.5pt;
 }
 
-.marker-vertices {
-    display: none;
-}
-#topNavigation {
-    display: none;
-}
-.modal {
-    display: none;
-}
-#tooltip {
-    display: none;
-}
-#workspaceNavigation, #documentationNavigation, #softwareSystemNavigation, #documentationSubsectionNavigation {
-    display: none;
-}
-#footer {
-    display: none;
-}
-#documentationContent .imageTitle {
-    display: none;
-}
-img {
-    max-width: 100% !important;
-}
-iframe {
-}
-.structurizrNavigation {
-    display: none;
-}
-#explorationControls, #documentationControls, #decisionLogControls, #embeddedControls {
-    display: none;
+.print-toc li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 1.2mm 0;
+    border-bottom: 1px dotted #cfd8dc;
 }
 
-#documentationNavigationPanel {
-    display: none;
+.print-toc .toc-title { flex: 0 1 auto; }
+.print-toc .toc-type { color: #78909c; font-size: 9pt; }
+.print-toc .toc-fill { flex: 1 1 auto; }
+.print-toc .toc-page { font-variant-numeric: tabular-nums; color: #37474f; }
+
+/* ---- one figure per sheet ---- */
+
+.print-figure-title {
+    font-size: 14pt;
+    font-weight: 600;
+    margin: 0 0 1.5mm;
 }
 
-#progressMessage {
-    display:none;
+.print-figure-desc {
+    font-size: 9.5pt;
+    color: #455a64;
+    margin: 0 0 3mm;
+    max-width: 70ch;
 }
 
-.hidden {
-    display: none;
+.print-figure-diagram {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
 }
 
-.highlightedLink {
-    display: none;
+/*
+ * Fit-to-page is applied by structurizr-print.js, which sets an explicit
+ * width/height in px after measuring the space this figure actually has left.
+ * It cannot be done in CSS alone: the exported SVG carries its own inline
+ * width/height, which win over any stylesheet rule, so a max-width plus a
+ * max-height would clamp the two axes independently and letterbox the diagram
+ * into a fraction of the sheet. Fitting is also what keeps a figure on a
+ * single sheet, which is what makes the computed "Page n of m" trustworthy.
+ */
+.print-figure-diagram svg {
+    background: #fff !important;
 }
 
-#documentationNavigationDropDown, #decisionLogNavigationDropDown {
-    display: none;
+.print-figure-legend {
+    flex: 0 0 auto;
+    margin-top: 3mm;
+    padding-top: 2mm;
+    border-top: 1px solid #cfd8dc;
+    text-align: center;
 }
 
-button {
-    display: none;
+.print-figure-legend svg {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 30mm;
+    background: #fff !important;
+}
+
+.print-figure-footer {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 1rem;
+    margin-top: 3mm;
+    padding-top: 1.5mm;
+    border-top: 1px solid #b0bec5;
+    font-size: 8pt;
+    color: #546e7a;
+}
+
+.print-figure-footer .footer-fill { flex: 1 1 auto; }
+.print-figure-footer .footer-page { font-variant-numeric: tabular-nums; }
+
+.print-figure-error {
+    font-size: 10pt;
+    color: #b71c1c;
+}
+
+/* ---- greyscale-safe mode ---- */
+
+body.print-greyscale .print-figure-diagram svg,
+body.print-greyscale .print-figure-legend svg {
+    filter: grayscale(1);
+}
+
+/* ---- offscreen render stage ---- */
+
+/* The live diagram must have a real, non-zero box: JointJS measures element
+   bounding boxes to lay out and to crop the export, and display:none or a
+   zero-sized container yields empty geometry. So it is positioned out of the
+   viewport rather than hidden. */
+#print-stage {
+    position: fixed;
+    top: 0;
+    left: -20000px;
+    width: 1600px;
+    height: 1200px;
+    overflow: hidden;
+}
+
+/* ---- print ---- */
+
+@media print {
+    body.print-body { background: #fff; }
+
+    #print-controls,
+    #print-stage {
+        display: none !important;
+    }
+
+    #print-doc {
+        margin: 0;
+        width: auto;
+    }
+
+    .print-sheet {
+        width: auto;
+        /* @page already reserves the margin, so the sheet drops its padding
+           and becomes exactly the page content box — the same box that was
+           measured on screen, so the fit still holds. */
+        height: var(--content-height, 269mm);
+        margin: 0;
+        padding: 0;
+        box-shadow: none;
+        break-after: page;
+        page-break-after: always;
+    }
+
+    .print-sheet:last-child {
+        break-after: auto;
+        page-break-after: auto;
+    }
+
+    /* Keep SVG fills and the light figure background even when the browser
+       decides to "save ink". */
+    .print-figure-diagram svg,
+    .print-figure-legend svg {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
 }

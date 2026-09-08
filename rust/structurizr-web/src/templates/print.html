@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Print – {{WORKSPACE_NAME}}</title>
+    <link rel="icon" type="image/png" href="/static/img/favicon.png"/>
+    <link rel="stylesheet" href="/static/css/structurizr.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-print.css"/>
+    <!-- Injected by structurizr-print.js: @page size and the named page rules
+         used for per-view orientation. @page cannot read CSS variables. -->
+    <style id="print-page-rules"></style>
+</head>
+<body class="print-body" data-workspace="{{WORKSPACE_SLUG_ATTR}}">
+
+<div id="print-controls">
+    <a href="/workspace/{{WORKSPACE_SLUG_ATTR}}" title="Back to the workspace">&larr; {{WORKSPACE_NAME}}</a>
+
+    <div class="control-group">
+        <label for="opt-paper">Paper</label>
+        <select id="opt-paper" disabled>
+            <option value="a4" selected>A4</option>
+            <option value="letter">Letter</option>
+        </select>
+    </div>
+
+    <div class="control-group">
+        <label for="opt-orientation">Orientation</label>
+        <select id="opt-orientation" disabled>
+            <option value="auto" selected>Auto (per view)</option>
+            <option value="portrait">Portrait</option>
+            <option value="landscape">Landscape</option>
+        </select>
+    </div>
+
+    <div class="control-group">
+        <input type="checkbox" id="opt-toc" checked disabled/>
+        <label for="opt-toc">Contents page</label>
+    </div>
+
+    <div class="control-group">
+        <input type="checkbox" id="opt-legend" checked disabled/>
+        <label for="opt-legend">Legend</label>
+    </div>
+
+    <div class="control-group">
+        <input type="checkbox" id="opt-greyscale" disabled/>
+        <label for="opt-greyscale">Greyscale</label>
+    </div>
+
+    <span class="spacer"></span>
+    <span id="print-status">Starting…</span>
+    <button id="rebuild-button" type="button" hidden>Rebuild</button>
+    <button id="print-button" type="button" disabled>Print</button>
+</div>
+
+<!-- Offscreen render stage. The live JointJS diagram is switched to each view
+     in turn and serialised from here; it needs a real, non-zero box, so it is
+     moved out of the viewport rather than hidden. -->
+<div id="print-stage"></div>
+
+<div id="print-doc"></div>
+
+<script src="/static/js/jquery-3.7.1.min.js"></script>
+<script src="/static/js/jointjs-Core-4.1.3.js"></script>
+<script src="/static/js/dagre-1.1.8.js"></script>
+<script src="/static/js/graphlib-2.2.4.min.js"></script>
+<script src="/static/js/jointjs-DirectedGraph-4.1.3.min.js"></script>
+<script src="/static/js/structurizr-layout-fixes.js"></script>
+<script src="/static/js/structurizr.js"></script>
+<script src="/static/js/structurizr-util.js"></script>
+<script src="/static/js/structurizr-ui.js"></script>
+<script src="/static/js/structurizr-workspace.js"></script>
+<script src="/static/js/structurizr-diagram.js"></script>
+<script>
+    window.PRINT_WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
+</script>
+<script src="/static/js/structurizr-print.js"></script>
+</body>
+</html>

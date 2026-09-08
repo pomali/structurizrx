@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Review – {{WORKSPACE_NAME}}</title>
+    <link rel="icon" type="image/png" href="/static/img/favicon.png"/>
+    <link rel="stylesheet" href="/static/css/bootstrap-5.3.7.min.css"/>
+    <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-review.css"/>
+</head>
+<body class="review-body" data-workspace="{{WORKSPACE_SLUG_ATTR}}">
+
+<header id="review-header">
+    <a href="/workspace/{{WORKSPACE_SLUG_ATTR}}" title="Back to the workspace">&larr; {{WORKSPACE_NAME}}</a>
+    <strong>Review</strong>
+
+    <div id="review-progress">
+        <div class="progress" role="progressbar" aria-label="Review progress">
+            <div id="progress-bar" class="progress-bar bg-success" style="width: 0%"></div>
+        </div>
+        <div id="progress-label" class="progress-label">0 / 0 reviewed</div>
+    </div>
+
+    <span class="ms-auto text-body-secondary">
+        <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>r</kbd> reviewed · <kbd>f</kbd> flag · <kbd>/</kbd> search
+    </span>
+    <button id="report-button" type="button" class="btn btn-sm btn-outline-secondary">Report</button>
+</header>
+
+<div id="review-panes">
+    <div id="review-list-pane">
+        <div id="review-filters">
+            <input id="filter-query" class="form-control form-control-sm full" type="search"
+                   placeholder="Search name, description, technology, tag…"/>
+
+            <select id="filter-kind" class="form-select form-select-sm">
+                <option value="">All kinds</option>
+            </select>
+
+            <select id="filter-only" class="form-select form-select-sm">
+                <option value="">Everything</option>
+                <option value="findings">With findings</option>
+                <option value="blocking">Blocking only</option>
+                <option value="unreviewed">Not yet reviewed</option>
+                <option value="flagged">Flagged</option>
+            </select>
+
+            <select id="filter-sort" class="form-select form-select-sm full">
+                <option value="model">Model order</option>
+                <option value="name">Name</option>
+                <option value="findings">Most findings first</option>
+                <option value="degree">Most connected first</option>
+                <option value="orphans">Least connected first</option>
+            </select>
+
+            <div id="review-count" class="full text-body-secondary small"></div>
+        </div>
+
+        <ul id="review-list"></ul>
+    </div>
+
+    <div id="review-detail"></div>
+</div>
+
+<script>
+    window.REVIEW_WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
+</script>
+<script src="/static/js/structurizr-review.js"></script>
+</body>
+</html>

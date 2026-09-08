@@ -100,11 +100,16 @@ Axum HTTP server serving a workspace browser at `http://localhost:<port>`. Key r
 - `GET /workspace/{name}/diagram/{key}` — SVG diagram page
 - `GET /workspace/{name}/decisions` — ADR list
 - `GET /workspace/{name}/canvas` — Canvas demo (requires WASM build)
+- `GET /workspace/{name}/review` — element walkthrough: filterable element list plus per-element detail, findings and neighbourhood (`assets/js/structurizr-review.js` + `templates/review.html` + `assets/css/structurizr-review.css`), fed by `/api/workspace/{name}/review`. Review marks live in the URL hash (`#r=<ids>&f=<ids>&e=<id>`), not on the server, so a part-finished review is a shareable link and nothing is written next to the workspace file
+- `GET /workspace/{name}/print` — print document: every view as one paginated sheet, built client-side (`assets/js/structurizr-print.js` + `templates/print.html` + `assets/css/structurizr-print.css`) and printed from the browser. It captures the *rendered* JointJS diagram via `exportCurrentDiagramToSVG`, not the server-side `SvgExporter` output — the two use different layout engines, so only the client render matches the screen. Fit-to-page is applied in JS after measuring each sheet, because the exported SVG's inline `width`/`height` override any stylesheet rule
 - `GET /workspace/{name}/graph` — universe graph: the whole workspace as one force-directed graph (`assets/js/structurizr-universe-graph.js` + `templates/graph.html`), fed by `/api/workspace/{name}/graph`
 - `GET /docs/` — the mdBook documentation site (see "Docs site build" above), served from `assets::DocsAssets` (embeds `site/book/`, separate from the workspace-viewer `assets::Assets` embed); `GET /docs` 308-redirects to it
 - `GET /api/workspace/{name}/diagram/{key}/svg` — raw SVG
 - `GET /api/workspace/{name}/graph` — `structurizr_query::graph` output as JSON
+- `GET /api/workspace/{name}/review` — `structurizr_query::review` output as JSON, served from the `AppState` derived cache
 - `WS /ws` — live-reload WebSocket
+
+`AppState` holds a per-workspace `DerivedCache` for artefacts that cost a full index pass to build (`AppState::cached`). The watcher drops the whole cache via `invalidate_derived()` immediately after swapping in freshly parsed workspaces — if you add a derived artefact, add it to `DerivedCache` rather than computing it per request.
 
 HTML templates live in `structurizr-web/src/templates/`. Static assets (CSS, JS, icons, WASM output) are embedded at compile time via `rust-embed` from `structurizr-web/assets/`. The WASM output files land in `assets/wasm/` and are produced by the `build.rs` script.
 
@@ -116,6 +121,10 @@ Language server for the DSL, built on the `structurizr-dsl` lexer/parser. All lo
 
 ### `structurizr-query`
 Selector-expression engine (spec §6.2), view generation (`generate_views`, spec §6.3) and the whole-workspace graph projection (`graph`, in `graph.rs` — every element/view/ADR as a node, every relationship/containment/instance/membership as a link; backs the web universe-graph page). Depends only on `structurizr-model`; used by `structurizr-cli` and `structurizr-web`.
+
+`index.rs` is the shared graph index: one pass over the model resolving hierarchy, adjacency (`outgoing`/`incoming`/`children`/`degree`) and view membership (`views_for`). The selector engine, `lint` and `review` all read it rather than re-traversing the workspace. Ordering is deterministic throughout — entries are in model order and adjacency is `Vec`s of indices, never `HashMap` iteration — so anything layered on top can be reproduced run to run. It indexes the static model only (people, systems, containers, components, custom elements); deployment nodes and instances are deliberately absent, matching the selector engine's element kinds. `graph.rs` still does its own traversal and is the projection that *does* include deployment; folding it onto the index would mean widening the index's scope first.
+
+`review.rs` is the read model behind the web review page: every element with its neighbourhood, the views showing it, and hygiene findings. Its checks are deliberately separate from `lint.rs` — `lint` is the gate that `validate --strict` fails on, so adding a review check (`missing-description`, `missing-technology`, `not-in-any-view`, `no-relationships`, `duplicate-name`, `relationship-undescribed`) can never change the exit status of an existing workspace. `lint`'s findings are folded into the review output marked `blocking: true`.
 
 ### `structurizr-cli`
 Entry point `structurizrx`. Subcommands: `validate [--strict]`, `render`, `export`, `digest`, `query`, `serve`. Accepts both `.dsl` and `.json` workspace files. `render` and `serve` materialize generated (`auto`) views before rendering.

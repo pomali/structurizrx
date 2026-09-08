@@ -23,6 +23,8 @@ const DECISIONS_HTML: &str = include_str!("templates/decisions.html");
 const DECISION_HTML: &str = include_str!("templates/decision.html");
 const CANVAS_HTML: &str = include_str!("templates/canvas.html");
 const GRAPH_HTML: &str = include_str!("templates/graph.html");
+const PRINT_HTML: &str = include_str!("templates/print.html");
+const REVIEW_HTML: &str = include_str!("templates/review.html");
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
@@ -33,6 +35,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/workspace/{name}/decisions/{id}", get(decision_handler))
         .route("/workspace/{name}/canvas", get(canvas_handler))
         .route("/workspace/{name}/graph", get(graph_handler))
+        .route("/workspace/{name}/print", get(print_handler))
+        .route("/workspace/{name}/review", get(review_handler))
         .route("/api/workspaces", get(api_workspaces_handler))
         .route("/api/workspace/{name}", get(api_workspace_handler))
         .route("/api/workspace/{name}/decisions", get(api_decisions_handler))
@@ -43,6 +47,7 @@ pub fn build_router(state: AppState) -> Router {
             get(api_diagram_mermaid_handler),
         )
         .route("/api/workspace/{name}/graph", get(api_graph_handler))
+        .route("/api/workspace/{name}/review", get(api_review_handler))
         .route("/api/workspace/{name}/digest", get(api_digest_handler))
         .route("/api/workspace/{name}/query", get(api_query_handler))
         .route("/llms.txt", get(llms_txt_handler))
@@ -136,6 +141,27 @@ async fn canvas_handler(Path(name): Path<String>) -> Html<String> {
 async fn graph_handler(Path(name): Path<String>) -> Html<String> {
     Html(
         GRAPH_HTML
+            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
+    )
+}
+
+/// The print document page. Every view is rendered client-side by the JointJS
+/// diagram and serialised there, so this handler only serves the shell.
+async fn print_handler(Path(name): Path<String>) -> Html<String> {
+    Html(
+        PRINT_HTML
+            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
+    )
+}
+
+/// The element walkthrough / review page.
+async fn review_handler(Path(name): Path<String>) -> Html<String> {
+    Html(
+        REVIEW_HTML
             .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
             .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
             .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
@@ -238,6 +264,40 @@ async fn api_decision_handler(
 /// pasting into LLM context.
 ///
 /// `GET /api/workspace/{name}/digest`
+/// Every element with its neighbourhood, views and hygiene findings.
+///
+/// Served from [`AppState::cached`]: the body is the same for every reader
+/// until the workspace file changes, and building it costs a full index pass.
+async fn api_review_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Response {
+    let workspace = {
+        let workspaces = state.workspaces.lock().unwrap();
+        match workspaces.iter().find(|e| e.name == name) {
+            Some(entry) => entry.workspace.clone(),
+            None => return (StatusCode::NOT_FOUND, "Workspace not found").into_response(),
+        }
+    };
+
+    let body = state.cached(
+        &name,
+        |c| c.review_json.clone(),
+        |c, v| c.review_json = Some(v),
+        || {
+            serde_json::to_string(&structurizr_query::review(&workspace))
+                .unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"))
+        },
+    );
+
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        body.as_str().to_owned(),
+    )
+        .into_response()
+}
+
 async fn api_digest_handler(
     State(state): State<AppState>,
     Path(name): Path<String>,

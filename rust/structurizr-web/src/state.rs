@@ -1,5 +1,6 @@
 //! Shared application state.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -59,11 +60,25 @@ pub enum BroadcastMsg {
     Reload,
 }
 
+/// Per-workspace artefacts derived from the model, cached because they cost a
+/// full index pass (and, later, graph algorithms) to produce and are requested
+/// far more often than the workspace changes.
+///
+/// Every entry is keyed by workspace name and dropped wholesale by
+/// [`AppState::invalidate_derived`] when the watcher reloads — there is no
+/// partial invalidation, because a reload replaces the workspaces outright.
+#[derive(Default)]
+pub struct DerivedCache {
+    /// Serialised body of `/api/workspace/{name}/review`.
+    pub review_json: Option<Arc<String>>,
+}
+
 /// Shared application state (wrapped in `Arc` for clone-ability).
 #[derive(Clone)]
 pub struct AppState {
     pub workspaces: Arc<Mutex<Vec<WorkspaceEntry>>>,
     pub tx: broadcast::Sender<BroadcastMsg>,
+    derived: Arc<Mutex<HashMap<String, DerivedCache>>>,
 }
 
 impl AppState {
@@ -72,7 +87,91 @@ impl AppState {
         AppState {
             workspaces: Arc::new(Mutex::new(workspaces)),
             tx,
+            derived: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Read a cached artefact, or produce and store it.
+    ///
+    /// `produce` runs while no lock is held, so a slow computation for one
+    /// workspace never blocks requests for another.
+    pub fn cached<F>(&self, name: &str, read: fn(&DerivedCache) -> Option<Arc<String>>, write: fn(&mut DerivedCache, Arc<String>), produce: F) -> Arc<String>
+    where
+        F: FnOnce() -> String,
+    {
+        if let Ok(cache) = self.derived.lock() {
+            if let Some(hit) = cache.get(name).and_then(read) {
+                return hit;
+            }
+        }
+
+        let value = Arc::new(produce());
+
+        if let Ok(mut cache) = self.derived.lock() {
+            write(cache.entry(name.to_string()).or_default(), value.clone());
+        }
+
+        value
+    }
+
+    /// Drop every derived artefact. Called by the watcher after it swaps in
+    /// freshly parsed workspaces; without it the review and graph views would
+    /// keep serving data for the previous version of the file.
+    pub fn invalidate_derived(&self) {
+        if let Ok(mut cache) = self.derived.lock() {
+            cache.clear();
         }
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn a_second_read_is_served_from_the_cache() {
+        let state = AppState::new(vec![]);
+        let builds = AtomicUsize::new(0);
+
+        let mut produce = || {
+            builds.fetch_add(1, Ordering::SeqCst);
+            "body".to_string()
+        };
+
+        let first = state.cached("ws", |c| c.review_json.clone(), |c, v| c.review_json = Some(v), &mut produce);
+        let second = state.cached("ws", |c| c.review_json.clone(), |c, v| c.review_json = Some(v), &mut produce);
+
+        assert_eq!(builds.load(Ordering::SeqCst), 1, "the body is built once");
+        assert_eq!(*first, *second);
+    }
+
+    #[test]
+    fn invalidating_forces_a_rebuild() {
+        let state = AppState::new(vec![]);
+        let builds = AtomicUsize::new(0);
+
+        let mut produce = || {
+            builds.fetch_add(1, Ordering::SeqCst);
+            "body".to_string()
+        };
+
+        state.cached("ws", |c| c.review_json.clone(), |c, v| c.review_json = Some(v), &mut produce);
+        state.invalidate_derived();
+        state.cached("ws", |c| c.review_json.clone(), |c, v| c.review_json = Some(v), &mut produce);
+
+        assert_eq!(builds.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn workspaces_do_not_share_a_cache_entry() {
+        let state = AppState::new(vec![]);
+
+        let a = state.cached("a", |c| c.review_json.clone(), |c, v| c.review_json = Some(v), || "A".to_string());
+        let b = state.cached("b", |c| c.review_json.clone(), |c, v| c.review_json = Some(v), || "B".to_string());
+
+        assert_eq!(*a, "A");
+        assert_eq!(*b, "B");
+    }
+}
