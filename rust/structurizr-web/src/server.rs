@@ -26,6 +26,7 @@ const GRAPH_HTML: &str = include_str!("templates/graph.html");
 const PRINT_HTML: &str = include_str!("templates/print.html");
 const REVIEW_HTML: &str = include_str!("templates/review.html");
 const CLUSTERS_HTML: &str = include_str!("templates/clusters.html");
+const DIFF_HTML: &str = include_str!("templates/diff.html");
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
@@ -39,6 +40,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/workspace/{name}/print", get(print_handler))
         .route("/workspace/{name}/review", get(review_handler))
         .route("/workspace/{name}/clusters", get(clusters_handler))
+        .route("/workspace/{name}/diff", get(diff_handler))
         .route("/api/workspaces", get(api_workspaces_handler))
         .route("/api/workspace/{name}", get(api_workspace_handler))
         .route("/api/workspace/{name}/decisions", get(api_decisions_handler))
@@ -51,6 +53,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/workspace/{name}/graph", get(api_graph_handler))
         .route("/api/workspace/{name}/review", get(api_review_handler))
         .route("/api/workspace/{name}/clusters", get(api_clusters_handler))
+        .route("/api/workspace/{name}/revisions", get(api_revisions_handler))
+        .route("/api/workspace/{name}/diff", get(api_diff_handler))
         .route("/api/workspace/{name}/digest", get(api_digest_handler))
         .route("/api/workspace/{name}/query", get(api_query_handler))
         .route("/llms.txt", get(llms_txt_handler))
@@ -165,6 +169,16 @@ async fn print_handler(Path(name): Path<String>) -> Html<String> {
 async fn review_handler(Path(name): Path<String>) -> Html<String> {
     Html(
         REVIEW_HTML
+            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
+            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
+    )
+}
+
+/// The version-comparison page.
+async fn diff_handler(Path(name): Path<String>) -> Html<String> {
+    Html(
+        DIFF_HTML
             .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
             .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
             .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
@@ -386,6 +400,160 @@ async fn api_clusters_handler(
         body.as_str().to_owned(),
     )
         .into_response()
+}
+
+// ---- Version comparison ----
+
+/// The workspace file's history, for the revision pickers.
+///
+/// `GET /api/workspace/{name}/revisions`
+///
+/// 409 (rather than 404) when the workspace is not in git: the workspace
+/// exists, it just has no history to offer, and the page says so.
+async fn api_revisions_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Response {
+    let Some(path) = workspace_path(&state, &name) else {
+        return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
+    };
+
+    if !crate::git::is_tracked(&path) {
+        return (
+            StatusCode::CONFLICT,
+            format!(
+                "{} is not tracked by git, so it has no versions to compare. \
+                 Commit it (or open a workspace inside a repository) and reload.",
+                path.display()
+            ),
+        )
+            .into_response();
+    }
+
+    match crate::git::history(&path, 200) {
+        Ok(history) => Json(history).into_response(),
+        Err(e) => (
+            StatusCode::CONFLICT,
+            format!("No git history for {}: {e:#}", path.display()),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct DiffParams {
+    /// The earlier revision. Any git revision, defaulting to `HEAD`.
+    from: Option<String>,
+    /// The later revision, or `working` (the default) for the file on disk.
+    to: Option<String>,
+}
+
+/// One side of a comparison, as the page labels it.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiffSide {
+    /// The revision as it was asked for (`HEAD~3`, a sha, or `working`).
+    rev: String,
+    /// Full sha, absent for the working copy.
+    sha: Option<String>,
+}
+
+/// Compare two versions of the workspace.
+///
+/// `GET /api/workspace/{name}/diff?from=<rev>&to=<rev|working>`
+///
+/// Both sides are parsed and compared as *models*, not as text: see
+/// [`structurizr_query::diff`] for why the comparison is keyed on element
+/// paths rather than ids.
+async fn api_diff_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    axum::extract::Query(params): axum::extract::Query<DiffParams>,
+) -> Response {
+    let (Some(path), Some(current)) = (workspace_path(&state, &name), current_workspace(&state, &name))
+    else {
+        return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
+    };
+
+    let from = params.from.unwrap_or_else(|| "HEAD".to_string());
+    let to = params.to.unwrap_or_else(|| crate::git::WORKING.to_string());
+    let key = format!("{from}|{to}");
+
+    // The working copy is whatever the server last parsed, so a comparison
+    // involving it is only valid until the next reload — which is exactly when
+    // the whole derived cache is dropped.
+    let load = |rev: &str| -> Result<structurizr_model::Workspace, String> {
+        if rev == crate::git::WORKING {
+            return Ok(current.clone());
+        }
+        let source = crate::git::read(&path, rev).map_err(|e| format!("{e:#}"))?;
+        crate::resolver::workspace_from_source(
+            &source,
+            crate::resolver::is_json(&path),
+            &format!("revision {rev}"),
+        )
+        .map_err(|e| format!("{e:#}"))
+    };
+
+    let before = match load(&from) {
+        Ok(ws) => ws,
+        Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
+    };
+    let after = match load(&to) {
+        Ok(ws) => ws,
+        Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
+    };
+
+    let side = |rev: &str| DiffSide {
+        rev: rev.to_string(),
+        sha: if rev == crate::git::WORKING {
+            None
+        } else {
+            crate::git::resolve(&path, rev).ok()
+        },
+    };
+
+    let body = state.cached(
+        &name,
+        |c| c.diff_json.get(&key).cloned(),
+        |c, v| {
+            c.diff_json.insert(key.clone(), v);
+        },
+        || {
+            let payload = serde_json::json!({
+                "from": side(&from),
+                "to": side(&to),
+                "diff": structurizr_query::diff(&before, &after),
+            });
+            serde_json::to_string(&payload).unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"))
+        },
+    );
+
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        body.as_str().to_owned(),
+    )
+        .into_response()
+}
+
+/// The file a workspace was loaded from, cloned out so the lock is not held
+/// across the git commands that follow.
+fn workspace_path(state: &AppState, name: &str) -> Option<std::path::PathBuf> {
+    let workspaces = state.workspaces.lock().unwrap();
+    workspaces
+        .iter()
+        .find(|e| e.name == name)
+        .map(|e| e.source_path.clone())
+}
+
+fn current_workspace(state: &AppState, name: &str) -> Option<structurizr_model::Workspace> {
+    let workspaces = state.workspaces.lock().unwrap();
+    workspaces
+        .iter()
+        .find(|e| e.name == name)
+        .map(|e| e.workspace.clone())
 }
 
 async fn api_digest_handler(

@@ -1,0 +1,259 @@
+/*
+ * Version comparison for /workspace/{name}/diff.
+ *
+ * One column, read top to bottom: what changed in total, then the changes
+ * themselves grouped by what they are. Colour carries the kind of change
+ * (added / removed / modified) and is always paired with a +, − or ~ glyph, so
+ * the page stays readable without colour.
+ */
+
+html, body {
+    height: 100%;
+}
+
+body.diff-body {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    font-size: 0.9rem;
+}
+
+#diff-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 0.85rem;
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+}
+
+#diff-revisions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 1 1 auto;
+    max-width: 46rem;
+}
+
+/* The two pickers share the space evenly however long the subjects are:
+   without a min-width of 0 a long commit subject pushes the other picker out
+   of the header. */
+#diff-revisions select {
+    flex: 1 1 0;
+    min-width: 0;
+    font-family: var(--bs-font-monospace, monospace);
+    font-size: 0.78rem;
+}
+
+/* ---- summary ---- */
+
+#diff-summary {
+    flex: 0 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.6rem 0.85rem;
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+}
+
+.summary-card {
+    min-width: 9rem;
+    padding: 0.4rem 0.7rem;
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: 0.4rem;
+}
+
+.summary-card-quiet {
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+.summary-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+.summary-value {
+    display: flex;
+    gap: 0.6rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+
+.summary-card-quiet .summary-value {
+    font-weight: 400;
+}
+
+/* ---- filters ---- */
+
+#diff-filters {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.85rem;
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+}
+
+#diff-filters #filter-query {
+    max-width: 22rem;
+}
+
+/* ---- change list ---- */
+
+#diff-content {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 0.85rem;
+}
+
+.diff-section + .diff-section {
+    margin-top: 1.4rem;
+}
+
+.diff-section h2 {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin: 0 0 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+.section-count {
+    font-size: 0.75rem;
+    padding: 0 0.4rem;
+    border-radius: 1rem;
+    background: var(--bs-secondary-bg, #e9ecef);
+    color: var(--bs-body-color, #212529);
+}
+
+.diff-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.diff-entry {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-left-width: 3px;
+    border-radius: 0.3rem;
+    margin-bottom: 0.35rem;
+}
+
+.diff-added { border-left-color: var(--bs-success, #198754); }
+.diff-removed { border-left-color: var(--bs-danger, #dc3545); }
+.diff-modified { border-left-color: var(--bs-primary, #0d6efd); }
+.diff-hint { border-left-color: var(--bs-secondary-color, #6c757d); }
+
+.diff-hint .diff-entry-subtitle {
+    margin-left: 0.5rem;
+}
+
+.diff-entry-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
+.diff-entry-title {
+    font-weight: 600;
+    word-break: break-word;
+}
+
+.diff-entry-subtitle {
+    color: var(--bs-secondary-color, #6c757d);
+    font-size: 0.8rem;
+}
+
+.change-badge {
+    flex: 0 0 1.1rem;
+    text-align: center;
+    font-weight: 700;
+    font-family: var(--bs-font-monospace, monospace);
+}
+
+.change-added { color: var(--bs-success, #198754); }
+.change-removed { color: var(--bs-danger, #dc3545); }
+.change-modified { color: var(--bs-primary, #0d6efd); }
+
+/* ---- field-level changes ---- */
+
+.field-table {
+    margin: 0.35rem 0 0 1.6rem;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    /* Long descriptions wrap inside the cell rather than widening the page. */
+    table-layout: fixed;
+    width: calc(100% - 1.6rem);
+}
+
+.field-table th {
+    width: 9rem;
+    padding: 0.1rem 0.5rem 0.1rem 0;
+    font-weight: 500;
+    color: var(--bs-secondary-color, #6c757d);
+    vertical-align: top;
+}
+
+.field-table td {
+    padding: 0.1rem 0.4rem;
+    vertical-align: top;
+    word-break: break-word;
+}
+
+.field-arrow {
+    width: 1.5rem;
+    text-align: center;
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+.field-before {
+    color: var(--bs-danger-text-emphasis, #842029);
+    text-decoration: line-through;
+    text-decoration-color: rgba(220, 53, 69, 0.4);
+}
+
+.field-after {
+    color: var(--bs-success-text-emphasis, #0a3622);
+}
+
+.path-list {
+    margin: 0.3rem 0 0 1.6rem;
+    font-size: 0.82rem;
+}
+
+/* Nothing to compare (no repository, no commits): the controls would be dead,
+   so only the message and the way back are left. */
+.diff-unavailable #diff-revisions,
+.diff-unavailable #diff-filters,
+.diff-unavailable #copy-link {
+    display: none;
+}
+
+/* ---- messages ---- */
+
+.diff-placeholder {
+    max-width: 46rem;
+    margin: 2rem auto;
+    text-align: center;
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+.diff-error {
+    white-space: pre-wrap;
+    text-align: left;
+    font-family: var(--bs-font-monospace, monospace);
+    font-size: 0.82rem;
+}
+
+.diff-note {
+    margin: -0.25rem 0 0.5rem;
+    font-size: 0.8rem;
+    color: var(--bs-secondary-color, #6c757d);
+}

@@ -104,13 +104,7 @@ fn load_entry(path: &Path) -> Result<WorkspaceEntry> {
 }
 
 fn load_workspace(path: &Path) -> Result<Workspace> {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-
-    let mut ws = if ext == "json" {
+    let mut ws = if is_json(path) {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read {}", path.display()))?;
         serde_json::from_str::<Workspace>(&content)
@@ -119,13 +113,46 @@ fn load_workspace(path: &Path) -> Result<Workspace> {
         parse_file(path).with_context(|| format!("Failed to parse DSL from {}", path.display()))?
     };
 
-    // Materialize `auto` views (and the zero-config default set) so the
-    // browser lists generated diagrams alongside hand-authored ones.
-    if let Err(e) = structurizr_query::generate_views(&mut ws) {
-        eprintln!("warning: view generation failed for {}: {}", path.display(), e);
-    }
-
+    materialize_views(&mut ws, &path.display().to_string());
     Ok(ws)
+}
+
+/// True when `path` names a JSON workspace rather than a DSL one.
+pub fn is_json(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("json"))
+        .unwrap_or(false)
+}
+
+/// Parse a workspace out of source text that is not on disk — a past revision
+/// read from git, say.
+///
+/// The result goes through the same view generation as a workspace loaded from
+/// a file, so a comparison between two versions is a comparison of like with
+/// like: without it, every generated view would read as removed the moment one
+/// side came from git.
+///
+/// `label` names the source in warnings only.
+pub fn workspace_from_source(content: &str, json: bool, label: &str) -> Result<Workspace> {
+    let mut ws = if json {
+        serde_json::from_str::<Workspace>(content)
+            .with_context(|| format!("Failed to parse JSON from {label}"))?
+    } else {
+        structurizr_dsl::parse_str(content)
+            .with_context(|| format!("Failed to parse DSL from {label}"))?
+    };
+
+    materialize_views(&mut ws, label);
+    Ok(ws)
+}
+
+/// Materialize `auto` views (and the zero-config default set) so the browser
+/// lists generated diagrams alongside hand-authored ones.
+fn materialize_views(ws: &mut Workspace, label: &str) {
+    if let Err(e) = structurizr_query::generate_views(ws) {
+        eprintln!("warning: view generation failed for {label}: {e}");
+    }
 }
 
 fn slug_from_path(path: &Path) -> String {

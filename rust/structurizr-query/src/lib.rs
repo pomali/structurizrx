@@ -18,6 +18,7 @@ pub mod graph;
 pub mod generate;
 pub mod lint;
 pub mod review;
+pub mod diff;
 
 use std::collections::BTreeSet;
 use structurizr_model::Workspace;
@@ -29,6 +30,7 @@ pub use graph::{graph, Graph, GraphLink, GraphNode};
 pub use generate::generate_views;
 pub use lint::{lint, LintFinding};
 pub use review::{review, Review, ReviewElement, ReviewFinding};
+pub use diff::{diff, Change, Diff, DiffSummary, ElementChange, FieldChange, RelationshipChange};
 
 /// A set of matched elements and relationships in deterministic (BTreeSet) order.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]

@@ -71,6 +71,11 @@ pub enum BroadcastMsg {
 pub struct DerivedCache {
     /// Serialised body of `/api/workspace/{name}/review`.
     pub review_json: Option<Arc<String>>,
+    /// Serialised bodies of `/api/workspace/{name}/diff`, keyed by the pair of
+    /// revisions being compared. Building one means reading two blobs out of
+    /// git and parsing both, so a page that re-requests the same comparison
+    /// (a reload, a second reader) must not pay for it twice.
+    pub diff_json: HashMap<String, Arc<String>>,
     /// Serialised bodies of `/api/workspace/{name}/clusters`, keyed by the
     /// analysis options — the same workspace yields a different analysis per
     /// level, tag filter and rollup setting.

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Compare versions – {{WORKSPACE_NAME}}</title>
+    <link rel="icon" type="image/png" href="/static/img/favicon.png"/>
+    <link rel="stylesheet" href="/static/css/bootstrap-5.3.7.min.css"/>
+    <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-diff.css"/>
+</head>
+<body class="diff-body" data-workspace="{{WORKSPACE_SLUG_ATTR}}">
+
+<header id="diff-header">
+    <a href="/workspace/{{WORKSPACE_SLUG_ATTR}}" title="Back to the workspace">&larr; {{WORKSPACE_NAME}}</a>
+    <strong>Compare versions</strong>
+
+    <div id="diff-revisions">
+        <select id="rev-from" class="form-select form-select-sm" aria-label="Earlier version"></select>
+        <button id="swap-revisions" type="button" class="btn btn-sm btn-outline-secondary"
+                title="Swap the two versions" aria-label="Swap the two versions">
+            <i class="bi bi-arrow-left-right"></i>
+        </button>
+        <select id="rev-to" class="form-select form-select-sm" aria-label="Later version"></select>
+    </div>
+
+    <span id="diff-status" class="text-body-secondary"></span>
+
+    <a id="copy-link" class="ms-auto btn btn-sm btn-outline-secondary" href="#"
+       title="This comparison is a link — copy it">
+        <i class="bi bi-link-45deg"></i> Copy link
+    </a>
+</header>
+
+<div id="diff-summary"></div>
+
+<div id="diff-filters">
+    <input id="filter-query" class="form-control form-control-sm" type="search"
+           placeholder="Search a name, path or field…"/>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Kinds of change to show">
+        <input type="checkbox" class="btn-check" id="show-added" checked/>
+        <label class="btn btn-outline-success" for="show-added">Added</label>
+        <input type="checkbox" class="btn-check" id="show-removed" checked/>
+        <label class="btn btn-outline-danger" for="show-removed">Removed</label>
+        <input type="checkbox" class="btn-check" id="show-modified" checked/>
+        <label class="btn btn-outline-primary" for="show-modified">Modified</label>
+    </div>
+    <span id="filter-count" class="text-body-secondary small"></span>
+</div>
+
+<main id="diff-content">
+    <p class="diff-placeholder">Loading the file's history…</p>
+</main>
+
+<script>
+    window.DIFF_WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
+</script>
+<script src="/static/js/structurizr-diff.js"></script>
+</body>
+</html>

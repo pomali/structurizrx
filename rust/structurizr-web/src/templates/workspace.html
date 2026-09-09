@@ -525,6 +525,13 @@
         reviewLink.title = 'Walk the model element by element, with hygiene findings';
         list.appendChild(reviewLink);
 
+        var diffLink = document.createElement('a');
+        diffLink.className = 'view-item';
+        diffLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/diff';
+        diffLink.innerHTML = '<i class="bi bi-clock-history me-1"></i>Compare versions';
+        diffLink.title = 'What changed in the model between two git revisions';
+        list.appendChild(diffLink);
+
         var printLink = document.createElement('a');
         printLink.className = 'view-item';
         printLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/print';
