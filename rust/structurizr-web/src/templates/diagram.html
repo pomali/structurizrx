@@ -7,6 +7,7 @@
     <link rel="icon" type="image/png" href="/static/img/favicon.png"/>
     <link rel="stylesheet" href="/static/css/structurizr.css"/>
     <link rel="stylesheet" href="/static/css/structurizr-embed.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-print-view.css"/>
     <style>
         html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
         #diagram { width: 100%; height: 100vh; }
@@ -26,6 +27,7 @@
 <script src="/static/js/structurizr-ui.js"></script>
 <script src="/static/js/structurizr-workspace.js"></script>
 <script src="/static/js/structurizr-diagram.js"></script>
+<script src="/static/js/structurizr-print-view.js"></script>
 
 <script>
 (function() {
@@ -36,6 +38,26 @@
     structurizr.ui.initDarkMode('/static/css/structurizr-dark.css');
 
     var diagram = null;
+
+    // Ctrl/Cmd+P prints the diagram on A4/A3 rather than the cropped viewport.
+    structurizrPrint.init({
+        getDiagram: function() { return diagram || undefined; },
+        getCaption: function() {
+            var view = structurizr.workspace && structurizr.workspace.findViewByKey(DIAGRAM_KEY);
+            if (!view) return undefined;
+            return {
+                title: structurizr.ui.getTitleForView(view),
+                description: view.description || '',
+                metadata: structurizr.workspace.name + ' · ' + new Date().toLocaleDateString()
+            };
+        },
+        refit: function() {
+            if (diagram) {
+                diagram.resize();
+                diagram.zoomToWidthOrHeight();
+            }
+        }
+    });
 
     function loadAndRender() {
         fetch('/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG))

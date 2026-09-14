@@ -78,6 +78,26 @@ layout live.
 Nodes are coloured by kind and sized by how many connections they have, so
 the hubs of a model are visible before you read a single label.
 
+## Printing a diagram
+
+The printer button in the diagram viewer's toolbar (or `p`) opens a *Print
+this view* dialog: choose A4 or A3, and landscape, portrait or the
+orientation that matches the diagram's shape. A plain `Ctrl`/`⌘`+`P` works
+too, using the last paper size and the matching orientation.
+
+Rather than printing the on-screen pan/zoom viewport (which would crop the
+diagram to whatever is visible), the current view is exported to a
+standalone SVG, scaled to fit one page, and captioned with the view title,
+description, workspace name and date. Diagrams viewed in dark mode are
+printed with a light background.
+
+This prints one view. To print every view as a paginated document, use
+*Print document* in the sidebar (`GET /workspace/{name}/print`).
+
+The paper size is set via CSS (`@page { size: ... }`); in browsers that
+don't support it, pick the paper size in the print dialog instead — the
+diagram still fills whatever page it lands on.
+
 ## Compare versions
 
 `GET /workspace/{name}/diff` compares two versions of the workspace out of

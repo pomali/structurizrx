@@ -1,0 +1,77 @@
+/*
+ * Print mode for the diagram viewer pages (see structurizr-print-view.js).
+ *
+ * The screen UI is a pan/zoom viewport, so printing it directly would crop
+ * the diagram to whatever happens to be on screen. Instead, before printing,
+ * structurizr-print-view.js exports the current view to a standalone SVG, places
+ * it in #printContainer, and marks <body> with .structurizrPrintReady. These
+ * rules then swap the app chrome out for that container for the duration of
+ * the print. The paper size itself (@page { size: A4|A3 portrait|landscape })
+ * is injected dynamically by structurizr-print-view.js.
+ *
+ * Without .structurizrPrintReady (e.g. no diagram is loaded yet) printing
+ * falls through to the browser's default rendering of the page.
+ */
+
+#printContainer {
+    display: none;
+}
+
+@media print {
+    body.structurizrPrintReady > *:not(#printContainer) {
+        display: none !important;
+    }
+
+    body.structurizrPrintReady {
+        overflow: visible !important;
+        background: #fff !important;
+    }
+
+    /* Fill the printable area of the (single) page. */
+    body.structurizrPrintReady #printContainer {
+        display: flex;
+        flex-direction: column;
+        position: fixed;
+        inset: 0;
+        background: #fff;
+        page-break-inside: avoid;
+        font-family: system-ui, -apple-system, sans-serif;
+        color: #000;
+    }
+
+    #printContainer .printCaption {
+        flex: 0 0 auto;
+        padding-bottom: 4mm;
+    }
+
+    #printContainer .printCaptionTitle {
+        font-size: 14pt;
+        font-weight: 600;
+    }
+
+    #printContainer .printCaptionDescription {
+        font-size: 10pt;
+    }
+
+    #printContainer .printCaptionMetadata {
+        font-size: 8pt;
+        color: #555;
+    }
+
+    #printContainer .printDiagram {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    /* The exported SVG carries explicit pixel dimensions in width/height
+       attributes and an inline style; !important beats the inline style.
+       With the viewBox intact, 100%×100% letterboxes the diagram into the
+       page (preserveAspectRatio defaults to "xMidYMid meet"). */
+    /* display:block drops the inline baseline gap, which could otherwise push
+       the page one line past its height and onto a blank second sheet. */
+    #printContainer .printDiagram svg {
+        display: block;
+        width: 100% !important;
+        height: 100% !important;
+    }
+}

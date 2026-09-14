@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
     <link rel="stylesheet" href="/static/css/structurizr.css"/>
     <link rel="stylesheet" href="/static/css/structurizr-static.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-print-view.css"/>
     <style>
         html, body { height: 100%; margin: 0; overflow: hidden; }
         #app { display: flex; height: 100vh; flex-direction: column; }
@@ -148,6 +149,9 @@
             <button class="btn btn-sm btn-outline-secondary d-none" id="btnCopyMermaid" title="Copy this view as Mermaid">
                 <i class="bi bi-clipboard"></i>
             </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnPrint" title="Print this view (p)">
+                <i class="bi bi-printer"></i>
+            </button>
             <button class="btn btn-sm btn-outline-secondary" id="btnFullScreen" title="Full screen (f)">
                 <i class="bi bi-fullscreen"></i>
             </button>
@@ -261,10 +265,54 @@
                     <li><kbd>←</kbd> <kbd>→</kbd> previous/next view · <kbd>space</kbd> quick navigation</li>
                     <li><kbd>d</kbd> toggle descriptions · <kbd>m</kbd> toggle metadata · <kbd>t</kbd> toggle tooltips</li>
                     <li><kbd>,</kbd> <kbd>.</kbd> step through animation · <kbd>i</kbd> diagram key</li>
-                    <li><kbd>f</kbd> full screen · <kbd>?</kbd> this help</li>
+                    <li><kbd>f</kbd> full screen · <kbd>p</kbd> print this view · <kbd>?</kbd> this help</li>
                 </ul>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- Print this view: one diagram on one page (structurizr-print-view.js).
+     The multi-view document lives at /workspace/{name}/print. -->
+<div class="modal fade" id="printModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" id="printForm">
+            <div class="modal-header">
+                <h5 class="modal-title">Print this view</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div class="form-label">Paper</div>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <input type="radio" class="btn-check" name="printPaper" id="printPaperA4" value="A4" checked>
+                        <label class="btn btn-outline-secondary" for="printPaperA4">A4</label>
+                        <input type="radio" class="btn-check" name="printPaper" id="printPaperA3" value="A3">
+                        <label class="btn btn-outline-secondary" for="printPaperA3">A3</label>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="form-label">Orientation</div>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <input type="radio" class="btn-check" name="printOrientation" id="printOrientationAuto" value="auto" checked>
+                        <label class="btn btn-outline-secondary" for="printOrientationAuto">Match diagram</label>
+                        <input type="radio" class="btn-check" name="printOrientation" id="printOrientationLandscape" value="landscape">
+                        <label class="btn btn-outline-secondary" for="printOrientationLandscape">Landscape</label>
+                        <input type="radio" class="btn-check" name="printOrientation" id="printOrientationPortrait" value="portrait">
+                        <label class="btn btn-outline-secondary" for="printOrientationPortrait">Portrait</label>
+                    </div>
+                </div>
+                <p class="small text-body-secondary mb-0">
+                    The view is scaled to fit one page, on a light background, captioned with its
+                    title and description. To print every view, use the
+                    <a id="printDocumentLink" href="#">print document</a>.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-printer me-1"></i>Print</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -285,6 +333,7 @@
 <script src="/static/js/structurizr-tooltip.js"></script>
 <script src="/static/js/structurizr-navigation.js"></script>
 <script src="/static/js/structurizr-quick-navigation.js"></script>
+<script src="/static/js/structurizr-print-view.js"></script>
 
 <script>
 (function() {
@@ -331,6 +380,62 @@
         structurizr.ui.setRenderingMode(next);
         updateDiagramDarkMode();
     });
+
+    // --- Print this view (A4/A3) ---
+    // One diagram on one page; the sidebar's "Print document" prints every view.
+    structurizrPrint.init({
+        getDiagram: function() { return diagramReady ? diagram : undefined; },
+        getCaption: printCaption,
+        refit: fitDiagram
+    });
+
+    var printModal = document.getElementById('printModal');
+    var pendingPrint = null;
+
+    document.getElementById('printDocumentLink').href =
+        '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/print';
+
+    function showPrintDialog() {
+        if (!diagramReady) return;
+        var paper = structurizrPrint.lastPaperSize();
+        printModal.querySelector('input[name="printPaper"][value="' + paper + '"]').checked = true;
+        bootstrap.Modal.getOrCreateInstance(printModal).show();
+    }
+
+    document.getElementById('btnPrint').addEventListener('click', showPrintDialog);
+
+    document.getElementById('printForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        pendingPrint = {
+            paper: printModal.querySelector('input[name="printPaper"]:checked').value,
+            orientation: printModal.querySelector('input[name="printOrientation"]:checked').value
+        };
+        bootstrap.Modal.getOrCreateInstance(printModal).hide();
+    });
+
+    // Print only once the modal is gone: window.print() blocks, and calling it
+    // mid-fade would leave the backdrop frozen on screen behind the dialog.
+    printModal.addEventListener('hidden.bs.modal', function() {
+        if (!pendingPrint) return;
+        var request = pendingPrint;
+        pendingPrint = null;
+        structurizrPrint.print(request.paper, request.orientation);
+    });
+
+    // The print export strips the on-canvas title/description/metadata block
+    // (it prints clipped — see structurizr-print-view.js), so the printout gets an
+    // HTML caption instead.
+    function printCaption() {
+        var view = (currentViewKey && structurizr.workspace)
+            ? structurizr.workspace.findViewByKey(currentViewKey) : undefined;
+        if (!view) return undefined;
+        return {
+            title: structurizr.ui.getTitleForView(view),
+            description: view.description || '',
+            metadata: document.getElementById('ws-title').textContent.trim() +
+                      ' · ' + new Date().toLocaleDateString()
+        };
+    }
 
     // --- Sidebar toggle (mobile) ---
     document.getElementById('sidebar-toggle-btn').addEventListener('click', function() {
@@ -928,6 +1033,7 @@
                 116: toggleTooltip,                              // t
                 105: showDiagramKey,                             // i
                 102: function() { structurizr.ui.enterFullScreen('diagram'); }, // f
+                112: showPrintDialog,                            // p
                 63: showHelp,                                    // ?
                 44: function() { stepAnimation(-1); },           // ,
                 46: function() { stepAnimation(1); }             // .
@@ -960,7 +1066,7 @@
         quickNavigation.onClose(function() { diagram.setKeyboardShortcutsEnabled(true); });
 
         // Modals likewise, so typing in them doesn't drive the diagram.
-        ['helpModal', 'keyModal'].forEach(function(id) {
+        ['helpModal', 'keyModal', 'printModal'].forEach(function(id) {
             var el = document.getElementById(id);
             el.addEventListener('shown.bs.modal', function() { diagram.setKeyboardShortcutsEnabled(false); });
             el.addEventListener('hidden.bs.modal', function() { diagram.setKeyboardShortcutsEnabled(true); });
