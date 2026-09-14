@@ -566,8 +566,20 @@
 
         canvas.addEventListener('wheel', function (e) {
             e.preventDefault();
-            var rect = canvas.getBoundingClientRect();
-            self.zoomBy(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - rect.left, e.clientY - rect.top);
+            var unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1;
+            var dx = e.deltaX * unit, dy = e.deltaY * unit;
+            if (e.ctrlKey || e.metaKey) {
+                // Ctrl/⌘ + wheel zooms (this is also what a trackpad pinch
+                // reports). Proportional to deltaY so a pinch's many small-delta
+                // events zoom smoothly; the cap keeps a mouse-wheel notch to ~12%.
+                dy = Math.max(-12, Math.min(12, dy));
+                var rect = canvas.getBoundingClientRect();
+                self.zoomBy(Math.exp(-dy * 0.01), e.clientX - rect.left, e.clientY - rect.top);
+            } else {
+                // A plain wheel / two-finger scroll pans, in both axes.
+                self.transform.x -= dx;
+                self.transform.y -= dy;
+            }
         }, { passive: false });
 
         canvas.addEventListener('mouseleave', function () {

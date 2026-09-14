@@ -941,12 +941,15 @@
 
         // Ctrl/⌘ + wheel zooms (this is also what a trackpad pinch reports);
         // a plain wheel keeps its default meaning of scrolling the viewport.
+        // A pinch fires many small-delta events, so the zoom is proportional to
+        // deltaY rather than a fixed step per event; the per-event cap keeps a
+        // mouse-wheel notch (deltaY ~100) to a moderate step.
         document.getElementById('diagram-viewport').addEventListener('wheel', function(e) {
             if (!e.ctrlKey && !e.metaKey) return;
-            if (e.deltaY < 0) {
-                diagram.zoomIn(e);
-            } else if (e.deltaY > 0) {
-                diagram.zoomOut(e);
+            var dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 100 : e.deltaY;
+            dy = Math.max(-25, Math.min(25, dy));
+            if (dy !== 0) {
+                diagram.zoomBy(Math.exp(-dy * 0.01), e);
             }
             e.preventDefault();
             e.stopPropagation();

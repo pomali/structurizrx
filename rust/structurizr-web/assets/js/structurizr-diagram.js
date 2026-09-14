@@ -4509,6 +4509,12 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
         zoomToAndScroll(Math.max(scale - zoomDelta, minZoomScale), evt);
     };
 
+    // Multiplicative zoom about the event's pointer (or the viewport centre),
+    // for continuous input such as a trackpad pinch.
+    this.zoomBy = function(factor, evt) {
+        zoomToAndScroll(Math.min(Math.max(scale * factor, minZoomScale), maxZoomScale), evt);
+    };
+
     function zoomToAndScroll(zoomScale, evt) {
         var viewportWidth = viewport.innerWidth();
         var viewportHeight = viewport.innerHeight();
