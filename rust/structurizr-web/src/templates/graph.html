@@ -161,7 +161,7 @@
     </div>
 
     <div class="border-top bg-body-tertiary px-3 py-1 flex-shrink-0 text-secondary" style="font-size:.72rem">
-        drag or scroll to pan · <kbd>ctrl</kbd>/<kbd>⌘</kbd> + scroll (or pinch) to zoom · drag a node to pin it · click to inspect ·
+        drag or scroll to pan · <kbd>ctrl</kbd>/<kbd>⌘</kbd> + scroll (or pinch) to zoom · drag a node to pin it · click a node or relationship to select it (<kbd>shift</kbd> adds; the URL links to the selection) ·
         double-click to focus · <kbd>f</kbd> fit · <kbd>Esc</kbd> clear
     </div>
 </div>
@@ -175,6 +175,7 @@
 
 <script src="/static/js/bootstrap-5.3.7.min.js"></script>
 <script src="/static/js/structurizr-universe-graph.js"></script>
+<script src="/static/js/structurizr-selection.js"></script>
 <script>
 (function () {
     var WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
@@ -233,9 +234,10 @@
     var details = document.getElementById('details');
 
     var graph = new UniverseGraph(canvas, {
-        onSelect: showDetails,
+        onSelect: pick,
         onOpen: focusOn,
-        onHover: showTip
+        onHover: showTip,
+        isLinkSelectable: function (l) { return l.class === 'relationship'; }
     });
     window.graph = graph;
     graph.setFilter('kinds', kindFilters);
@@ -276,9 +278,134 @@
                 UniverseGraph.KIND_COLORS[k[0]] + '"></span>' + escHtml(k[1]) + '</span>';
         }).join('') + '</div>';
 
+    // ---- selection ----
+    // Clicked nodes and relationships, kept in the URL as references
+    // (`#sel=<ref>,…`, see structurizr-selection.js) so the address bar always
+    // links to exactly what is selected. Sections have no reference, so they
+    // can be selected but are left out of the URL.
+    var selection = [];   // [{ type: 'node' | 'link', id }]
+    var refIndex = null;
+    var NOT_MODEL = { view: true, decision: true, section: true };
+
+    function buildRefIndex() {
+        // The graph labels an instance `API [1]`; its path segment is the
+        // instantiated element's own name, which its `instance` link points at.
+        var instanceOf = {};
+        graph.links.forEach(function (l) {
+            if (l.class === 'instance') instanceOf[l.sourceId] = l.target.name;
+        });
+        refIndex = new StructurizrSelection.ReferenceIndex(
+            graph.nodes.filter(function (n) { return !NOT_MODEL[n.kind]; }).map(function (n) {
+                return { id: n.id, name: instanceOf[n.id] || n.name, parentId: n.parentId, environment: n.environment };
+            }),
+            graph.links.filter(function (l) { return l.class === 'relationship'; }).map(relationshipOf));
+    }
+
+    function relationshipOf(l) {
+        return { id: l.id, sourceId: l.sourceId, destinationId: l.targetId, description: l.description };
+    }
+
+    function referenceFor(item) {
+        if (item.type === 'link') {
+            var l = graph.linkById[item.id];
+            return l ? refIndex.relationshipReference(relationshipOf(l)) : null;
+        }
+        var n = graph.byId[item.id];
+        if (!n || n.kind === 'section') return null;
+        if (n.kind === 'view') return 'view:' + n.refId;
+        if (n.kind === 'decision') return 'decision:' + n.refId;
+        return refIndex.elementReference(n.id);
+    }
+
+    function indexOfItem(items, item) {
+        for (var i = 0; i < items.length; i++) {
+            if (items[i].type === item.type && items[i].id === item.id) return i;
+        }
+        return -1;
+    }
+
+    /** Click: select one thing, shift/⌘/ctrl-click to add or remove, click on
+     *  the background to clear. */
+    function pick(hit, e) {
+        var additive = e && (e.shiftKey || e.metaKey || e.ctrlKey);
+        if (!hit) {
+            if (!additive) setSelection([]);
+            return;
+        }
+        var item = { type: hit.source ? 'link' : 'node', id: hit.id };
+        if (!additive) {
+            setSelection([item]);
+            return;
+        }
+        var next = selection.slice(), at = indexOfItem(next, item);
+        if (at === -1) next.push(item); else next.splice(at, 1);
+        setSelection(next);
+    }
+
+    function setSelection(items, keepUrl) {
+        selection = items;
+        graph.setSelection(
+            items.filter(function (i) { return i.type === 'node'; }).map(function (i) { return i.id; }),
+            items.filter(function (i) { return i.type === 'link'; }).map(function (i) { return i.id; }));
+        var last = items[items.length - 1];
+        showDetails(last ? (last.type === 'node' ? graph.byId[last.id] : graph.linkById[last.id]) : null);
+        showEditorLink(last);
+        if (!keepUrl) {
+            StructurizrSelection.replaceHash(
+                StructurizrSelection.buildHash(null, items.map(referenceFor).filter(Boolean)));
+        }
+    }
+
+    /** Append an "Open in editor" link for `item` to the details panel, once
+     *  the server has located its declaration. */
+    var editorRequest = 0;
+    function showEditorLink(item) {
+        var request = ++editorRequest;
+        var reference = item && referenceFor(item);
+        if (!reference) return;
+        StructurizrSelection.locate(WORKSPACE_SLUG, [reference]).then(function (located) {
+            var place = located && located.items[0] && located.items[0].locations[0];
+            if (request !== editorRequest || !place || !place.absolutePath) return;
+            var section = document.createElement('div');
+            section.className = 'panel-section';
+            var link = StructurizrSelection.editorLink('Open in editor', place);
+            link.className = 'btn btn-sm btn-outline-secondary';
+            link.insertAdjacentHTML('afterbegin', '<i class="bi bi-code-slash me-1"></i>');
+            section.appendChild(link);
+            var where = document.createElement('div');
+            where.className = 'text-secondary mt-1';
+            where.style.fontSize = '.7rem';
+            where.textContent = place.file + ':' + place.line;
+            section.appendChild(where);
+            details.appendChild(section);
+        });
+    }
+
+    /** Select what the URL names in the current data. Runs after every load:
+     *  references survive edits to the workspace, the ids behind them don't. */
+    function restoreSelection() {
+        var items = [];
+        StructurizrSelection.parseHash(location.hash).selection.forEach(function (reference) {
+            var parsed = StructurizrSelection.parseReference(reference);
+            if (parsed.view !== undefined || parsed.decision !== undefined) {
+                var kind = parsed.view !== undefined ? 'view' : 'decision';
+                var key = parsed.view !== undefined ? parsed.view : parsed.decision;
+                graph.nodes.forEach(function (n) {
+                    if (n.kind === kind && n.refId === key) items.push({ type: 'node', id: n.id });
+                });
+                return;
+            }
+            var ids = refIndex.resolve(reference);
+            ids.elements.forEach(function (id) { items.push({ type: 'node', id: id }); });
+            ids.relationships.forEach(function (id) { items.push({ type: 'link', id: id }); });
+        });
+        setSelection(items.filter(function (item, i) { return indexOfItem(items, item) === i; }), true);
+    }
+
     // ---- details panel ----
     function showDetails(node) {
         if (!node) { details.style.display = 'none'; return; }
+        if (node.source) { showLinkDetails(node); return; }
         var rows = [];
         function row(label, value) {
             if (value === undefined || value === null || value === '') return;
@@ -321,11 +448,39 @@
             '<div class="panel-section d-flex gap-2 flex-wrap">' + actions.join('') + '</div>';
         details.style.display = 'block';
         document.getElementById('details-close').addEventListener('click', function () {
-            graph.selected = null;
-            details.style.display = 'none';
+            setSelection([]);
         });
         document.getElementById('btn-focus-node').addEventListener('click', function () {
             focusOn(node);
+        });
+    }
+
+    function showLinkDetails(link) {
+        var rows = [];
+        function row(label, value) {
+            if (value === undefined || value === null || value === '') return;
+            rows.push('<div class="mb-1"><span class="text-secondary" style="font-size:.7rem">' +
+                escHtml(label) + '</span><br>' + escHtml(value) + '</div>');
+        }
+        row('From', link.source.name);
+        row('To', link.target.name);
+        row('Technology', link.technology);
+        row('Kind', link.kind);
+        row('Status', link.status);
+        if (link.tags && link.tags.length) {
+            rows.push('<div class="mb-1">' + link.tags.map(function (t) {
+                return '<span class="badge text-bg-secondary me-1">' + escHtml(t) + '</span>';
+            }).join('') + '</div>');
+        }
+        details.innerHTML =
+            '<div class="panel-section"><div class="d-flex align-items-start gap-2">' +
+            '<i class="bi bi-arrow-right mt-1"></i>' +
+            '<div class="fw-semibold flex-grow-1">' + escHtml(link.description || 'Relationship') + '</div>' +
+            '<button class="btn-close" id="details-close"></button></div></div>' +
+            '<div class="panel-section" style="font-size:.8rem">' + rows.join('') + '</div>';
+        details.style.display = 'block';
+        document.getElementById('details-close').addEventListener('click', function () {
+            setSelection([]);
         });
     }
 
@@ -363,10 +518,17 @@
     // ---- hover tooltip ----
     function showTip(node, at) {
         if (!node) { tip.style.display = 'none'; return; }
-        var meta = [node.kind, node.technology, node.group].filter(Boolean).join(' · ');
-        tip.innerHTML = '<div class="fw-semibold">' + escHtml(node.name) + '</div>' +
-            '<div class="text-secondary">' + escHtml(meta) + '</div>' +
-            (node.description ? '<div>' + escHtml(node.description) + '</div>' : '');
+        if (node.source) {
+            tip.innerHTML = '<div class="fw-semibold">' + escHtml(node.source.name) + ' → ' +
+                escHtml(node.target.name) + '</div>' +
+                (node.technology ? '<div class="text-secondary">' + escHtml(node.technology) + '</div>' : '') +
+                (node.description ? '<div>' + escHtml(node.description) + '</div>' : '');
+        } else {
+            var meta = [node.kind, node.technology, node.group].filter(Boolean).join(' · ');
+            tip.innerHTML = '<div class="fw-semibold">' + escHtml(node.name) + '</div>' +
+                '<div class="text-secondary">' + escHtml(meta) + '</div>' +
+                (node.description ? '<div>' + escHtml(node.description) + '</div>' : '');
+        }
         var rect = canvas.getBoundingClientRect();
         tip.style.display = 'block';
         tip.style.left = Math.min(at.x - rect.left + 14, rect.width - 270) + 'px';
@@ -409,8 +571,7 @@
         if (e.key === '/') { e.preventDefault(); search.focus(); }
         else if (e.key === 'f') { graph.zoomToFit(); }
         else if (e.key === 'Escape') {
-            graph.selected = null;
-            details.style.display = 'none';
+            setSelection([]);
             if (graph.filters.focusId) clearFocus();
         }
     });
@@ -442,6 +603,8 @@
             })
             .then(function (data) {
                 graph.setData(data);
+                buildRefIndex();
+                restoreSelection();
                 updateStats();
                 if (firstLoad) setTimeout(function () { graph.zoomToFit(); }, 600);
             })

@@ -10,6 +10,7 @@ The `structurizrx` binary (package `structurizr-cli`) accepts both `.dsl` and
 | [`serve`](./serve.md) | Live-reloading web viewer with a JSON API |
 | [`digest`](./digest.md) | Compact plain-text model + view summary, sized for LLM context |
 | [`query`](./query.md) | Run a selector expression against a workspace |
+| [`locate`](./locate.md) | Find where elements, relationships and views are declared, by path or from a viewer link |
 | [`export`](./export.md) | Workspace JSON (superset of the Structurizr JSON schema) |
 | `export-site` | Single-page SVG technical report |
 | `export-viewer` | Portable interactive viewer with bundled assets and workspace JSON |

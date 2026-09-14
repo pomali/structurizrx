@@ -6,6 +6,7 @@ use structurizr_model::*;
 use crate::error::ParseError;
 use crate::identifier_register::{ElementType, IdentifierMode, IdentifierRegister};
 use crate::lexer::{tokenize, Spanned, Token};
+use crate::source::{statement_end_line, statement_start, Parsed, SourceLocation, SourceLocations};
 
 /// Parse a DSL file from disk.
 pub fn parse_file(path: impl AsRef<Path>) -> Result<Workspace, ParseError> {
@@ -18,13 +19,29 @@ pub fn parse_file(path: impl AsRef<Path>) -> Result<Workspace, ParseError> {
 pub fn parse_file_with_identifiers(
     path: impl AsRef<Path>,
 ) -> Result<(Workspace, IdentifierRegister), ParseError> {
+    parse_file_detailed(path).map(|parsed| (parsed.workspace, parsed.identifiers))
+}
+
+/// Parse a DSL file from disk, returning the identifier register and where
+/// each element, port and relationship was declared (across `!include`s).
+pub fn parse_file_detailed(path: impl AsRef<Path>) -> Result<Parsed, ParseError> {
     let path = path.as_ref();
     let source = std::fs::read_to_string(path)?;
+    parse_str_detailed_at(&source, path)
+}
+
+/// Parse DSL text that is the content of the file at `path`, without reading
+/// that file — an editor's unsaved buffer, say. `!include`s resolve against
+/// `path`'s directory and locations name `path`, as with
+/// [`parse_file_detailed`].
+pub fn parse_str_detailed_at(source: &str, path: impl AsRef<Path>) -> Result<Parsed, ParseError> {
+    let path = path.as_ref();
+    let source = source.to_string();
     let base = path.parent().map(|p| p.to_path_buf());
     let (source, source_map) = match &base {
         Some(dir) => {
-            let mut map = SourceMap::default();
-            let spliced = preprocess_includes(&source, dir, 0, None, &mut map)?;
+            let mut map = SourceMap { files: vec![path.to_path_buf()], ..SourceMap::default() };
+            let spliced = preprocess_includes(&source, dir, 0, None, 0, &mut map)?;
             (spliced, Some(map))
         }
         None => (source, None),
@@ -34,7 +51,8 @@ pub fn parse_file_with_identifiers(
     parser.base_path = base;
     parser.source_map = source_map;
     let workspace = parser.parse_workspace_toplevel()?;
-    Ok((workspace, parser.register))
+    let locations = parser.source_locations(Some(path));
+    Ok(Parsed { workspace, identifiers: parser.register, locations })
 }
 
 /// Maps each line of the post-`!include` spliced source back to
@@ -43,6 +61,11 @@ pub fn parse_file_with_identifiers(
 struct SourceMap {
     /// Index = spliced line - 1.
     lines: Vec<(Option<String>, usize)>,
+    /// Parallel to `lines`: index into `files` of the line's file.
+    origins: Vec<usize>,
+    /// Entry file first, then each `!include`d file as joined onto the
+    /// including file's directory.
+    files: Vec<PathBuf>,
 }
 
 impl SourceMap {
@@ -52,6 +75,14 @@ impl SourceMap {
             Some((file, orig)) => (file.as_deref(), *orig),
             None => (None, spliced_line),
         }
+    }
+
+    /// Resolve a spliced line number to `(file path, original line)`.
+    fn resolve_path(&self, spliced_line: usize) -> Option<(&Path, usize)> {
+        let i = spliced_line.checked_sub(1)?;
+        let (_, orig) = self.lines.get(i)?;
+        let file = self.files.get(*self.origins.get(i)?)?;
+        Some((file.as_path(), *orig))
     }
 
     /// Human-readable location for a spliced line, naming the file when the
@@ -72,6 +103,7 @@ fn preprocess_includes(
     dir: &Path,
     depth: usize,
     file_label: Option<&str>,
+    file_idx: usize,
     map: &mut SourceMap,
 ) -> Result<String, ParseError> {
     const MAX_INCLUDE_DEPTH: usize = 16;
@@ -91,13 +123,17 @@ fn preprocess_includes(
                 ParseError::syntax(0, 0, format!("cannot read !include '{}': {}", inc_path.display(), e))
             })?;
             let inc_dir = inc_path.parent().unwrap_or(dir).to_path_buf();
-            out.push_str(&preprocess_includes(&inc_src, &inc_dir, depth + 1, Some(rel), map)?);
+            map.files.push(inc_path);
+            let inc_idx = map.files.len() - 1;
+            out.push_str(&preprocess_includes(&inc_src, &inc_dir, depth + 1, Some(rel), inc_idx, map)?);
             out.push('\n');
             map.lines.push((file_label.map(str::to_string), idx + 1));
+            map.origins.push(file_idx);
         } else {
             out.push_str(line);
             out.push('\n');
             map.lines.push((file_label.map(str::to_string), idx + 1));
+            map.origins.push(file_idx);
         }
     }
     Ok(out)
@@ -112,10 +148,17 @@ pub fn parse_str(source: &str) -> Result<Workspace, ParseError> {
 /// built up during parsing (DSL identifier → resolved element id/kind). Intended
 /// for tooling (e.g. an LSP) that needs to resolve identifiers back to elements.
 pub fn parse_str_with_identifiers(source: &str) -> Result<(Workspace, IdentifierRegister), ParseError> {
+    parse_str_detailed(source).map(|parsed| (parsed.workspace, parsed.identifiers))
+}
+
+/// Parse a DSL string, returning the identifier register and where each
+/// element, port and relationship was declared (locations carry no file).
+pub fn parse_str_detailed(source: &str) -> Result<Parsed, ParseError> {
     let tokens = tokenize(source);
     let mut parser = Parser::new(tokens);
     let workspace = parser.parse_workspace_toplevel()?;
-    Ok((workspace, parser.register))
+    let locations = parser.source_locations(None);
+    Ok(Parsed { workspace, identifiers: parser.register, locations })
 }
 
 struct Parser {
@@ -150,6 +193,13 @@ struct Parser {
     deployment_group_names: HashMap<String, String>,
     /// Maps spliced line numbers back to their originating `!include`d file.
     source_map: Option<SourceMap>,
+    /// Model id → index of a token in the statement that declared it; turned
+    /// into [`SourceLocations`] after a successful parse.
+    anchors: Vec<(String, usize)>,
+    /// View key → index of its view keyword token.
+    view_anchors: Vec<(String, usize)>,
+    /// Imported ADRs: (decision id, owning element id, file, line count).
+    adr_files: Vec<(String, Option<String>, PathBuf, usize)>,
 }
 
 /// A relationship endpoint identifier that had no binding at parse time.
@@ -268,6 +318,9 @@ impl Parser {
             model_group_stack: Vec::new(),
             deployment_group_names: HashMap::new(),
             source_map: None,
+            anchors: Vec::new(),
+            view_anchors: Vec::new(),
+            adr_files: Vec::new(),
         }
     }
 
@@ -313,10 +366,69 @@ impl Parser {
         }
     }
 
+    /// Allocate an id declared by the statement containing the last consumed
+    /// token (the element keyword, for every element kind).
     fn next_id(&mut self) -> String {
+        self.next_id_from(self.pos.saturating_sub(1))
+    }
+
+    /// Allocate an id declared by the statement containing token `anchor`.
+    /// Relationships anchor on their source token, because a multi-line text
+    /// block description would put the last consumed token on a later line.
+    fn next_id_from(&mut self, anchor: usize) -> String {
+        let id = self.next_derived_id();
+        self.anchors.push((id.clone(), anchor));
+        id
+    }
+
+    /// Allocate an id for something the parser synthesizes, with no source
+    /// statement of its own.
+    fn next_derived_id(&mut self) -> String {
         let id = self.id_counter.to_string();
         self.id_counter += 1;
         id
+    }
+
+    fn source_locations(&self, entry: Option<&Path>) -> SourceLocations {
+        let mut locations = SourceLocations::default();
+        if !self.tokens.is_empty() {
+            for (id, anchor) in &self.anchors {
+                locations.insert(id.clone(), self.statement_location(*anchor, entry));
+            }
+            for (key, anchor) in &self.view_anchors {
+                locations.insert_view(key.clone(), self.statement_location(*anchor, entry));
+            }
+        }
+        for (id, element_id, file, line_count) in &self.adr_files {
+            locations.push_decision(id.clone(), element_id.clone(), SourceLocation {
+                file: Some(file.clone()),
+                line: 1,
+                col: 1,
+                end_line: (*line_count).max(1),
+            });
+        }
+        locations
+    }
+
+    /// Location of the statement containing token `anchor`, resolved through
+    /// `!include`s.
+    fn statement_location(&self, anchor: usize, entry: Option<&Path>) -> SourceLocation {
+        let start = statement_start(&self.tokens, anchor);
+        let spliced_start = self.tokens[start].pos.line;
+        let spliced_end = statement_end_line(&self.tokens, start);
+        let resolved = self.source_map.as_ref().and_then(|map| {
+            let (file, line) = map.resolve_path(spliced_start)?;
+            // A block never closes in another file, but fall back to its
+            // start line rather than report a line of the wrong file.
+            let end_line = match map.resolve_path(spliced_end) {
+                Some((end_file, end)) if end_file == file => end,
+                _ => line,
+            };
+            Some((Some(file.to_path_buf()), line, end_line))
+        });
+        let (file, line, end_line) = resolved
+            .unwrap_or_else(|| (entry.map(Path::to_path_buf), spliced_start, spliced_end));
+        SourceLocation { file, line, col: self.tokens[start].pos.col, end_line }
     }
 
     fn peek(&self) -> Option<&Token> {
@@ -747,7 +859,7 @@ impl Parser {
                         continue;
                     }
                     replicated.push(Relationship {
-                        id: self.next_id(),
+                        id: self.next_derived_id(),
                         source_id: source.id.clone(),
                         destination_id: destination.id.clone(),
                         linked_relationship_id: Some(rel.id.clone()),
@@ -861,7 +973,7 @@ impl Parser {
 
     /// Read all AdrTools-format `.md` files from `rel_path` (relative to `base_path`)
     /// and return them as `Decision` objects.
-    fn import_adrs(&self, rel_path: &str) -> Vec<Decision> {
+    fn import_adrs(&mut self, rel_path: &str, element_id: Option<String>) -> Vec<Decision> {
         let base = match &self.base_path {
             Some(p) => p.clone(),
             None => {
@@ -886,7 +998,16 @@ impl Parser {
             }
         };
         files.sort();
-        files.iter().filter_map(|p| Self::parse_adr_file(p)).collect()
+        let mut decisions = Vec::new();
+        for path in files {
+            if let Some(mut decision) = Self::parse_adr_file(&path) {
+                decision.element_id = element_id.clone();
+                let line_count = decision.content.lines().count();
+                self.adr_files.push((decision.id.clone(), element_id.clone(), path, line_count));
+                decisions.push(decision);
+            }
+        }
+        decisions
     }
 
     /// Parse a single AdrTools-format Markdown file into a `Decision`.
@@ -1106,7 +1227,7 @@ impl Parser {
                             self.advance();
                             self.skip_block();
                         }
-                        let decisions = self.import_adrs(&rel_path);
+                        let decisions = self.import_adrs(&rel_path, None);
                         self.accumulated_decisions.extend(decisions);
                     }
                     _ => {
@@ -1579,6 +1700,7 @@ impl Parser {
                         ss_extras.group = Some(leaf);
                     }
                 } else if self.peek_at_arrow_after_word() {
+                    let rel_start = self.pos;
                     let src_pos = self.current_pos();
                     let src  = self.consume_string().unwrap_or_default();
                     self.advance(); // ->
@@ -1586,7 +1708,7 @@ impl Parser {
                     let dst  = self.consume_string().unwrap_or_default();
                     let desc = self.consume_string_if_not_brace();
                     let tech = self.consume_string_if_not_brace();
-                    let rel_id = self.next_id();
+                    let rel_id = self.next_id_from(rel_start);
                     let uncertain = self.consume_uncertainty_marker();
                     // `this` refers to the enclosing element (upstream DSL).
                     let (src_id, src_port) = if src.eq_ignore_ascii_case("this") {
@@ -1632,8 +1754,7 @@ impl Parser {
                     self.advance();
                     let rel_path = self.consume_string().unwrap_or_default();
                     if self.peek_open_brace() { self.advance(); self.skip_block(); }
-                    let mut decisions = self.import_adrs(&rel_path);
-                    for d in &mut decisions { d.element_id = Some(id.clone()); }
+                    let decisions = self.import_adrs(&rel_path, Some(id.clone()));
                     self.accumulated_decisions.extend(decisions);
                 } else if matches!(self.peek(), Some(Token::Directive(_))) {
                     self.advance();
@@ -1777,6 +1898,7 @@ impl Parser {
                     rels,
                 )?;
             } else if self.peek_at_arrow_after_word() {
+                let rel_start = self.pos;
                 let src_pos = self.current_pos();
                 let src  = self.consume_string().unwrap_or_default();
                 self.advance(); // ->
@@ -1784,7 +1906,7 @@ impl Parser {
                 let dst  = self.consume_string().unwrap_or_default();
                 let desc = self.consume_string_if_not_brace();
                 let tech = self.consume_string_if_not_brace();
-                let rel_id = self.next_id();
+                let rel_id = self.next_id_from(rel_start);
                 let uncertain = self.consume_uncertainty_marker();
                 let (src_id, src_port) = self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos);
                 let (dst_id, dst_port) = self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos);
@@ -1893,6 +2015,7 @@ impl Parser {
                     rels,
                 )?;
             } else if self.peek_at_arrow_after_word() {
+                let rel_start = self.pos;
                 let src_pos = self.current_pos();
                 let src  = self.consume_string().unwrap_or_default();
                 self.advance(); // ->
@@ -1900,7 +2023,7 @@ impl Parser {
                 let dst  = self.consume_string().unwrap_or_default();
                 let desc = self.consume_string_if_not_brace();
                 let tech = self.consume_string_if_not_brace();
-                let rel_id = self.next_id();
+                let rel_id = self.next_id_from(rel_start);
                 let uncertain = self.consume_uncertainty_marker();
                 let (src_id, src_port) = self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos);
                 let (dst_id, dst_port) = self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos);
@@ -2023,6 +2146,7 @@ impl Parser {
                         cont_extras.group = Some(leaf);
                     }
                 } else if self.peek_at_arrow_after_word() {
+                    let rel_start = self.pos;
                     let src_pos = self.current_pos();
                     let src  = self.consume_string().unwrap_or_default();
                     self.advance(); // ->
@@ -2030,7 +2154,7 @@ impl Parser {
                     let dst  = self.consume_string().unwrap_or_default();
                     let desc = self.consume_string_if_not_brace();
                     let tech = self.consume_string_if_not_brace();
-                    let rel_id = self.next_id();
+                    let rel_id = self.next_id_from(rel_start);
                     let uncertain = self.consume_uncertainty_marker();
                     // `this` refers to the enclosing element (upstream DSL).
                     let (src_id, src_port) = if src.eq_ignore_ascii_case("this") {
@@ -2082,8 +2206,7 @@ impl Parser {
                     self.advance();
                     let rel_path = self.consume_string().unwrap_or_default();
                     if self.peek_open_brace() { self.advance(); self.skip_block(); }
-                    let mut decisions = self.import_adrs(&rel_path);
-                    for d in &mut decisions { d.element_id = Some(id.clone()); }
+                    let decisions = self.import_adrs(&rel_path, Some(id.clone()));
                     self.accumulated_decisions.extend(decisions);
                 } else if matches!(self.peek(), Some(Token::Directive(_))) {
                     self.advance();
@@ -2317,6 +2440,7 @@ impl Parser {
                     }
                 } else if !has_ident && self.peek_at_arrow_after_word() {
                     // Relationship between deployment nodes at environment level.
+                    let rel_start = self.pos;
                     let src_pos = self.current_pos();
                     let src = self.consume_string().unwrap_or_default();
                     self.advance(); // ->
@@ -2324,7 +2448,7 @@ impl Parser {
                     let dst = self.consume_string().unwrap_or_default();
                     let desc = self.consume_string_if_not_brace();
                     let tech = self.consume_string_if_not_brace();
-                    let rel_id = self.next_id();
+                    let rel_id = self.next_id_from(rel_start);
                     let (src_id, src_port) =
                         self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos);
                     let (dst_id, dst_port) =
@@ -2537,6 +2661,7 @@ impl Parser {
                     // `instanceOf <ref>`: shorthand for containerInstance /
                     // softwareSystemInstance depending on what the ref names.
                     self.advance();
+                    let instance_start = self.pos - 1;
                     let (line, col) = self.current_pos();
                     let target = self.consume_string().unwrap_or_default();
                     let resolved = self.register.resolve(&target).cloned().or_else(|| {
@@ -2552,7 +2677,7 @@ impl Parser {
                     }
                     match resolved {
                         Some((eid, ElementType::Container)) => {
-                            let iid = self.next_id();
+                            let iid = self.next_id_from(instance_start);
                             if has_ident {
                                 self.register.register(&ident, iid.clone(), ElementType::ContainerInstance);
                             }
@@ -2566,7 +2691,7 @@ impl Parser {
                             });
                         }
                         Some((eid, ElementType::SoftwareSystem)) => {
-                            let iid = self.next_id();
+                            let iid = self.next_id_from(instance_start);
                             if has_ident {
                                 self.register.register(&ident, iid.clone(), ElementType::SoftwareSystemInstance);
                             }
@@ -2591,6 +2716,7 @@ impl Parser {
                         }
                     }
                 } else if self.peek_at_arrow_after_word() {
+                    let rel_start = self.pos;
                     let src_pos = self.current_pos();
                     let src = self.consume_string().unwrap_or_default();
                     self.advance(); // ->
@@ -2598,7 +2724,7 @@ impl Parser {
                     let dst = self.consume_string().unwrap_or_default();
                     let desc = self.consume_string_if_not_brace();
                     let tech = self.consume_string_if_not_brace();
-                    let rel_id = self.next_id();
+                    let rel_id = self.next_id_from(rel_start);
                     // `this` refers to the enclosing deployment node.
                     let (src_id, src_port) = if src.eq_ignore_ascii_case("this") {
                         (id.clone(), None)
@@ -2802,6 +2928,7 @@ impl Parser {
         let mut extras = ElementExtras::default();
         while !self.peek_close_brace() && self.peek().is_some() {
             if self.peek_at_arrow_after_word() {
+                let rel_start = self.pos;
                 let src_pos = self.current_pos();
                 let src  = self.consume_string().unwrap_or_default();
                 self.advance(); // ->
@@ -2809,7 +2936,7 @@ impl Parser {
                 let dst  = self.consume_string().unwrap_or_default();
                 let desc = self.consume_string_if_not_brace();
                 let tech = self.consume_string_if_not_brace();
-                let rel_id = self.next_id();
+                let rel_id = self.next_id_from(rel_start);
                 let uncertain = self.consume_uncertainty_marker();
                 // `this` refers to the enclosing element (upstream DSL).
                 let (src_id, src_port) = if src.eq_ignore_ascii_case("this") {
@@ -2852,8 +2979,7 @@ impl Parser {
                 self.advance();
                 let rel_path = self.consume_string().unwrap_or_default();
                 if self.peek_open_brace() { self.advance(); self.skip_block(); }
-                let mut decisions = self.import_adrs(&rel_path);
-                for d in &mut decisions { d.element_id = Some(source_id.to_string()); }
+                let decisions = self.import_adrs(&rel_path, Some(source_id.to_string()));
                 self.accumulated_decisions.extend(decisions);
             } else if matches!(self.peek(), Some(Token::Directive(_))) {
                 self.advance();
@@ -2869,6 +2995,7 @@ impl Parser {
     }
 
     fn parse_relationship_in_model(&mut self, model: &mut Model) -> Result<String, ParseError> {
+        let rel_start = self.pos;
         let src_pos = self.current_pos();
         let src  = self.consume_string().unwrap_or_default();
         self.advance(); // ->
@@ -2883,7 +3010,7 @@ impl Parser {
             self.vivify_placeholder(model, &src);
             self.vivify_placeholder(model, &dst);
         }
-        let rel_id = self.next_id();
+        let rel_id = self.next_id_from(rel_start);
         let returned_rel_id = rel_id.clone();
         let src_unresolved = !src.is_empty() && !self.endpoint_resolves(&src);
         let (src_id, src_port) = self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos);
@@ -2927,12 +3054,13 @@ impl Parser {
     /// `-> destination ["description" ["technology"]] [?] [{ ... }]`.
     /// The source is the enclosing element. Current token must be the arrow.
     fn parse_implicit_relationship(&mut self, source_id: &str) -> Result<Relationship, ParseError> {
+        let rel_start = self.pos;
         self.advance(); // ->
         let dst_pos = self.current_pos();
         let dst = self.consume_string().unwrap_or_default();
         let desc = self.consume_string_if_not_brace();
         let tech = self.consume_string_if_not_brace();
-        let rel_id = self.next_id();
+        let rel_id = self.next_id_from(rel_start);
         let uncertain = self.consume_uncertainty_marker();
         let (dst_id, dst_port) = self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos);
         let mut rel = Relationship {
@@ -3018,38 +3146,66 @@ impl Parser {
                             views.auto_views.get_or_insert_with(Vec::new).push(spec);
                         }
                         "systemlandscape" => {
+                            let view_anchor = self.pos;
                             self.advance();
                             let v = self.parse_system_landscape_view(model)?;
+                            if let Some(key) = &v.key {
+                                self.view_anchors.push((key.clone(), view_anchor));
+                            }
                             views.system_landscape_views.get_or_insert_with(Vec::new).push(v);
                         }
                         "systemcontext" => {
+                            let view_anchor = self.pos;
                             self.advance();
                             let v = self.parse_system_context_view(model)?;
+                            if let Some(key) = &v.key {
+                                self.view_anchors.push((key.clone(), view_anchor));
+                            }
                             views.system_context_views.get_or_insert_with(Vec::new).push(v);
                         }
                         "container" => {
+                            let view_anchor = self.pos;
                             self.advance();
                             let v = self.parse_container_view(model)?;
+                            if let Some(key) = &v.key {
+                                self.view_anchors.push((key.clone(), view_anchor));
+                            }
                             views.container_views.get_or_insert_with(Vec::new).push(v);
                         }
                         "component" => {
+                            let view_anchor = self.pos;
                             self.advance();
                             let v = self.parse_component_view(model)?;
+                            if let Some(key) = &v.key {
+                                self.view_anchors.push((key.clone(), view_anchor));
+                            }
                             views.component_views.get_or_insert_with(Vec::new).push(v);
                         }
                         "dynamic" => {
+                            let view_anchor = self.pos;
                             self.advance();
                             let v = self.parse_dynamic_view(model)?;
+                            if let Some(key) = &v.key {
+                                self.view_anchors.push((key.clone(), view_anchor));
+                            }
                             views.dynamic_views.get_or_insert_with(Vec::new).push(v);
                         }
                         "deployment" => {
+                            let view_anchor = self.pos;
                             self.advance();
                             let v = self.parse_deployment_view(model)?;
+                            if let Some(key) = &v.key {
+                                self.view_anchors.push((key.clone(), view_anchor));
+                            }
                             views.deployment_views.get_or_insert_with(Vec::new).push(v);
                         }
                         "filtered" => {
+                            let view_anchor = self.pos;
                             self.advance();
                             let v = self.parse_filtered_view()?;
+                            if let Some(key) = &v.key {
+                                self.view_anchors.push((key.clone(), view_anchor));
+                            }
                             views.filtered_views.get_or_insert_with(Vec::new).push(v);
                         }
                         "styles" => {

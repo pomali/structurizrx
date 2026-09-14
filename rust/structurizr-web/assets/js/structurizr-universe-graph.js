@@ -73,9 +73,14 @@
         this.transform = { k: 1, x: 0, y: 0 };
         this.alpha = 1;
         this.hovered = null;
-        this.selected = null;
+        this.hoveredLink = null;
+        this.selectedNodes = {};    // node id → true
+        this.selectedLinks = {};    // link id → true
         this.dragging = null;
+        // onSelect(nodeOrLink | null, event) on click; a link is recognisable
+        // by its `source`. Only links passing isLinkSelectable are offered.
         this.onSelect = (options && options.onSelect) || function () {};
+        this.isLinkSelectable = (options && options.isLinkSelectable) || function () { return true; };
         this.onOpen = (options && options.onOpen) || function () {};
         this.onHover = (options && options.onHover) || function () {};
 
@@ -114,6 +119,9 @@
             });
         });
 
+        this.linkById = {};
+        this.links.forEach(function (l) { self.linkById[l.id] = l; });
+
         this.adjacency = {};
         this.links.forEach(function (l) {
             l.source.degree++;
@@ -122,9 +130,19 @@
             (self.adjacency[l.targetId] = self.adjacency[l.targetId] || []).push(l.sourceId);
         });
 
-        if (this.selected && !this.byId[this.selected.id]) this.selected = null;
+        this.setSelection(Object.keys(this.selectedNodes), Object.keys(this.selectedLinks));
         this.applyFilters();
         this.reheat(1);
+    };
+
+    /** Mark nodes and links as selected (replacing any previous selection);
+     *  ids the data doesn't have are ignored. */
+    UniverseGraph.prototype.setSelection = function (nodeIds, linkIds) {
+        var self = this;
+        this.selectedNodes = {};
+        this.selectedLinks = {};
+        (nodeIds || []).forEach(function (id) { if (self.byId[id]) self.selectedNodes[id] = true; });
+        (linkIds || []).forEach(function (id) { if (self.linkById[id]) self.selectedLinks[id] = true; });
     };
 
     UniverseGraph.prototype.setSetting = function (key, value) {
@@ -303,6 +321,24 @@
         return null;
     };
 
+    /** The selectable visible link nearest a screen point, within a few pixels. */
+    UniverseGraph.prototype.linkAt = function (screenX, screenY) {
+        var p = this.toWorld(screenX, screenY);
+        var best = null, bestDistance = 5 / this.transform.k;
+        for (var i = 0; i < this.visibleLinks.length; i++) {
+            var l = this.visibleLinks[i];
+            if (!this.isLinkSelectable(l)) continue;
+            var ax = l.source.x, ay = l.source.y;
+            var dx = l.target.x - ax, dy = l.target.y - ay;
+            var length2 = dx * dx + dy * dy;
+            var t = length2 ? Math.max(0, Math.min(1, ((p.x - ax) * dx + (p.y - ay) * dy) / length2)) : 0;
+            var ex = p.x - (ax + t * dx), ey = p.y - (ay + t * dy);
+            var distance = Math.sqrt(ex * ex + ey * ey);
+            if (distance <= bestDistance) { best = l; bestDistance = distance; }
+        }
+        return best;
+    };
+
     UniverseGraph.prototype.zoomToFit = function (padding) {
         var nodes = this.visibleNodes;
         if (!nodes.length) { this.transform = { k: 1, x: this.width / 2, y: this.height / 2 }; return; }
@@ -333,13 +369,30 @@
 
     // ---- rendering --------------------------------------------------------
 
+    /** Node ids to keep lit: the hovered node's neighbourhood or the hovered
+     *  link's ends; otherwise every selected node's neighbourhood and every
+     *  selected link's ends. Null when nothing is hovered or selected. */
     UniverseGraph.prototype._highlightSet = function () {
-        var anchor = this.hovered || this.selected;
-        if (!anchor) return null;
-        var set = {};
-        set[anchor.id] = true;
-        (this.adjacency[anchor.id] || []).forEach(function (id) { set[id] = true; });
-        return set;
+        var self = this, set = {}, any = false;
+        function around(id) {
+            set[id] = true;
+            (self.adjacency[id] || []).forEach(function (nb) { set[nb] = true; });
+            any = true;
+        }
+        function ends(l) {
+            set[l.sourceId] = true;
+            set[l.targetId] = true;
+            any = true;
+        }
+        if (this.hovered) {
+            around(this.hovered.id);
+        } else if (this.hoveredLink) {
+            ends(this.hoveredLink);
+        } else {
+            Object.keys(this.selectedNodes).forEach(around);
+            Object.keys(this.selectedLinks).forEach(function (id) { ends(self.linkById[id]); });
+        }
+        return any ? set : null;
     };
 
     /** Re-read the CSS custom properties that colour the canvas. Called once
@@ -370,10 +423,11 @@
         // Links.
         this.visibleLinks.forEach(function (l) {
             var style = LINK_STYLES[l.class] || LINK_STYLES.relationship;
-            var lit = !highlight || (highlight[l.sourceId] && highlight[l.targetId]);
-            ctx.globalAlpha = lit ? (highlight ? 0.95 : 0.6) : 0.08;
-            ctx.strokeStyle = lit && highlight ? KIND_COLORS[l.source.kind] || linkColor : linkColor;
-            ctx.lineWidth = style.width / t.k * (lit && highlight ? 1.8 : 1);
+            var chosen = self.selectedLinks[l.id] || l === self.hoveredLink;
+            var lit = chosen || !highlight || (highlight[l.sourceId] && highlight[l.targetId]);
+            ctx.globalAlpha = chosen ? 1 : lit ? (highlight ? 0.95 : 0.6) : 0.08;
+            ctx.strokeStyle = chosen ? fg : lit && highlight ? KIND_COLORS[l.source.kind] || linkColor : linkColor;
+            ctx.lineWidth = style.width / t.k * (chosen ? 3 : lit && highlight ? 1.8 : 1);
             ctx.setLineDash(style.dash.map(function (d) { return d / t.k; }));
             ctx.beginPath();
             ctx.moveTo(l.source.x, l.source.y);
@@ -407,7 +461,7 @@
             ctx.beginPath();
             ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
             ctx.fill();
-            if (self.selected && self.selected.id === n.id) {
+            if (self.selectedNodes[n.id]) {
                 ctx.strokeStyle = fg;
                 ctx.lineWidth = 2 / t.k;
                 ctx.stroke();
@@ -531,10 +585,12 @@
                 self.transform.y += y - last.y;
             } else {
                 var hit = self.nodeAt(x, y);
-                if (hit !== self.hovered) {
+                var link = hit ? null : self.linkAt(x, y);
+                if (hit !== self.hovered || link !== self.hoveredLink) {
                     self.hovered = hit;
-                    canvas.style.cursor = hit ? 'pointer' : 'grab';
-                    self.onHover(hit, { x: e.clientX, y: e.clientY });
+                    self.hoveredLink = link;
+                    canvas.style.cursor = hit || link ? 'pointer' : 'grab';
+                    self.onHover(hit || link, { x: e.clientX, y: e.clientY });
                 }
             }
             last = { x: x, y: y };
@@ -553,9 +609,9 @@
         canvas.addEventListener('click', function (e) {
             if (moved) return;
             var rect = canvas.getBoundingClientRect();
-            var hit = self.nodeAt(e.clientX - rect.left, e.clientY - rect.top);
-            self.selected = hit;
-            self.onSelect(hit);
+            var x = e.clientX - rect.left, y = e.clientY - rect.top;
+            var node = self.nodeAt(x, y);
+            self.onSelect(node || self.linkAt(x, y), e);
         });
 
         canvas.addEventListener('dblclick', function (e) {
@@ -583,7 +639,11 @@
         }, { passive: false });
 
         canvas.addEventListener('mouseleave', function () {
-            if (self.hovered) { self.hovered = null; self.onHover(null); }
+            if (self.hovered || self.hoveredLink) {
+                self.hovered = null;
+                self.hoveredLink = null;
+                self.onHover(null);
+            }
         });
     };
 

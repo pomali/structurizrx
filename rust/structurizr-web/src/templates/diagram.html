@@ -27,6 +27,7 @@
 <script src="/static/js/structurizr-ui.js"></script>
 <script src="/static/js/structurizr-workspace.js"></script>
 <script src="/static/js/structurizr-diagram.js"></script>
+<script src="/static/js/structurizr-selection.js"></script>
 <script src="/static/js/structurizr-print-view.js"></script>
 
 <script>
@@ -59,6 +60,13 @@
         }
     });
 
+    var selection;
+
+    /** Re-select what the URL names on the freshly drawn diagram. */
+    function restoreSelection() {
+        selection.restore(StructurizrSelection.parseHash(location.hash).selection);
+    }
+
     function loadAndRender() {
         fetch('/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG))
             .then(function(r) { return r.json(); })
@@ -83,6 +91,7 @@
                         diagram.changeView(DIAGRAM_KEY, function() {
                             diagram.resize();
                             diagram.zoomToWidthOrHeight();
+                            restoreSelection();
                         });
                         return;
                     }
@@ -90,6 +99,14 @@
                     diagram = new structurizr.ui.Diagram('diagram', false, function() {
                         diagram.setDarkMode(structurizr.ui.isDarkMode());
                         diagram.setEmbedded(true);
+
+                        // Click to select; the selection is kept in the URL
+                        // (`#sel=<references>`) — see structurizr-selection.js.
+                        selection = new StructurizrSelection.DiagramSelection(diagram, {
+                            onChange: function(references) {
+                                StructurizrSelection.replaceHash(StructurizrSelection.buildHash(null, references));
+                            }
+                        });
 
                         diagram.getPossibleViewportWidth = function() {
                             return document.getElementById('diagram').clientWidth;
@@ -101,6 +118,7 @@
                         diagram.changeView(DIAGRAM_KEY, function() {
                             diagram.resize();
                             diagram.zoomToWidthOrHeight();
+                            restoreSelection();
 
                             // Notify parent frame for responsive embedding
                             window.parent.postMessage({

@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use structurizr_dsl::parse_file;
+use structurizr_dsl::SourceLocations;
 use structurizr_model::Workspace;
 
 /// A discovered workspace with its display name and parsed content.
@@ -17,6 +17,9 @@ pub struct WorkspaceEntry {
     pub display_name: String,
     /// Parsed workspace.
     pub workspace: Workspace,
+    /// Where each element, relationship and view is declared; `None` for a
+    /// `.json` workspace.
+    pub locations: Option<SourceLocations>,
     /// Source path that was parsed (used for reloading).
     pub source_path: PathBuf,
 }
@@ -88,7 +91,7 @@ fn find_workspace_file_in(dir: &Path) -> Option<PathBuf> {
 
 /// Load a workspace from a `.dsl` or `.json` file and produce a [`WorkspaceEntry`].
 fn load_entry(path: &Path) -> Result<WorkspaceEntry> {
-    let workspace = load_workspace(path)?;
+    let (workspace, locations) = load_workspace(path)?;
 
     let display_name = workspace.name.clone();
 
@@ -100,21 +103,25 @@ fn load_entry(path: &Path) -> Result<WorkspaceEntry> {
         display_name,
         source_path: path.to_path_buf(),
         workspace,
+        locations,
     })
 }
 
-fn load_workspace(path: &Path) -> Result<Workspace> {
-    let mut ws = if is_json(path) {
+fn load_workspace(path: &Path) -> Result<(Workspace, Option<SourceLocations>)> {
+    let (mut ws, locations) = if is_json(path) {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read {}", path.display()))?;
-        serde_json::from_str::<Workspace>(&content)
-            .with_context(|| format!("Failed to parse JSON from {}", path.display()))?
+        let ws = serde_json::from_str::<Workspace>(&content)
+            .with_context(|| format!("Failed to parse JSON from {}", path.display()))?;
+        (ws, None)
     } else {
-        parse_file(path).with_context(|| format!("Failed to parse DSL from {}", path.display()))?
+        let parsed = structurizr_dsl::parse_file_detailed(path)
+            .with_context(|| format!("Failed to parse DSL from {}", path.display()))?;
+        (parsed.workspace, Some(parsed.locations))
     };
 
     materialize_views(&mut ws, &path.display().to_string());
-    Ok(ws)
+    Ok((ws, locations))
 }
 
 /// True when `path` names a JSON workspace rather than a DSL one.
@@ -155,7 +162,9 @@ fn materialize_views(ws: &mut Workspace, label: &str) {
     }
 }
 
-fn slug_from_path(path: &Path) -> String {
+/// The slug `serve` gives a workspace file: its stem, or its directory's name
+/// when the file is called `workspace.*`.
+pub fn slug_from_path(path: &Path) -> String {
     // Prefer parent directory name for files called workspace.*
     let stem = path
         .file_stem()

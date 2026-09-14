@@ -1457,3 +1457,247 @@ fn empty_file_is_an_empty_sketch_not_an_error() {
         assert_eq!(views[0].key.as_deref(), Some("sketch"));
     }
 }
+
+// ---- declaration source locations -------------------------------------------
+
+fn all_elements(ws: &structurizr_model::Workspace) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for p in ws.model.people.iter().flatten() {
+        out.push((p.name.clone(), p.id.clone()));
+    }
+    for s in ws.model.software_systems.iter().flatten() {
+        out.push((s.name.clone(), s.id.clone()));
+        for c in s.containers.iter().flatten() {
+            out.push((c.name.clone(), c.id.clone()));
+            for p in c.ports.iter().flatten() {
+                out.push((format!("{}.{}", c.name, p.name), p.id.clone()));
+            }
+        }
+    }
+    out
+}
+
+fn element_id(ws: &structurizr_model::Workspace, name: &str) -> String {
+    all_elements(ws)
+        .into_iter()
+        .find(|(n, _)| n == name)
+        .unwrap_or_else(|| panic!("no element named {name}"))
+        .1
+}
+
+fn relationship_id(ws: &structurizr_model::Workspace, description: &str) -> String {
+    let mut rels = Vec::new();
+    for p in ws.model.people.iter().flatten() {
+        rels.extend(p.relationships.iter().flatten());
+    }
+    for s in ws.model.software_systems.iter().flatten() {
+        rels.extend(s.relationships.iter().flatten());
+        for c in s.containers.iter().flatten() {
+            rels.extend(c.relationships.iter().flatten());
+        }
+    }
+    rels.into_iter()
+        .find(|r| r.description.as_deref().map(str::trim) == Some(description))
+        .unwrap_or_else(|| panic!("no relationship described {description}"))
+        .id
+        .clone()
+}
+
+/// 1-based column of `needle` on 1-based `line` of `text`.
+fn col_of(text: &str, line: usize, needle: &str) -> usize {
+    text.lines().nth(line - 1).unwrap().find(needle).unwrap() + 1
+}
+
+const LOCATED: &str = r#"workspace {
+    model {
+        user = person "User"
+        softwareSystem "Anonymous"
+        shop = softwareSystem "Shop" {
+            api = container "API" {
+                port http "HTTP"
+            }
+            db = container "DB"
+            api -> db "reads"
+        }
+        pay = softwareSystem "Pay" { gw = container "Gateway" }
+        user -> shop "buys" {
+            tags "Critical"
+        }
+        charge = shop -> pay """
+            Charges the card
+            """ "HTTPS"
+    }
+}
+"#;
+
+#[test]
+fn locations_cover_elements_ports_and_relationships() {
+    let parsed = structurizr_dsl::parse_str_detailed(LOCATED).expect("parses");
+    let ws = &parsed.workspace;
+    let at = |id: String| {
+        let loc = parsed.locations.get(&id).unwrap_or_else(|| panic!("no location for {id}"));
+        assert_eq!(loc.file, None, "a string parse has no file");
+        (loc.line, loc.col, loc.end_line)
+    };
+
+    // `ident =` counts as the start of the statement.
+    assert_eq!(at(element_id(ws, "User")), (3, 9, 3));
+    // Elements without an identifier are located too.
+    assert_eq!(at(element_id(ws, "Anonymous")), (4, 9, 4));
+    // A block ends on its closing brace.
+    assert_eq!(at(element_id(ws, "Shop")), (5, 9, 11));
+    assert_eq!(at(element_id(ws, "API")), (6, 13, 8));
+    assert_eq!(at(element_id(ws, "API.HTTP")), (7, 17, 7));
+    assert_eq!(at(element_id(ws, "DB")), (9, 13, 9));
+    // A one-line nested block: the outer and inner statements start apart.
+    assert_eq!(at(element_id(ws, "Pay")), (12, 9, 12));
+    assert_eq!(at(element_id(ws, "Gateway")), (12, col_of(LOCATED, 12, "gw"), 12));
+
+    assert_eq!(at(relationship_id(ws, "reads")), (10, 13, 10));
+    assert_eq!(at(relationship_id(ws, "buys")), (13, 9, 15));
+    // A multi-line text block description doesn't move a named relationship's
+    // start off its first line.
+    let (line, col, _) = at(relationship_id(ws, "Charges the card"));
+    assert_eq!((line, col), (16, 9));
+}
+
+#[test]
+fn locations_resolve_through_nested_includes() {
+    let dir = std::env::temp_dir().join(format!("sdsl-locations-test-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("parts")).unwrap();
+    std::fs::write(
+        dir.join("main.dsl"),
+        "workspace {\n    model {\n        shop = softwareSystem \"Shop\"\n        !include parts/billing.dsl\n        shop -> billing \"charges\"\n    }\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("parts/billing.dsl"),
+        "// billing\nbilling = softwareSystem \"Billing\" {\n    ledger = container \"Ledger\"\n}\n!include more.dsl\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("parts/more.dsl"), "audit = softwareSystem \"Audit\"\n").unwrap();
+
+    let parsed = structurizr_dsl::parse_file_detailed(dir.join("main.dsl")).expect("parses");
+    let ws = &parsed.workspace;
+    let at = |id: String| {
+        let loc = parsed.locations.get(&id).expect("located");
+        (loc.file.clone().expect("file parse names the file"), loc.line, loc.col, loc.end_line)
+    };
+
+    assert_eq!(at(element_id(ws, "Shop")), (dir.join("main.dsl"), 3, 9, 3));
+    assert_eq!(at(element_id(ws, "Billing")), (dir.join("parts/billing.dsl"), 2, 1, 4));
+    assert_eq!(at(element_id(ws, "Ledger")), (dir.join("parts/billing.dsl"), 3, 5, 3));
+    // A nested include is joined onto its including file's directory.
+    assert_eq!(at(element_id(ws, "Audit")), (dir.join("parts/more.dsl"), 1, 1, 1));
+    // Lines after an include are counted in the including file, not spliced.
+    assert_eq!(at(relationship_id(ws, "charges")), (dir.join("main.dsl"), 5, 9, 5));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn locations_for_deployment_instances_and_replicated_relationships() {
+    let dsl = r#"workspace {
+    model {
+        s = softwareSystem "S" {
+            a = container "A"
+            b = container "B"
+            a -> b "calls"
+        }
+        prod = deploymentEnvironment "Prod" {
+            deploymentNode "Server" {
+                aI = instanceOf a {
+                    tags "x"
+                }
+                bI = instanceOf b
+            }
+        }
+    }
+}
+"#;
+    let parsed = structurizr_dsl::parse_str_detailed(dsl).expect("parses");
+    let ws = &parsed.workspace;
+    let at = |id: &str| {
+        let loc = parsed.locations.get(id).unwrap_or_else(|| panic!("no location for {id}"));
+        (loc.line, loc.col, loc.end_line)
+    };
+
+    let node = &ws.model.deployment_nodes.as_ref().unwrap()[0];
+    assert_eq!(at(&node.id), (9, 13, 14));
+    let instances = node.container_instances.as_ref().unwrap();
+    // `instanceOf` allocates its id after skipping the body; the location is
+    // still the statement's start, and the body counts towards its end.
+    assert_eq!(at(&instances[0].id), (10, 17, 12));
+    assert_eq!(at(&instances[1].id), (13, 17, 13));
+
+    // Relationships replicated onto instances have no source of their own;
+    // the relationship they link to does.
+    let replicated = &instances[0].relationships.as_ref().expect("replicated")[0];
+    assert!(parsed.locations.get(&replicated.id).is_none());
+    let linked = replicated.linked_relationship_id.as_deref().unwrap();
+    assert_eq!(at(linked), (6, 13, 6));
+}
+
+#[test]
+fn locations_for_views_and_imported_decisions() {
+    let dir = std::env::temp_dir().join(format!("sdsl-view-adr-locations-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("decisions")).unwrap();
+    std::fs::create_dir_all(dir.join("s-decisions")).unwrap();
+    let adr = |title: &str| format!("# 1. {title}\n\nDate: 2024-01-01\n\n## Status\n\nAccepted\n");
+    std::fs::write(dir.join("decisions/0001-use-rust.md"), adr("Use Rust")).unwrap();
+    std::fs::write(dir.join("s-decisions/0001-split-db.md"), adr("Split the database")).unwrap();
+    std::fs::write(
+        dir.join("main.dsl"),
+        r#"workspace {
+    !adrs decisions
+    model {
+        s = softwareSystem "S" {
+            !adrs s-decisions
+        }
+    }
+    views {
+        systemContext s "ctx" {
+            include *
+        }
+        systemLandscape "land" { include * }
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let parsed = structurizr_dsl::parse_file_detailed(dir.join("main.dsl")).expect("parses");
+    let view = |key: &str| parsed.locations.view(key).map(|l| (l.line, l.col, l.end_line));
+    assert_eq!(view("ctx"), Some((9, 9, 11)));
+    assert_eq!(view("land"), Some((12, 9, 12)));
+
+    // Each `!adrs` directory numbers from 1, so the owner tells them apart.
+    let system_id = parsed.workspace.model.software_systems.as_ref().unwrap()[0].id.clone();
+    let workspace_adr = parsed.locations.decision("1", None).expect("workspace decision");
+    assert_eq!(workspace_adr.file.as_deref(), Some(dir.join("decisions/0001-use-rust.md").as_path()));
+    assert_eq!((workspace_adr.line, workspace_adr.end_line), (1, 7));
+    let system_adr = parsed.locations.decision("1", Some(&system_id)).expect("element decision");
+    assert_eq!(system_adr.file.as_deref(), Some(dir.join("s-decisions/0001-split-db.md").as_path()));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn unsaved_text_resolves_includes_against_its_path() {
+    let dir = std::env::temp_dir().join(format!("sdsl-parse-at-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("parts.dsl"), "billing = softwareSystem \"Billing\"\n").unwrap();
+    // What is on disk is not what gets parsed.
+    std::fs::write(dir.join("main.dsl"), "workspace {\n}\n").unwrap();
+    let buffer = "workspace {\n    model {\n        shop = softwareSystem \"Shop\"\n        !include parts.dsl\n        shop -> billing \"charges\"\n    }\n}\n";
+
+    let parsed = structurizr_dsl::parse_str_detailed_at(buffer, dir.join("main.dsl")).expect("parses");
+    let ws = &parsed.workspace;
+    let at = |name: &str| {
+        let loc = parsed.locations.get(&element_id(ws, name)).expect("located");
+        (loc.file.clone().unwrap(), loc.line)
+    };
+    assert_eq!(at("Shop"), (dir.join("main.dsl"), 3));
+    assert_eq!(at("Billing"), (dir.join("parts.dsl"), 1));
+    std::fs::remove_dir_all(&dir).ok();
+}

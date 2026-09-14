@@ -395,4 +395,94 @@ mod tests {
             .handle(&json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}).to_string())
             .is_empty());
     }
+
+    fn open_at(dispatcher: &Dispatcher, uri: &str, text: &str) -> Vec<String> {
+        dispatcher.handle(
+            &json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": uri,
+                        "languageId": "structurizr-dsl",
+                        "version": 1,
+                        "text": text,
+                    }
+                }
+            })
+            .to_string(),
+        )
+    }
+
+    #[test]
+    fn document_symbols_cover_anonymous_elements_and_relationships_nested_by_range() {
+        let dispatcher = Dispatcher::new();
+        open(
+            &dispatcher,
+            "workspace {\n  model {\n    u = person \"User\"\n    softwareSystem \"S\" {\n      c = container \"C\"\n      this -> u \"Notifies\"\n    }\n    u -> c \"Uses\"\n  }\n}\n",
+        );
+        let response = request(
+            &dispatcher,
+            "textDocument/documentSymbol",
+            json!({ "textDocument": { "uri": "file:///w.dsl" } }),
+        );
+        let names = |symbols: &Value| -> Vec<String> {
+            symbols.as_array().unwrap().iter().map(|s| s["name"].as_str().unwrap().to_string()).collect()
+        };
+        let symbols = &response;
+        assert_eq!(names(symbols), ["User", "S", "User → C"]);
+        // The anonymous system spans its block, and holds what is declared in it.
+        let system = &symbols[1];
+        assert_eq!((system["range"]["start"]["line"].as_u64(), system["range"]["end"]["line"].as_u64()), (Some(3), Some(6)));
+        assert_eq!(names(&system["children"]), ["C", "S → User"]);
+    }
+
+    #[test]
+    fn includes_resolve_for_diagnostics_and_definitions() {
+        let dir = std::env::temp_dir().join(format!("sx-lsp-include-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("parts.dsl"), "billing = softwareSystem \"Billing\"\n").unwrap();
+        let main = dir.join("main.dsl");
+        let text = "workspace {\n  model {\n    !include parts.dsl\n    s = softwareSystem \"S\"\n    s -> billing \"charges\"\n  }\n}\n";
+        std::fs::write(&main, text).unwrap();
+        let uri = format!("file://{}", main.display());
+
+        let out = open_at(&dispatcher_for_include(), &uri, text);
+        let notification: Value = serde_json::from_str(&out[0]).unwrap();
+        assert_eq!(notification["params"]["diagnostics"], json!([]), "billing resolves through the include");
+
+        let dispatcher = Dispatcher::new();
+        open_at(&dispatcher, &uri, text);
+        let response = request(
+            &dispatcher,
+            "textDocument/definition",
+            json!({ "textDocument": { "uri": uri }, "position": { "line": 4, "character": 9 } }),
+        );
+        let location = &response;
+        assert!(location["uri"].as_str().unwrap().ends_with("/parts.dsl"), "{location}");
+        assert_eq!(location["range"]["start"]["line"], 0);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn dispatcher_for_include() -> Dispatcher {
+        Dispatcher::new()
+    }
+
+    #[test]
+    fn errors_in_an_included_file_mark_the_include() {
+        let dir = std::env::temp_dir().join(format!("sx-lsp-broken-include-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("broken.dsl"), "x = softwareSystem \"X\"\nx -> nowhere \"uses\"\n").unwrap();
+        let main = dir.join("main.dsl");
+        let text = "workspace {\n  model {\n    !include broken.dsl\n  }\n}\n";
+        std::fs::write(&main, text).unwrap();
+
+        let out = open_at(&Dispatcher::new(), &format!("file://{}", main.display()), text);
+        let notification: Value = serde_json::from_str(&out[0]).unwrap();
+        let diagnostics = notification["params"]["diagnostics"].as_array().unwrap();
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert_eq!(diagnostics[0]["range"]["start"]["line"], 2);
+        assert!(diagnostics[0]["message"].as_str().unwrap().contains("broken.dsl"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

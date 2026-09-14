@@ -12,13 +12,14 @@ use crate::convert::line_range;
 
 pub fn syntax_error(text: &str, err: &ParseError) -> Diagnostic {
     let range = match err {
-        ParseError::Syntax { line, col, .. } => line_range(
-            text,
-            Pos {
-                line: *line,
-                col: *col,
-            },
-        ),
+        ParseError::Syntax { line, col, message } => {
+            // An error inside an `!include`d file carries that file's line
+            // number; mark the `!include` in this document instead.
+            let pos = included_file(message)
+                .and_then(|file| include_line(text, file))
+                .unwrap_or(Pos { line: *line, col: *col });
+            line_range(text, pos)
+        }
         _ => Range::new(Position::new(0, 0), Position::new(0, 1)),
     };
     Diagnostic {
@@ -28,6 +29,27 @@ pub fn syntax_error(text: &str, err: &ParseError) -> Diagnostic {
         message: err.to_string(),
         ..Diagnostic::default()
     }
+}
+
+/// The file named by the parser's `in <file>: …` prefix for errors in an
+/// included file.
+fn included_file(message: &str) -> Option<&str> {
+    message.strip_prefix("in ")?.split_once(": ").map(|(file, _)| file)
+}
+
+/// Position of the `!include <file>` line in `text`. Only direct includes are
+/// found: a nested include's label is relative to the file that includes it.
+fn include_line(text: &str, file: &str) -> Option<Pos> {
+    text.lines().enumerate().find_map(|(i, line)| {
+        let trimmed = line.trim_start();
+        let rest = trimmed
+            .strip_prefix("!include ")
+            .or_else(|| trimmed.strip_prefix("!INCLUDE "))?;
+        (rest.trim().trim_matches('"') == file).then(|| Pos {
+            line: i + 1,
+            col: line.len() - trimmed.len() + 1,
+        })
+    })
 }
 
 /// `ValidationError`'s `Display` messages quote the offending element id

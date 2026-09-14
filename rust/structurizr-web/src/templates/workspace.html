@@ -190,7 +190,7 @@
     <div id="status-bar">
         <span id="status-msg">Loading…</span>
         <span class="ms-2 d-none d-md-inline">
-            · double-click an element to drill in · <kbd>space</kbd> to jump to a view
+            · click to select (<kbd>shift</kbd> adds) · double-click an element to drill in · <kbd>space</kbd> to jump to a view
             · <kbd>?</kbd> for shortcuts
         </span>
     </div>
@@ -261,6 +261,7 @@
                     <li>Drag the background to pan; <kbd>ctrl</kbd>/<kbd>⌘</kbd> + scroll (or pinch) to zoom.</li>
                     <li>Double-click an element to drill in — look for the magnifying glass.</li>
                     <li>Hover an element or relationship for details.</li>
+                    <li>Click an element or relationship to select it; <kbd>shift</kbd>-click adds to the selection, and <kbd>Esc</kbd> or a click on the background clears it. The page URL always links to the selection — <code>structurizrx locate</code> finds it in the DSL — and the status bar links each selected item to its declaration in VS Code.</li>
                     <li><kbd>+</kbd> <kbd>-</kbd> zoom in/out, <kbd>c</kbd> fit content, <kbd>w</kbd> fit width, <kbd>h</kbd> fit height</li>
                     <li><kbd>←</kbd> <kbd>→</kbd> previous/next view · <kbd>space</kbd> quick navigation</li>
                     <li><kbd>d</kbd> toggle descriptions · <kbd>m</kbd> toggle metadata · <kbd>t</kbd> toggle tooltips</li>
@@ -333,6 +334,7 @@
 <script src="/static/js/structurizr-tooltip.js"></script>
 <script src="/static/js/structurizr-navigation.js"></script>
 <script src="/static/js/structurizr-quick-navigation.js"></script>
+<script src="/static/js/structurizr-selection.js"></script>
 <script src="/static/js/structurizr-print-view.js"></script>
 
 <script>
@@ -347,6 +349,33 @@
     // --- Status bar ---
     function setStatus(msg) {
         document.getElementById('status-msg').textContent = msg;
+    }
+
+    // What is selected, then — once the server has located it — a link per
+    // selected item that opens its declaration in VS Code.
+    var selectionRequest = 0;
+    function showSelection(references) {
+        var request = ++selectionRequest;
+        if (references.length === 0) {
+            setStatus('Selection cleared');
+            return;
+        }
+        setStatus(references.length + ' selected · the page URL links to ' + (references.length === 1 ? 'it' : 'them'));
+        StructurizrSelection.locate(WORKSPACE_SLUG, references).then(function(located) {
+            if (!located || request !== selectionRequest) return;
+            var links = located.items.filter(function(item) {
+                return item.locations.length > 0 && item.locations[0].absolutePath;
+            }).map(function(item) {
+                return StructurizrSelection.editorLink(item.label, item.locations[0]);
+            });
+            if (links.length === 0) return;
+            var status = document.getElementById('status-msg');
+            status.textContent = 'Open in editor: ';
+            links.forEach(function(link, i) {
+                if (i > 0) status.appendChild(document.createTextNode(' · '));
+                status.appendChild(link);
+            });
+        });
     }
 
     // --- Diagram-area overlay message (for errors / empty state) ---
@@ -443,7 +472,12 @@
     });
 
     // ===== INITIAL LOAD =====
-    loadWorkspace(location.hash ? location.hash.substring(1) : null);
+    // The hash is `#<view>[&sel=<references>]`. The selection it names is
+    // restored once that view has been drawn; until then it stays in the URL.
+    var initialHash = StructurizrSelection.parseHash(location.hash);
+    var pendingSelection = initialHash.selection;
+    var selection;
+    loadWorkspace(initialHash.view);
 
     function loadWorkspace(jumpToKey) {
         fetch('/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG))
@@ -538,6 +572,7 @@
 
                 // Listen for view changes driven by the diagram itself (e.g. keyboard nav)
                 diagram.onViewChanged(function(key) {
+                    if (selection && key !== currentViewKey) selection.items = [];
                     currentViewKey = key;
                     updateHash(key);
                     updateSidebarActive(key);
@@ -553,9 +588,14 @@
 
             // React to hash changes (browser back/forward, links)
             window.onhashchange = function() {
-                if (window.location.hash) {
-                    var key = decodeURIComponent(window.location.hash.substring(1));
-                    if (diagramReady) activateView(key);
+                if (!diagramReady) return;
+                var hash = StructurizrSelection.parseHash(window.location.hash);
+                if (hash.view && hash.view !== currentViewKey) {
+                    pendingSelection = hash.selection;
+                    activateView(hash.view);
+                } else {
+                    selection.restore(hash.selection);
+                    if (selection.items.length) showSelection(selection.references());
                 }
             };
         });
@@ -567,6 +607,8 @@
             if (views.length === 0) return;
             key = views[0].key;
         }
+        // A selection belongs to the view it was made on.
+        if (selection && key !== currentViewKey) selection.items = [];
         currentViewKey = key;
         updateHash(key);
         updateSidebarActive(key);
@@ -575,6 +617,11 @@
         diagram.changeView(key, function() {
             fitDiagram();
             updateAnimationControls();
+            if (pendingSelection) {
+                selection.restore(pendingSelection);
+                pendingSelection = null;
+                if (selection.items.length) showSelection(selection.references());
+            }
         });
     }
 
@@ -975,12 +1022,10 @@
     });
 
     function updateHash(key) {
-        // Update URL fragment without triggering onhashchange
-        if (history.replaceState) {
-            history.replaceState(null, '', '#' + key);
-        } else {
-            location.hash = key;
-        }
+        // Update URL fragment without triggering onhashchange. A selection
+        // still waiting for its view to be drawn is kept as it was.
+        var references = pendingSelection ? pendingSelection : (selection ? selection.references() : []);
+        StructurizrSelection.replaceHash(StructurizrSelection.buildHash(key, references));
     }
 
     // ===== INTERACTION =====
@@ -1007,10 +1052,29 @@
         diagram.onElementDoubleClicked(elementDoubleClicked);
         diagram.onRelationshipDoubleClicked(relationshipDoubleClicked);
 
+        // Click selects an element or relationship (shift/⌘ adds to the
+        // selection, a click on the background clears it). The selection is
+        // kept in the URL as references, so the address bar always links to
+        // exactly what is selected — structurizrx locate resolves such a link.
+        selection = new StructurizrSelection.DiagramSelection(diagram, {
+            onChange: function(references) {
+                pendingSelection = null;
+                updateHash(currentViewKey);
+                showSelection(references);
+            }
+        });
+
         // Arrow keys page through views; structurizr-diagram.js only forwards
         // them once it has decided the canvas has nowhere left to scroll.
         diagram.onkeydown(function(e) {
-            var LEFT = 37, UP = 38, RIGHT = 39, DOWN = 40, PAGE_UP = 33, PAGE_DOWN = 34;
+            var LEFT = 37, UP = 38, RIGHT = 39, DOWN = 40, PAGE_UP = 33, PAGE_DOWN = 34, ESCAPE = 27;
+            if (e.which === ESCAPE && selection.items.length > 0) {
+                selection.clear();
+                updateHash(currentViewKey);
+                showSelection([]);
+                e.preventDefault();
+                return;
+            }
             if (e.which === LEFT || e.which === UP || e.which === PAGE_UP) {
                 navigateToAdjacentView(-1);
                 e.preventDefault();

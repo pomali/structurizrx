@@ -76,6 +76,7 @@ Well-known properties: `owner`, `layer`.
     structurizrx validate ws.dsl [--strict] [--json]   # errors + lint findings
     structurizrx digest ws.dsl                # compact model + view summary for LLMs
     structurizrx query ws.dsl "->api->2" [--json]      # run a selector, list matches
+    structurizrx locate ws.dsl "Shop/API" "<viewer link>" [--json]  # file:line of each declaration
     structurizrx render ws.dsl --format svg|mermaid|plantuml|dot --output out/
     structurizrx export ws.dsl                # JSON (superset of Structurizr)
     structurizrx serve ws.dsl --port 3000     # live-reload web viewer
@@ -88,10 +89,17 @@ keywords fail with the offending file/line, the accepted keywords, and a
 (parse, unknown-element, unknown-port, unknown-milestone; lint: placeholder,
 uncertain, orphan, unbound-port).
 
+References (`locate`) name things by path, never id: `Shop/API`,
+`Shop/API.http` (port), `Shop/API->Shop/DB "reads"`, `Production/Server/API`
+(deployment, rooted at its environment), `view:<key>`, `decision:<id>`.
+A viewer link works too — the page URL of whatever a user selected in
+`serve` (`http://localhost:3000/workspace/shop#containers&sel=Shop%2FAPI`).
+
 ## Server API (under `serve`)
     GET /llms.txt                                  # this cheat sheet
     GET /api/workspaces                            # list workspaces
     GET /api/workspace/{name}                      # full model JSON
     GET /api/workspace/{name}/digest               # plain-text digest
     GET /api/workspace/{name}/query?expr=<selector>  # {elements[], relationships[]}
+    GET /api/workspace/{name}/locate?sel=<ref>,<ref>  # {items[], unresolved[]}; refs URI-encoded
     GET /api/workspace/{name}/diagram/{key}/svg    # rendered SVG

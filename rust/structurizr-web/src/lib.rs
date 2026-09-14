@@ -19,6 +19,7 @@
 
 pub mod assets;
 pub mod git;
+pub mod locate;
 pub mod markdown;
 pub mod resolver;
 pub mod server;

@@ -1,9 +1,10 @@
 //! Per-document state the backend keeps between LSP notifications.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use structurizr_dsl::lexer::{tokenize, Pos, Spanned};
-use structurizr_dsl::{parse_str_with_identifiers, IdentifierRegister};
+use structurizr_dsl::{IdentifierRegister, Parsed, SourceLocation, SourceLocations};
 use structurizr_model::Workspace;
 use ls_types::Diagnostic;
 
@@ -16,14 +17,17 @@ use crate::index::{self, Declarations};
 pub struct Analyzed {
     pub workspace: Workspace,
     pub identifiers: IdentifierRegister,
-    /// Element id -> declaration position, derived by joining `identifiers`
-    /// (DSL identifier -> element id) with `declarations` (DSL identifier ->
-    /// position).
-    pub id_to_pos: HashMap<String, Pos>,
+    /// Where every element, port, relationship and view was declared — in
+    /// this document or in a file it `!include`s.
+    pub locations: SourceLocations,
 }
 
 pub struct DocumentState {
     pub text: String,
+    /// The file this document is, when the server can read around it:
+    /// `!include`s resolve against its directory. `None` for non-`file:`
+    /// documents and in the WASM build, which has no filesystem.
+    pub path: Option<PathBuf>,
     pub tokens: Vec<Spanned>,
     pub declarations: Declarations,
     pub last_ok: Option<Analyzed>,
@@ -33,37 +37,55 @@ impl DocumentState {
     pub fn empty() -> Self {
         DocumentState {
             text: String::new(),
+            path: None,
             tokens: Vec::new(),
             declarations: Declarations::new(),
             last_ok: None,
         }
     }
 
-    /// Re-tokenizes and re-parses `text`, updating all derived state, and
-    /// returns the diagnostics to publish for it.
-    pub fn update(&mut self, text: String) -> Vec<Diagnostic> {
+    /// Re-tokenizes and re-parses `text` (the contents of `path`, when known),
+    /// updating all derived state, and returns the diagnostics to publish.
+    pub fn update(&mut self, text: String, path: Option<PathBuf>) -> Vec<Diagnostic> {
         self.tokens = tokenize(&text);
         self.declarations = index::build_declarations(&self.tokens);
         self.text = text;
+        self.path = path;
 
-        match parse_str_with_identifiers(&self.text) {
-            Ok((workspace, identifiers)) => {
-                let id_to_pos: HashMap<String, Pos> = identifiers
-                    .identifiers
+        let parsed = match &self.path {
+            Some(path) => structurizr_dsl::parse_str_detailed_at(&self.text, path),
+            None => structurizr_dsl::parse_str_detailed(&self.text),
+        };
+        match parsed {
+            Ok(Parsed { workspace, identifiers, locations }) => {
+                // Model id -> declaration position in this document (anonymous
+                // elements and relationships included), to anchor validation
+                // diagnostics.
+                let id_to_pos: HashMap<String, Pos> = locations
                     .iter()
-                    .filter_map(|(ident, (id, _kind))| {
-                        self.declarations.get(ident).map(|pos| (id.clone(), *pos))
+                    .filter(|(_, location)| self.is_here(location))
+                    .map(|(id, location)| {
+                        (id.to_string(), Pos { line: location.line, col: location.col })
                     })
                     .collect();
                 let diags = diagnostics::validation_diagnostics(&workspace, &id_to_pos);
                 self.last_ok = Some(Analyzed {
                     workspace,
                     identifiers,
-                    id_to_pos,
+                    locations,
                 });
                 diags
             }
             Err(err) => vec![diagnostics::syntax_error(&self.text, &err)],
+        }
+    }
+
+    /// Whether `location` is in this document rather than in a file it includes.
+    pub fn is_here(&self, location: &SourceLocation) -> bool {
+        match (&location.file, &self.path) {
+            (None, _) => true,
+            (Some(file), Some(path)) => file == path,
+            (Some(_), None) => false,
         }
     }
 

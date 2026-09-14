@@ -533,6 +533,14 @@ hr {
     stroke-dasharray: 10 10;
 }
 
+/* The viewer's click selection (kept in the page URL), distinct from the
+   editor's dashed move/align selection above. */
+.joint-element .structurizrSelected {
+    stroke: #0d6efd !important;
+    stroke-width: 8px !important;
+    stroke-dasharray: none !important;
+}
+
 .joint-element * {
     vector-effect: none;
 }

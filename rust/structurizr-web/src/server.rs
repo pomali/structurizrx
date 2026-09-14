@@ -1,7 +1,7 @@
 //! HTTP server and route handlers.
 
 use axum::{
-    extract::{Path, State, WebSocketUpgrade},
+    extract::{Path, RawQuery, State, WebSocketUpgrade},
     http::{header, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     routing::get,
@@ -57,6 +57,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/workspace/{name}/diff", get(api_diff_handler))
         .route("/api/workspace/{name}/digest", get(api_digest_handler))
         .route("/api/workspace/{name}/query", get(api_query_handler))
+        .route("/api/workspace/{name}/locate", get(api_locate_handler))
         .route("/llms.txt", get(llms_txt_handler))
         .route("/docs", get(|| async { Redirect::permanent("/docs/") }))
         .route("/docs/", get(|| async { docs_asset_response("index.html") }))
@@ -622,6 +623,34 @@ async fn api_query_handler(
         }
         Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
+}
+
+/// Where references are declared — `structurizrx locate --json` against the
+/// live workspace. References come in `sel=` exactly as the viewer's page hash
+/// carries them (each URI-encoded, joined with `,`), so a selection can be
+/// passed on as-is. Backs the viewer's "open in editor" links.
+///
+/// `GET /api/workspace/{name}/locate?sel=Shop%2FAPI,User-%3EShop%2FAPI`
+async fn api_locate_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    RawQuery(query): RawQuery,
+) -> Response {
+    let workspaces = state.workspaces.lock().unwrap();
+    let Some(entry) = workspaces.iter().find(|e| e.name == name) else {
+        return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
+    };
+    let references = structurizr_query::parse_viewer_link(&format!("#{}", query.unwrap_or_default()))
+        .map(|link| link.selection)
+        .unwrap_or_default();
+    let catalog = structurizr_query::Catalog::new(&entry.workspace);
+    let located = crate::locate::locate(
+        &catalog,
+        entry.locations.as_ref(),
+        &std::collections::HashSet::new(),
+        &references,
+    );
+    Json(crate::locate::to_json(&located)).into_response()
 }
 
 // ---- Static assets ----

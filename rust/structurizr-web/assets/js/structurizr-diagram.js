@@ -106,6 +106,12 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
     var workspaceChangedEventHandler;
     var elementsSelectedEventHandler;
     var elementDoubleClickedHandler;
+    var cellClickedHandler;
+    // The viewer's click selection (see setSelection), separate from the
+    // editor's move/align selection in selectedElements.
+    var selectedCellViews = [];
+    var selectedLinkViews = [];
+    var SELECTED_RELATIONSHIP_HALO = 'rgba(13, 110, 253, 0.45)';
     var relationshipDoubleClickedHandler;
     var animationStartedEventHandler;
     var animationStoppedEventHandler;
@@ -371,6 +377,8 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
         mapOfIdToBox = {};
         cells = [];
         cellsByElementId = {};
+        selectedCellViews = [];
+        selectedLinkViews = [];
         elementStylesInUse = [];
         elementStylesInUseMap = {};
 
@@ -4660,6 +4668,56 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
         relationshipDoubleClickedHandler = callback;
     }
 
+    /**
+     * In a non-editable diagram, `callback(event, hit)` runs on every click:
+     * `hit` is `{elementId}` or `{relationshipId}`, or undefined for a click on
+     * the background.
+     */
+    this.onCellClicked = function(callback) {
+        cellClickedHandler = callback;
+    };
+
+    /**
+     * Mark elements (including boundaries) and relationships as selected.
+     * Replaces any previous selection; returns `{elements, relationships}`,
+     * the ids that are drawn on the current diagram and so could be marked.
+     */
+    this.setSelection = function(elementIds, relationshipIds) {
+        selectedCellViews.forEach(function(cellView) {
+            $(cellView.el).find('.structurizrSelected').removeClass('structurizrSelected');
+        });
+        var previousLinkViews = selectedLinkViews;
+        selectedCellViews = [];
+        selectedLinkViews = [];
+        previousLinkViews.forEach(unhighlightRelationship);
+
+        var shown = { elements: [], relationships: [] };
+        (elementIds || []).forEach(function(id) {
+            var cell = cellsByElementId[id] || boundariesByElementId[id];
+            var cellView = cell && paper.findViewByModel(cell);
+            if (!cellView) return;
+            var outline = $(cellView.el).find('.structurizrHighlightableElement');
+            if (outline.length === 0) {
+                outline = $(cellView.el).find('rect, path').first();
+            }
+            outline.addClass('structurizrSelected');
+            selectedCellViews.push(cellView);
+            shown.elements.push(id);
+        });
+        (relationshipIds || []).forEach(function(id) {
+            // Dynamic views key a relationship's lines by `id/order`.
+            Object.keys(mapOfIdToLine).forEach(function(key) {
+                if (key !== id && key.indexOf(id + '/') !== 0) return;
+                var linkView = paper.findViewByModel(mapOfIdToLine[key]);
+                if (!linkView) return;
+                selectedLinkViews.push(linkView);
+                unhighlightRelationship(linkView);
+                if (shown.relationships.indexOf(id) === -1) shown.relationships.push(id);
+            });
+        });
+        return shown;
+    };
+
     function fireElementsSelectedEvent() {
         if (elementsSelectedEventHandler) {
             elementsSelectedEventHandler(selectedElements.map(function(cell) {
@@ -5660,9 +5718,11 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
     }
 
     function unhighlightRelationship(cellView) {
+        // Hover ends by restoring the selection halo, not by clearing it.
+        var selected = selectedLinkViews.indexOf(cellView) !== -1;
         $('#' + cellView.id).children().first().css({
-            'stroke': '',
-            'stroke-width': 10
+            'stroke': selected ? SELECTED_RELATIONSHIP_HALO : '',
+            'stroke-width': selected ? 22 : 10
         });
     }
 
@@ -6654,6 +6714,15 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
         });
 
         paper.on('cell:pointerclick', function (cellView, evt, x, y) {
+            if (!self.isEditable() && cellClickedHandler) {
+                if (cellView.model.elementInView) {
+                    cellClickedHandler(evt, { elementId: cellView.model.elementInView.id });
+                } else if (cellView.model.relationshipInView) {
+                    cellClickedHandler(evt, { relationshipId: cellView.model.relationshipInView.id });
+                }
+                return;
+            }
+
             if (self.isEditable()) {
                 if (cellView.model.elementInView && cellView.model.positionCalculated === false) {
                     var cellViewIsSelected = cellView.selected;
@@ -6681,6 +6750,27 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
                 } else {
                     self.deselectAllElements();
                 }
+            }
+        });
+
+        paper.on('blank:pointerclick', function (evt, x, y) {
+            if (!self.isEditable() && cellClickedHandler) {
+                cellClickedHandler(evt, undefined);
+            }
+        });
+
+        // The viewport around the paper is background too, but JointJS never
+        // sees clicks there. A click that ends a drag (panning) doesn't count.
+        var viewportPressedAt;
+        viewport.on('mousedown', function (evt) {
+            viewportPressedAt = { x: evt.clientX, y: evt.clientY };
+        });
+        viewport.on('click', function (evt) {
+            var outsidePaper = evt.target === viewport[0] || evt.target === canvas[0];
+            var dragged = viewportPressedAt &&
+                Math.abs(evt.clientX - viewportPressedAt.x) + Math.abs(evt.clientY - viewportPressedAt.y) > 4;
+            if (outsidePaper && !dragged && !self.isEditable() && cellClickedHandler) {
+                cellClickedHandler(evt, undefined);
             }
         });
     }

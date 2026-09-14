@@ -33,6 +33,29 @@ WebSocket automatically — no manual refresh.
 | `GET /docs/` | This documentation site |
 | `GET /llms.txt` | The DSL cheat sheet, as plain text |
 
+## Selecting and linking
+
+On the workspace, diagram and universe graph pages, a click selects an
+element or relationship; shift-click (or ⌘/ctrl-click) adds to or removes
+from the selection, and a click on the background — or <kbd>Esc</kbd> —
+clears it.
+
+The selection is kept in the page URL, so the address bar always links to
+exactly what is selected: `#<view>&sel=<references>` on the workspace page,
+`#sel=<references>` on the others. Reloading the page, or the workspace
+reloading after an edit, keeps the selection. References name things by path
+(`Shop/API`, `Shop/API->Shop/Database`) rather than by id, so a link keeps
+working while the DSL changes — and [`locate`](./locate.md) turns one into the
+file and line of each selected statement. The viewer does that lookup
+itself, too: the status bar (and the graph's details panel) links each
+selected item to its declaration, opening it in VS Code.
+
+`locate` from the command line:
+
+```sh
+structurizrx locate shop.dsl 'http://localhost:3000/workspace/shop#containers&sel=Shop%2FAPI'
+```
+
 ## JSON API
 
 The same server exposes a JSON API mirroring the CLI, useful for agents
@@ -50,6 +73,7 @@ working against a live server:
 | `GET /api/workspace/{name}/diff?from=&to=` | the model-level comparison of two versions |
 | `GET /api/workspace/{name}/digest` | [`digest`](./digest.md) |
 | `GET /api/workspace/{name}/query?expr=...` | [`query`](./query.md) |
+| `GET /api/workspace/{name}/locate?sel=...` | [`locate --json`](./locate.md) |
 
 ## Universe graph
 

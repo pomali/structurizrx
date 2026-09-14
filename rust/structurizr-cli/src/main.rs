@@ -1,3 +1,5 @@
+mod locate;
+
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
@@ -71,6 +73,19 @@ enum Commands {
         /// Selector expression, e.g. `element.status==idea && element.layer==domain`
         #[arg(allow_hyphen_values = true)]
         expression: String,
+        /// Emit machine-readable JSON instead of a text listing
+        #[arg(long)]
+        json: bool,
+    },
+    /// Find where elements, ports, relationships, views and decisions are
+    /// declared, by name path or from a viewer link carrying a selection,
+    /// e.g. `locate ws.dsl "Shop/API" "Shop/API->Shop/DB"`
+    Locate {
+        file: PathBuf,
+        /// Name paths (`Shop/API`, `Shop/API.http`, `Shop/API->Shop/DB "reads"`,
+        /// `view:<key>`, `decision:<id>`) or viewer links (`http://…#view&sel=…`)
+        #[arg(required = true)]
+        references: Vec<String>,
         /// Emit machine-readable JSON instead of a text listing
         #[arg(long)]
         json: bool,
@@ -318,6 +333,11 @@ async fn main() -> Result<()> {
                 if selection.elements.is_empty() && selection.relationships.is_empty() {
                     eprintln!("(no matches)");
                 }
+            }
+        }
+        Commands::Locate { file, references, json } => {
+            if !locate::run(&file, &references, json)? {
+                std::process::exit(1);
             }
         }
         Commands::Docs => {

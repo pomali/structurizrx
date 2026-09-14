@@ -5,15 +5,17 @@
 //! (`jsonrpc.rs` → `structurizr-lsp-wasm`).
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::RwLock;
 
 use ls_types::*;
 use structurizr_dsl::lexer::Pos;
-use structurizr_model::Workspace;
+use structurizr_dsl::SourceLocation;
+use structurizr_model::{DeploymentNode, Port, Relationship, Workspace};
 
 use crate::context::context_at;
 use crate::convert::{point_range, pos_to_position, position_to_pos};
-use crate::document::DocumentState;
+use crate::document::{Analyzed, DocumentState};
 use crate::semantic;
 
 #[derive(Default)]
@@ -65,11 +67,12 @@ impl Core {
     /// Parses `text` as the current contents of `uri` and returns the
     /// diagnostics to publish for it. Used for both `didOpen` and `didChange`.
     pub fn set_document(&self, uri: Uri, text: String) -> Vec<Diagnostic> {
+        let path = document_path(&uri);
         let mut documents = self.documents.write().unwrap();
         documents
             .entry(uri)
             .or_insert_with(DocumentState::empty)
-            .update(text)
+            .update(text, path)
     }
 
     pub fn close_document(&self, uri: &Uri) {
@@ -149,17 +152,30 @@ impl Core {
         let documents = self.documents.read().unwrap();
         let doc = documents.get(uri)?;
         let word = doc.word_at(position_to_pos(position))?;
-        let decl_pos = *doc.declarations.get(&word.to_lowercase())?;
+        let len = word.chars().count();
+        if let Some(decl_pos) = doc.declarations.get(&word.to_lowercase()) {
+            return Some(Location {
+                uri: uri.clone(),
+                range: point_range(*decl_pos, len),
+            });
+        }
+        // Declared in an `!include`d file: the parser resolved the identifier
+        // to an element, and knows where that element was declared.
+        let analyzed = doc.last_ok.as_ref()?;
+        let (id, _) = analyzed.identifiers.resolve(word)?;
+        let location = analyzed.locations.get(id)?;
+        let file = location.file.as_ref().filter(|_| !doc.is_here(location))?;
         Some(Location {
-            uri: uri.clone(),
-            range: point_range(decl_pos, word.chars().count()),
+            uri: Uri::from_file_path(file)?,
+            range: point_range(Pos { line: location.line, col: location.col }, len),
         })
     }
 
     pub fn document_symbol(&self, uri: &Uri) -> Option<Vec<DocumentSymbol>> {
         let documents = self.documents.read().unwrap();
-        let analyzed = documents.get(uri)?.last_ok.as_ref()?;
-        Some(build_symbols(&analyzed.workspace, &analyzed.id_to_pos))
+        let doc = documents.get(uri)?;
+        let analyzed = doc.last_ok.as_ref()?;
+        Some(build_symbols(doc, analyzed))
     }
 
     pub fn references(
@@ -329,63 +345,173 @@ fn format_hover(
     md
 }
 
-/// `DocumentSymbol.deprecated` is a deprecated field we still have to set
-/// (no `Default` impl on `DocumentSymbol`).
+/// The file a document URI names, when the server can read around it: only
+/// `file:` URIs, and never in the WASM build, which has no filesystem.
+fn document_path(uri: &Uri) -> Option<PathBuf> {
+    if cfg!(target_arch = "wasm32") || !uri.as_str().starts_with("file:") {
+        return None;
+    }
+    uri.to_file_path().map(|path| path.into_owned())
+}
+
+/// Model items to put in the outline, gathered in one walk: (id, name, kind,
+/// detail) per element and port, plus every relationship and each element's
+/// name, which a relationship's symbol is named after.
+#[derive(Default)]
+struct Outline<'a> {
+    declared: Vec<(&'a str, String, SymbolKind, Option<String>)>,
+    names: HashMap<&'a str, &'a str>,
+    relationships: Vec<&'a Relationship>,
+}
+
+impl<'a> Outline<'a> {
+    fn element(
+        &mut self,
+        id: &'a str,
+        name: &'a str,
+        kind: SymbolKind,
+        ports: &'a Option<Vec<Port>>,
+        relationships: &'a Option<Vec<Relationship>>,
+    ) {
+        self.names.insert(id, name);
+        self.declared.push((id, name.to_string(), kind, None));
+        for port in ports.iter().flatten() {
+            self.declared.push((&port.id, port.name.clone(), SymbolKind::PROPERTY, None));
+        }
+        self.relationships.extend(relationships.iter().flatten());
+    }
+
+    fn deployment_node(&mut self, node: &'a DeploymentNode) {
+        self.element(&node.id, &node.name, SymbolKind::NAMESPACE, &None, &node.relationships);
+        for inf in node.infrastructure_nodes.iter().flatten() {
+            self.element(&inf.id, &inf.name, SymbolKind::INTERFACE, &None, &inf.relationships);
+        }
+        for ci in node.container_instances.iter().flatten() {
+            let name = self.names.get(ci.container_id.as_str()).copied().unwrap_or("instance");
+            self.element(&ci.id, name, SymbolKind::VARIABLE, &None, &ci.relationships);
+        }
+        for si in node.software_system_instances.iter().flatten() {
+            let name = self.names.get(si.software_system_id.as_str()).copied().unwrap_or("instance");
+            self.element(&si.id, name, SymbolKind::VARIABLE, &None, &si.relationships);
+        }
+        for child in node.children.iter().flatten() {
+            self.deployment_node(child);
+        }
+    }
+}
+
+/// The outline: every element, port, relationship and view declared in this
+/// document (not in the files it includes), nested by source range. Nesting
+/// follows the text rather than the model, so a relationship declared in an
+/// element's body sits under that element and one declared at model level
+/// doesn't.
+fn build_symbols(doc: &DocumentState, analyzed: &Analyzed) -> Vec<DocumentSymbol> {
+    let model = &analyzed.workspace.model;
+    let mut outline = Outline::default();
+    for p in model.people.iter().flatten() {
+        outline.element(&p.id, &p.name, SymbolKind::OBJECT, &p.ports, &p.relationships);
+    }
+    for s in model.software_systems.iter().flatten() {
+        outline.element(&s.id, &s.name, SymbolKind::MODULE, &s.ports, &s.relationships);
+        for c in s.containers.iter().flatten() {
+            outline.element(&c.id, &c.name, SymbolKind::CLASS, &c.ports, &c.relationships);
+            for comp in c.components.iter().flatten() {
+                outline.element(&comp.id, &comp.name, SymbolKind::STRUCT, &comp.ports, &comp.relationships);
+            }
+        }
+    }
+    for e in model.custom_elements.iter().flatten() {
+        outline.element(&e.id, &e.name, SymbolKind::OBJECT, &e.ports, &e.relationships);
+    }
+    // After the static model, so instances can take their element's name.
+    for node in model.deployment_nodes.iter().flatten() {
+        outline.deployment_node(node);
+    }
+
+    let mut flat = Vec::new();
+    let here = |id: &str| analyzed.locations.get(id).filter(|location| doc.is_here(location));
+    for (id, name, kind, detail) in outline.declared {
+        if let Some(location) = here(id) {
+            flat.push(symbol(doc, location, name, kind, detail));
+        }
+    }
+    let name_of = |id: &str| outline.names.get(id).map_or_else(|| id.to_string(), |n| n.to_string());
+    for r in &outline.relationships {
+        if let Some(location) = here(&r.id) {
+            let name = format!("{} → {}", name_of(&r.source_id), name_of(&r.destination_id));
+            flat.push(symbol(doc, location, name, SymbolKind::EVENT, r.description.clone()));
+        }
+    }
+    for (key, location) in analyzed.locations.views() {
+        if doc.is_here(location) {
+            flat.push(symbol(doc, location, format!("view {key}"), SymbolKind::PACKAGE, None));
+        }
+    }
+    nest(flat)
+}
+
+/// A symbol spanning its whole declaring statement, from its first token to
+/// the end of the line it closes on.
+/// (`DocumentSymbol.deprecated` is a deprecated field we still have to set:
+/// there is no `Default` impl.)
 #[allow(deprecated)]
-fn make_symbol(
-    name: &str,
+fn symbol(
+    doc: &DocumentState,
+    location: &SourceLocation,
+    name: String,
     kind: SymbolKind,
-    pos: Option<Pos>,
-    children: Vec<DocumentSymbol>,
-) -> Option<DocumentSymbol> {
-    let range = point_range(pos?, 1);
-    Some(DocumentSymbol {
-        name: name.to_string(),
-        detail: None,
+    detail: Option<String>,
+) -> DocumentSymbol {
+    let start = pos_to_position(Pos { line: location.line, col: location.col });
+    let end_line = location.end_line.max(location.line);
+    let end_character = doc
+        .text
+        .lines()
+        .nth(end_line - 1)
+        .map_or(0, |line| line.chars().count() as u32);
+    let end = if end_line == location.line {
+        Position { line: start.line, character: end_character.max(start.character + 1) }
+    } else {
+        Position { line: (end_line - 1) as u32, character: end_character }
+    };
+    DocumentSymbol {
+        name,
+        detail,
         kind,
         tags: None,
         deprecated: None,
-        range,
-        selection_range: range,
-        children: (!children.is_empty()).then_some(children),
-    })
+        range: Range { start, end },
+        selection_range: point_range(Pos { line: location.line, col: location.col }, 1),
+        children: None,
+    }
 }
 
-fn build_symbols(workspace: &Workspace, id_to_pos: &HashMap<String, Pos>) -> Vec<DocumentSymbol> {
-    let mut out = Vec::new();
-    for p in workspace.model.people.iter().flatten() {
-        out.extend(make_symbol(
-            &p.name,
-            SymbolKind::OBJECT,
-            id_to_pos.get(&p.id).copied(),
-            vec![],
-        ));
-    }
-    for s in workspace.model.software_systems.iter().flatten() {
-        let mut containers = Vec::new();
-        for c in s.containers.iter().flatten() {
-            let mut components = Vec::new();
-            for comp in c.components.iter().flatten() {
-                components.extend(make_symbol(
-                    &comp.name,
-                    SymbolKind::STRUCT,
-                    id_to_pos.get(&comp.id).copied(),
-                    vec![],
-                ));
-            }
-            containers.extend(make_symbol(
-                &c.name,
-                SymbolKind::CLASS,
-                id_to_pos.get(&c.id).copied(),
-                components,
-            ));
+/// Nest symbols by range containment, keeping source order among siblings.
+fn nest(mut flat: Vec<DocumentSymbol>) -> Vec<DocumentSymbol> {
+    let key = |p: Position| (p.line, p.character);
+    flat.sort_by_key(|s| (key(s.range.start), std::cmp::Reverse(key(s.range.end))));
+
+    fn attach(stack: &mut [DocumentSymbol], roots: &mut Vec<DocumentSymbol>, symbol: DocumentSymbol) {
+        match stack.last_mut() {
+            Some(parent) => parent.children.get_or_insert_with(Vec::new).push(symbol),
+            None => roots.push(symbol),
         }
-        out.extend(make_symbol(
-            &s.name,
-            SymbolKind::MODULE,
-            id_to_pos.get(&s.id).copied(),
-            containers,
-        ));
     }
-    out
+
+    let mut roots = Vec::new();
+    let mut stack: Vec<DocumentSymbol> = Vec::new();
+    for symbol in flat {
+        while let Some(top) = stack.last() {
+            if key(top.range.start) <= key(symbol.range.start) && key(symbol.range.end) <= key(top.range.end) {
+                break;
+            }
+            let done = stack.pop().expect("non-empty");
+            attach(&mut stack, &mut roots, done);
+        }
+        stack.push(symbol);
+    }
+    while let Some(done) = stack.pop() {
+        attach(&mut stack, &mut roots, done);
+    }
+    roots
 }

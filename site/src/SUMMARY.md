@@ -10,6 +10,7 @@
     - [serve](./cli/serve.md)
     - [digest](./cli/digest.md)
     - [query](./cli/query.md)
+    - [locate](./cli/locate.md)
     - [export](./cli/export.md)
     - [docs](./cli/docs.md)
 - [Language reference](./language/README.md)
