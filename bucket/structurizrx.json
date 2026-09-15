@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "description": "Structurizr DSL toolchain - Rust implementation",
+    "homepage": "https://github.com/pomali/structurizrx",
+    "license": "Apache-2.0",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/pomali/structurizrx/releases/download/v0.2.0/structurizrx-x86_64-pc-windows-msvc.zip",
+            "hash": "25e4e78dc46939b5f64a3658303b8d6c40beac730c1791f9cb4ea4b7daa2f507"
+        }
+    },
+    "bin": "structurizrx.exe",
+    "checkver": "github",
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/pomali/structurizrx/releases/download/v$version/structurizrx-x86_64-pc-windows-msvc.zip"
+            }
+        }
+    }
+}
