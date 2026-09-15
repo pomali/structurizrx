@@ -3,7 +3,9 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      # Not `v*`: that also matches the VS Code extension's `vscode-v*` tags,
+      # which have their own workflow.
+      - 'v[0-9]*'
 
 jobs:
   build:
@@ -91,7 +93,6 @@ jobs:
         if: matrix.nfpm_arch != ''
         env:
           ARCH: ${{ matrix.nfpm_arch }}
-          BIN: rust/target/${{ matrix.target }}/release/structurizrx
         run: |
           export VERSION="${GITHUB_REF_NAME#v}"
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.1

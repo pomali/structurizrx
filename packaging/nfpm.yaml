@@ -1,6 +1,9 @@
 # nfpm config for building .deb and .rpm packages from a prebuilt binary.
-# Driven by the release workflow, which sets VERSION, ARCH, and BIN in the
-# environment before running `nfpm package --packager deb|rpm`.
+# Driven by the release workflow, which sets VERSION and ARCH in the
+# environment and has already copied the binary to package/structurizrx before
+# running `nfpm package --packager deb|rpm`. nfpm expands environment variables
+# in fields like `version` and `arch`, but not in `contents[].src` — there a
+# `${BIN}` stays literal and the build fails with "glob failed".
 # https://nfpm.goreleaser.com/
 name: structurizrx
 arch: ${ARCH}
@@ -16,7 +19,7 @@ vendor: pomali
 homepage: https://github.com/pomali/structurizrx
 license: Apache-2.0
 contents:
-  - src: ${BIN}
+  - src: ./package/structurizrx
     dst: /usr/bin/structurizrx
     file_info:
       mode: 0755
