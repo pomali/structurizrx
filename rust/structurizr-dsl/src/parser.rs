@@ -4483,12 +4483,53 @@ impl Parser {
                         }
                     }
                 }
+                // A word starting a statement must be a view keyword; anything
+                // else is a typo (`inklude *`) that would otherwise vanish.
+                Some(Token::Word(w))
+                    if depth == 1 && self.starts_line() && !is_view_block_keyword(w) =>
+                {
+                    self.record_error(self.unknown_keyword_error("view", VIEW_BLOCK_KEYWORDS));
+                    self.skip_rest_of_line();
+                }
                 _ => {
                     self.advance();
                 }
             }
         }
         Ok(auto_layout)
+    }
+
+    /// Whether the current token is the first on its source line.
+    fn starts_line(&self) -> bool {
+        match (
+            self.pos.checked_sub(1).and_then(|i| self.tokens.get(i)),
+            self.tokens.get(self.pos),
+        ) {
+            (Some(prev), Some(cur)) => prev.pos.line != cur.pos.line,
+            _ => true,
+        }
+    }
+
+    /// Record a syntax error without abandoning the statement being parsed.
+    fn record_error(&mut self, err: ParseError) {
+        const MAX_ERRORS: usize = 20;
+        if self.errors.len() < MAX_ERRORS {
+            self.errors.push(err);
+        }
+    }
+
+    /// Skip the tokens left on the current line, stopping before a `{` or `}`
+    /// so the caller keeps its brace depth.
+    fn skip_rest_of_line(&mut self) {
+        let line = self.tokens.get(self.pos).map(|t| t.pos.line);
+        while let Some(tok) = self.tokens.get(self.pos) {
+            if Some(tok.pos.line) != line
+                || matches!(tok.token, Token::OpenBrace | Token::CloseBrace)
+            {
+                break;
+            }
+            self.advance();
+        }
     }
 
     fn collect_system_landscape_ids(&self, model: &Model) -> HashSet<String> {
@@ -5904,11 +5945,22 @@ fn is_top_level_keyword(w: &str) -> bool {
 /// Returns true if `w` is a keyword that can appear at the top-level of a
 /// view body block (i.e. it is NOT a valid element-identifier argument to `include`).
 fn is_view_block_keyword(w: &str) -> bool {
-    matches!(
-        w.to_lowercase().as_str(),
-        "autolayout" | "exclude" | "animation" | "title" | "description" | "properties" | "include"
-    )
+    VIEW_BLOCK_KEYWORDS
+        .iter()
+        .any(|k| k.eq_ignore_ascii_case(w))
 }
+
+/// The statements a static or deployment view body accepts.
+const VIEW_BLOCK_KEYWORDS: &[&str] = &[
+    "include",
+    "exclude",
+    "autoLayout",
+    "default",
+    "animation",
+    "title",
+    "description",
+    "properties",
+];
 
 /// Maps an `autoLayout` direction argument to the name used in the JSON schema.
 /// The DSL spells these `tb|bt|lr|rl`; the long forms are accepted for the

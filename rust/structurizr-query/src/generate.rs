@@ -876,7 +876,14 @@ fn gen_delta(ws: &mut Workspace, idx: &Index, spec: &AutoViewSpec, generated: &m
 
 fn gen_lint(ws: &mut Workspace, idx: &Index, generated: &mut Vec<String>) {
     let findings = crate::lint::lint(ws);
-    let flagged: BTreeSet<String> = findings.iter().map(|f| f.element_id.clone()).collect();
+    let mut flagged: BTreeSet<String> = findings.iter().map(|f| f.element_id.clone()).collect();
+    // A relationship finding names its source; add the destination too so
+    // the relationship itself is drawn.
+    for rid in findings.iter().filter_map(|f| f.relationship_id.as_ref()) {
+        if let Some(r) = idx.relationships.iter().find(|r| &r.id == rid) {
+            flagged.insert(r.dest_id.clone());
+        }
+    }
 
     // Legacy grouped one-line description for the generated view.
     let mut parts: Vec<String> = Vec::new();

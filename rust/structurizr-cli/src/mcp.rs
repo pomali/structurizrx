@@ -430,6 +430,7 @@ mod tools {
             "lint": findings.iter().map(|f| json!({
                 "code": f.code,
                 "elementId": f.element_id,
+                "relationshipId": f.relationship_id,
                 "name": f.name,
                 "message": f.message,
             })).collect::<Vec<_>>(),
@@ -522,6 +523,7 @@ mod tools {
             "blocking": blocking.iter().map(|f| json!({
                 "code": f.code,
                 "elementId": f.element_id,
+                "relationshipId": f.relationship_id,
                 "name": f.name,
                 "message": f.message,
             })).collect::<Vec<_>>(),

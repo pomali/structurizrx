@@ -6,15 +6,20 @@ use structurizr_model::Workspace;
 
 use crate::eval::build_index;
 
-/// A single lint finding about one element (or one port on an element).
+/// A single lint finding about one element, one port on an element, or one
+/// relationship.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LintFinding {
     /// Stable machine-readable code: `placeholder`, `uncertain`, `orphan`,
     /// or `unbound-port`.
     pub code: &'static str,
-    /// Id of the element the finding is about.
+    /// Id of the element the finding is about; for a relationship finding,
+    /// the relationship's source element.
     pub element_id: String,
-    /// Element name (`Element.port` for `unbound-port`).
+    /// Id of the relationship, for an `uncertain` relationship.
+    pub relationship_id: Option<String>,
+    /// Element name (`Element.port` for `unbound-port`, `Source -> Destination`
+    /// for a relationship).
     pub name: String,
     /// One-line human-readable description.
     pub message: String,
@@ -36,6 +41,7 @@ pub fn lint(workspace: &Workspace) -> Vec<LintFinding> {
         findings.push(LintFinding {
             code: "placeholder",
             element_id: e.id.clone(),
+            relationship_id: None,
             name: e.name.clone(),
             message: format!(
                 "'{}' is a placeholder auto-created in sketch mode; declare it properly",
@@ -52,8 +58,34 @@ pub fn lint(workspace: &Workspace) -> Vec<LintFinding> {
         findings.push(LintFinding {
             code: "uncertain",
             element_id: e.id.clone(),
+            relationship_id: None,
             name: e.name.clone(),
             message: format!("'{}' is marked uncertain (?)", e.name),
+        });
+    }
+
+    for r in idx
+        .relationships
+        .iter()
+        .filter(|r| r.tags.iter().any(|t| t == "Uncertain"))
+    {
+        let end_name = |id: &str| {
+            idx.by_id
+                .get(id)
+                .map(|&i| idx.elements[i].name.clone())
+                .unwrap_or_else(|| id.to_string())
+        };
+        let name = format!("{} -> {}", end_name(&r.source_id), end_name(&r.dest_id));
+        let message = match r.description.as_deref().filter(|d| !d.is_empty()) {
+            Some(d) => format!("relationship {} \"{}\" is marked uncertain (?)", name, d),
+            None => format!("relationship {} is marked uncertain (?)", name),
+        };
+        findings.push(LintFinding {
+            code: "uncertain",
+            element_id: r.source_id.clone(),
+            relationship_id: Some(r.id.clone()),
+            name,
+            message,
         });
     }
 
@@ -77,6 +109,7 @@ pub fn lint(workspace: &Workspace) -> Vec<LintFinding> {
         findings.push(LintFinding {
             code: "orphan",
             element_id: e.id.clone(),
+            relationship_id: None,
             name: e.name.clone(),
             message: format!("'{}' has no relationships and no children", e.name),
         });
@@ -104,6 +137,7 @@ pub fn lint(workspace: &Workspace) -> Vec<LintFinding> {
                 findings.push(LintFinding {
                     code: "unbound-port",
                     element_id: e.id.clone(),
+                    relationship_id: None,
                     name: format!("{}.{}", e.name, pname),
                     message: format!(
                         "port '{}' on '{}' is never used by a relationship",
@@ -153,5 +187,31 @@ mod tests {
         for f in &findings {
             assert!(!f.message.is_empty());
         }
+    }
+
+    #[test]
+    fn uncertain_relationship_is_reported_on_its_source() {
+        let ws = structurizr_dsl::parse_str(
+            r#"workspace {
+                model {
+                    a = softwareSystem "A"
+                    b = softwareSystem "B"
+                    a -> b "somehow charges" ?
+                    b -> a "pays"
+                }
+            }"#,
+        )
+        .unwrap();
+        let a = ws.model.software_systems.as_ref().unwrap()[0].id.clone();
+
+        let uncertain: Vec<_> = lint(&ws)
+            .into_iter()
+            .filter(|f| f.code == "uncertain")
+            .collect();
+        assert_eq!(uncertain.len(), 1, "{uncertain:?}");
+        assert_eq!(uncertain[0].element_id, a);
+        assert!(uncertain[0].relationship_id.is_some());
+        assert_eq!(uncertain[0].name, "A -> B");
+        assert!(uncertain[0].message.contains("somehow charges"));
     }
 }

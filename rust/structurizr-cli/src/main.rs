@@ -451,6 +451,7 @@ async fn main() -> Result<()> {
                     "lint": findings.iter().map(|f| serde_json::json!({
                         "code": f.code,
                         "elementId": f.element_id,
+                        "relationshipId": f.relationship_id,
                         "name": f.name,
                         "message": f.message,
                     })).collect::<Vec<_>>(),
