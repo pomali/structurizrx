@@ -1585,7 +1585,7 @@ impl Parser {
                         self.expect_open_brace()?;
                         let mut perspectives: Vec<Perspective> = Vec::new();
                         while !self.peek_close_brace() && self.peek().is_some() {
-                            let p = self.parse_one_perspective();
+                            let p = self.parse_perspective_entry();
                             if !p.name.is_empty() {
                                 perspectives.push(p);
                             }
@@ -5190,7 +5190,19 @@ impl Parser {
         if self.peek_open_brace() {
             self.advance();
             while !self.peek_close_brace() && self.peek().is_some() {
+                let start = self.pos;
                 let key = self.consume_string().unwrap_or_default().to_lowercase();
+                // A nested block (`properties { ... }`) has no style field to
+                // land in; skip it rather than reading `{` as the value.
+                if self.peek_open_brace() {
+                    self.advance();
+                    self.skip_block();
+                    continue;
+                }
+                if self.pos == start {
+                    self.advance();
+                    continue;
+                }
                 let value = self.consume_string().unwrap_or_default();
                 match key.as_str() {
                     "shape" => style.shape = Some(canonicalize_shape(&value)),
@@ -5220,7 +5232,19 @@ impl Parser {
         if self.peek_open_brace() {
             self.advance();
             while !self.peek_close_brace() && self.peek().is_some() {
+                let start = self.pos;
                 let key = self.consume_string().unwrap_or_default().to_lowercase();
+                // A nested block (`properties { ... }`) has no style field to
+                // land in; skip it rather than reading `{` as the value.
+                if self.peek_open_brace() {
+                    self.advance();
+                    self.skip_block();
+                    continue;
+                }
+                if self.pos == start {
+                    self.advance();
+                    continue;
+                }
                 let value = self.consume_string().unwrap_or_default();
                 match key.as_str() {
                     "thickness" => style.thickness = value.parse().ok(),
@@ -5511,13 +5535,52 @@ impl Parser {
     /// current entry's description when names are quoted strings inside a block.
     fn parse_one_perspective(&mut self) -> Perspective {
         let name = self.consume_bare_word_or_string().unwrap_or_default();
-        let description = self.consume_string_if_same_line();
-        let value = self.consume_string_if_same_line();
+        let mut description = self.consume_string_if_same_line();
+        let mut value = self.consume_string_if_same_line();
+        // Block form: `name { description "..." value "..." }`.
+        if self.peek_open_brace() {
+            self.advance();
+            while !self.peek_close_brace() && self.peek().is_some() {
+                match self.peek() {
+                    Some(Token::Word(w)) if w.eq_ignore_ascii_case("description") => {
+                        self.advance();
+                        description = self.consume_string();
+                    }
+                    Some(Token::Word(w)) if w.eq_ignore_ascii_case("value") => {
+                        self.advance();
+                        value = self.consume_string();
+                    }
+                    _ => {
+                        self.advance();
+                        self.skip_optional_block_or_value();
+                    }
+                }
+            }
+            if self.peek_close_brace() {
+                self.advance();
+            }
+        }
         Perspective {
             name,
             description,
             value,
         }
+    }
+
+    /// One entry of a `perspectives { ... }` block: either the inline form
+    /// `"name" ["description" ["value"]]` or the upstream nested form
+    /// `perspective "name" { description "..." value "..." }`.
+    /// Always consumes at least one token, so the block loop terminates.
+    fn parse_perspective_entry(&mut self) -> Perspective {
+        if matches!(self.peek(), Some(Token::Word(w)) if w.eq_ignore_ascii_case("perspective")) {
+            self.advance();
+        }
+        let start = self.pos;
+        let p = self.parse_one_perspective();
+        if self.pos == start {
+            self.advance();
+        }
+        p
     }
 
     /// Parse a `properties { key value ... }` block and return the map.
@@ -5742,8 +5805,10 @@ impl Parser {
                         self.advance();
                         self.expect_open_brace()?;
                         while !self.peek_close_brace() && self.peek().is_some() {
-                            let p = self.parse_one_perspective();
-                            extras.perspectives.push(p);
+                            let p = self.parse_perspective_entry();
+                            if !p.name.is_empty() {
+                                extras.perspectives.push(p);
+                            }
                         }
                         self.expect_close_brace()?;
                         Ok(true)

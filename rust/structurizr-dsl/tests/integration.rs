@@ -459,6 +459,82 @@ workspace {
     assert_eq!(persp[1].name, "Performance");
 }
 
+#[test]
+fn perspectives_block_nested_upstream_form() {
+    // Upstream's `perspective "name" { ... }` form inside a `perspectives`
+    // block used to send the parser into an infinite loop.
+    let dsl = r#"
+workspace {
+    model {
+        ss = softwareSystem "System" {
+            perspectives {
+                perspective "Security" {
+                    value "High"
+                    description "Threat model in progress"
+                }
+                "Performance" "Fast"
+            }
+        }
+    }
+}
+"#;
+    let ws = parse_str(dsl).expect("should parse");
+    let persp = ws.model.software_systems.as_ref().unwrap()[0]
+        .perspectives
+        .as_ref()
+        .expect("should have perspectives");
+    assert_eq!(persp.len(), 2);
+    assert_eq!(persp[0].name, "Security");
+    assert_eq!(
+        persp[0].description.as_deref(),
+        Some("Threat model in progress")
+    );
+    assert_eq!(persp[0].value.as_deref(), Some("High"));
+    assert_eq!(persp[1].name, "Performance");
+}
+
+#[test]
+fn style_with_nested_properties_block() {
+    // A `properties { ... }` block inside a style used to hang the parser.
+    let dsl = r#"
+workspace {
+    model {
+        a = softwareSystem "A"
+    }
+    views {
+        styles {
+            element "Element" {
+                shape roundedbox
+                properties {
+                    "Name" "Value"
+                }
+                background #ffffff
+            }
+            relationship "Relationship" {
+                properties {
+                    "Name" "Value"
+                }
+                thickness 2
+            }
+        }
+    }
+}
+"#;
+    let ws = parse_str(dsl).expect("should parse");
+    let styles = ws
+        .views
+        .configuration
+        .as_ref()
+        .unwrap()
+        .styles
+        .as_ref()
+        .unwrap();
+    let el = &styles.elements.as_ref().unwrap()[0];
+    assert_eq!(el.background.as_deref(), Some("#ffffff"));
+    let rel = &styles.relationships.as_ref().unwrap()[0];
+    assert_eq!(rel.thickness, Some(2));
+}
+
 // ─── Phase 2a: Workspace-level milestones and perspectives ──────────────────
 
 #[test]
