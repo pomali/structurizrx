@@ -305,8 +305,8 @@
                 </div>
                 <p class="small text-body-secondary mb-0">
                     The view is scaled to fit one page, on a light background, captioned with its
-                    title and description. To print every view, use the
-                    <a id="printDocumentLink" href="#">print document</a>.
+                    title and description.<span id="printDocumentHint"> To print every view, use the
+                    <a id="printDocumentLink" href="#">print document</a>.</span>
                 </p>
             </div>
             <div class="modal-footer">
@@ -340,6 +340,10 @@
 <script>
 (function() {
     var WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
+    // `export-viewer` flips this: the exported page has workspace.json and the
+    // static assets but no server, so the tool pages, the /api/ endpoints and
+    // live reload are absent and their entry points are hidden.
+    var STATIC_EXPORT = false;
 
     // structurizr.diagram is created once and reused across view switches.
     var diagram = null;
@@ -361,6 +365,7 @@
             return;
         }
         setStatus(references.length + ' selected · the page URL links to ' + (references.length === 1 ? 'it' : 'them'));
+        if (STATIC_EXPORT) return;
         StructurizrSelection.locate(WORKSPACE_SLUG, references).then(function(located) {
             if (!located || request !== selectionRequest) return;
             var links = located.items.filter(function(item) {
@@ -421,8 +426,12 @@
     var printModal = document.getElementById('printModal');
     var pendingPrint = null;
 
-    document.getElementById('printDocumentLink').href =
-        '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/print';
+    if (STATIC_EXPORT) {
+        document.getElementById('printDocumentHint').remove();
+    } else {
+        document.getElementById('printDocumentLink').href =
+            '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/print';
+    }
 
     function showPrintDialog() {
         if (!diagramReady) return;
@@ -650,56 +659,58 @@
         var list = document.getElementById('view-list');
         list.innerHTML = '';
 
-        // Canvas demo link
-        var canvasHdr = document.createElement('div');
-        canvasHdr.className = 'view-group-header';
-        canvasHdr.textContent = 'Tools';
-        list.appendChild(canvasHdr);
+        if (!STATIC_EXPORT) {
+            // Canvas demo link
+            var canvasHdr = document.createElement('div');
+            canvasHdr.className = 'view-group-header';
+            canvasHdr.textContent = 'Tools';
+            list.appendChild(canvasHdr);
 
-        var graphLink = document.createElement('a');
-        graphLink.className = 'view-item';
-        graphLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/graph';
-        graphLink.innerHTML = '<i class="bi bi-diagram-3 me-1"></i>Universe graph';
-        graphLink.title = 'Force-directed graph of every element, relationship, view and decision';
-        list.appendChild(graphLink);
+            var graphLink = document.createElement('a');
+            graphLink.className = 'view-item';
+            graphLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/graph';
+            graphLink.innerHTML = '<i class="bi bi-diagram-3 me-1"></i>Universe graph';
+            graphLink.title = 'Force-directed graph of every element, relationship, view and decision';
+            list.appendChild(graphLink);
 
-        var clustersLink = document.createElement('a');
-        clustersLink.className = 'view-item';
-        clustersLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/clusters';
-        clustersLink.innerHTML = '<i class="bi bi-grid-3x3 me-1"></i>Cluster analysis';
-        clustersLink.title = 'Communities, cycles, coupling and how they compare with the declared structure';
-        list.appendChild(clustersLink);
+            var clustersLink = document.createElement('a');
+            clustersLink.className = 'view-item';
+            clustersLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/clusters';
+            clustersLink.innerHTML = '<i class="bi bi-grid-3x3 me-1"></i>Cluster analysis';
+            clustersLink.title = 'Communities, cycles, coupling and how they compare with the declared structure';
+            list.appendChild(clustersLink);
 
-        var reviewLink = document.createElement('a');
-        reviewLink.className = 'view-item';
-        reviewLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/review';
-        reviewLink.innerHTML = '<i class="bi bi-list-check me-1"></i>Review elements';
-        reviewLink.title = 'Walk the model element by element, with hygiene findings';
-        list.appendChild(reviewLink);
+            var reviewLink = document.createElement('a');
+            reviewLink.className = 'view-item';
+            reviewLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/review';
+            reviewLink.innerHTML = '<i class="bi bi-list-check me-1"></i>Review elements';
+            reviewLink.title = 'Walk the model element by element, with hygiene findings';
+            list.appendChild(reviewLink);
 
-        var diffLink = document.createElement('a');
-        diffLink.className = 'view-item';
-        diffLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/diff';
-        diffLink.innerHTML = '<i class="bi bi-clock-history me-1"></i>Compare versions';
-        diffLink.title = 'What changed in the model between two git revisions';
-        list.appendChild(diffLink);
+            var diffLink = document.createElement('a');
+            diffLink.className = 'view-item';
+            diffLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/diff';
+            diffLink.innerHTML = '<i class="bi bi-clock-history me-1"></i>Compare versions';
+            diffLink.title = 'What changed in the model between two git revisions';
+            list.appendChild(diffLink);
 
-        var printLink = document.createElement('a');
-        printLink.className = 'view-item';
-        printLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/print';
-        printLink.innerHTML = '<i class="bi bi-printer me-1"></i>Print document';
-        printLink.title = 'Every view as a paginated document, ready to print';
-        list.appendChild(printLink);
+            var printLink = document.createElement('a');
+            printLink.className = 'view-item';
+            printLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/print';
+            printLink.innerHTML = '<i class="bi bi-printer me-1"></i>Print document';
+            printLink.title = 'Every view as a paginated document, ready to print';
+            list.appendChild(printLink);
 
-        var canvasLink = document.createElement('a');
-        canvasLink.className = 'view-item';
-        canvasLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/canvas';
-        canvasLink.innerHTML = '<i class="bi bi-display me-1"></i>Canvas demo';
-        canvasLink.title = 'Render the first diagram with the WASM render_to_canvas function';
-        list.appendChild(canvasLink);
+            var canvasLink = document.createElement('a');
+            canvasLink.className = 'view-item';
+            canvasLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/canvas';
+            canvasLink.innerHTML = '<i class="bi bi-display me-1"></i>Canvas demo';
+            canvasLink.title = 'Render the first diagram with the WASM render_to_canvas function';
+            list.appendChild(canvasLink);
+        }
 
         // ADR decisions link (shown only if workspace has decisions)
-        var hasDecisions = structurizr.workspace.hasDecisions &&
+        var hasDecisions = !STATIC_EXPORT && structurizr.workspace.hasDecisions &&
                            structurizr.workspace.hasDecisions();
         if (hasDecisions) {
             var decisionsHdr = document.createElement('div');
@@ -998,8 +1009,8 @@
             setStatus(title + (view.description ? ' – ' + view.description : ''));
             svgBtn.href = '/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG) +
                           '/diagram/' + encodeURIComponent(key) + '/svg';
-            svgBtn.classList.remove('d-none');
-            mermaidBtn.classList.remove('d-none');
+            svgBtn.classList.toggle('d-none', STATIC_EXPORT);
+            mermaidBtn.classList.toggle('d-none', STATIC_EXPORT);
         } else {
             badge.classList.add('d-none');
             svgBtn.classList.add('d-none');
@@ -1313,7 +1324,7 @@
         };
         ws.onclose = function() { setTimeout(connectWs, 2000); };
     }
-    connectWs();
+    if (!STATIC_EXPORT) connectWs();
 })();
 </script>
 </body>

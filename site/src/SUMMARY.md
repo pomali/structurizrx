@@ -4,6 +4,7 @@
 
 - [Install](./install.md)
 - [Quickstart](./quickstart.md)
+- [Demo: Twitter-like network](./demo.md)
 - [CLI reference](./cli/README.md)
     - [validate](./cli/validate.md)
     - [lint](./cli/lint.md)

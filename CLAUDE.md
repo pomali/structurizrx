@@ -64,6 +64,8 @@ cargo install mdbook   # if not already available
                         # (via structurizr-cli render), then runs `mdbook build site`
 ```
 
+`site/build.sh` also exports every `site/demo/*.dsl` with `export-viewer` into `site/book/demo/<name>/` (the docs' interactive demo). `DocsAssets` excludes `demo/` so that 17 MB copy of the viewer assets is never embedded in the binary. The exported page runs `templates/workspace.html` with `STATIC_EXPORT = true`, which hides everything that needs the server (tool pages, `/api/` buttons, locate, live reload) — gate any new server-backed control on it.
+
 `site/render-examples.sh` (called by `build.sh`) is the only place example diagrams are produced; `site/src/images/` and `site/book/` are both build artifacts (`.gitignore`d), not checked in. `.github/workflows/docs.yml` runs `site/build.sh` on pushes to `main` that touch `site/**` and deploys `site/book/` to GitHub Pages via `actions/deploy-pages`; the repo's Pages source must be set to "GitHub Actions" (Settings → Pages) for that to publish.
 
 ## Architecture

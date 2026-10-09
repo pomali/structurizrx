@@ -68,6 +68,7 @@ fn viewer_page(workspace: &Workspace) -> String {
         .replace("{{WORKSPACE_PATH}}", ".")
         .replace("{{GRAPH_LINK}}", "")
         .replace("{{WORKSPACE_SLUG}}", "")
+        .replace("var STATIC_EXPORT = false;", "var STATIC_EXPORT = true;")
         .replace("/static/", "static/")
         .replace(
             "fetch('/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG))",
@@ -178,4 +179,20 @@ paper.on('cell:pointerclick',cellView=>showDetails(cellView.model.get('element')
 paper.on('blank:pointerdown',(evt,x,y)=>paper.setInteractivity(false));
 paper.on('cell:pointerup',()=>paper.setInteractivity(true));
 })()"#
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn viewer_page_switches_to_static_mode() {
+        // The replacement is a plain string match on the template; if the
+        // template's declaration drifts, the export silently keeps every
+        // server-only link and the live-reload socket.
+        let page = viewer_page(&Workspace::default());
+        assert!(page.contains("var STATIC_EXPORT = true;"));
+        assert!(!page.contains("var STATIC_EXPORT = false;"));
+        assert!(page.contains("fetch('workspace.json')"));
+    }
 }

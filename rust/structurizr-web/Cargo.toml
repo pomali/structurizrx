@@ -13,7 +13,7 @@ axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.6", features = ["fs"] }
 notify = "9.0.0-rc.3"
-rust-embed = "8"
+rust-embed = { version = "8", features = ["include-exclude"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"

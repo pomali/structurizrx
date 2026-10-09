@@ -50,3 +50,8 @@ structurizrx export-viewer ws.dsl --output ./viewer
 ```
 
 Serve `viewer/` with any static file server and open `index.html`.
+
+The exported viewer has no server behind it, so the pages and buttons that
+need one — universe graph, clusters, review, diff, print document, SVG
+download, copy as Mermaid, open-in-editor links and live reload — are left
+out. The docs site's [demo](../demo.md) is an `export-viewer` output.
