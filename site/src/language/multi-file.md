@@ -42,4 +42,4 @@ are flat, top-level names once included — not accessed as `orders.api` —
 so give elements you need to reference from outside their own file a
 globally unique identifier.
 
-![System landscape view: Customer, Orders and Customers systems](./images/catalog/auto-landscape.svg)
+![System landscape view: Customer, Orders and Customers systems](../images/catalog/auto-landscape.svg)

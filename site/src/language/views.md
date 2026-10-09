@@ -160,6 +160,6 @@ and
 > below is the same underlying model, shown via a view type that *does*
 > render, as a stand-in until dynamic/deployment rendering lands.
 
-![Container view of Shop: Web App calling API, which reads and writes to Database](./images/checkout-flow/auto-container-shop.svg)
+![Container view of Shop: Web App calling API, which reads and writes to Database](../images/checkout-flow/auto-container-shop.svg)
 
 Next: [Documentation and decisions](./documentation.md) for `!adrs`/`!include`.
