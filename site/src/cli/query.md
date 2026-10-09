@@ -9,16 +9,23 @@ structurizrx query <file> <expression> [--json]
 
 | Flag | Effect |
 |---|---|
-| `--json` | Emit `{elements: [{id, name}], relationships: [id]}` instead of a text listing |
+| `--json` | Emit `{elements: [{id, name, path}], relationships: [{id, source, destination, description?, technology?, kind?, status?, introduced?, retired?}]}` instead of a text listing |
 
 `expression` is parsed with `allow_hyphen_values`, so expressions containing
 `-` (like `->api->`) don't need extra escaping.
 
+Elements print with their name path; relationships print as `A -> B "desc"
+[kind]` name-path triples, `[kind]` only shown when the relationship sets one:
+
 ```sh
-structurizrx query ws.dsl "element.tag==Database"
+structurizrx query ws.dsl "->api->"
 ```
 ```text
-element  6  container "Database"
+element  3  container "Web App"  Shop/Web App
+element  4  container "API"  Shop/API
+element  6  container "Database"  Shop/Database
+relationship  7  Shop/Web App -> Shop/API.Customer REST API "calls"
+relationship  8  Shop/API -> Shop/Database "reads and writes" [sync]
 ```
 
 ```sh
@@ -27,11 +34,14 @@ structurizrx query ws.dsl "->api->" --json
 ```json
 {
   "elements": [
-    { "id": "3", "name": "container \"Web App\"" },
-    { "id": "4", "name": "container \"API\"" },
-    { "id": "6", "name": "container \"Database\"" }
+    { "id": "3", "name": "container \"Web App\"", "path": "Shop/Web App" },
+    { "id": "4", "name": "container \"API\"", "path": "Shop/API" },
+    { "id": "6", "name": "container \"Database\"", "path": "Shop/Database" }
   ],
-  "relationships": ["7", "8"]
+  "relationships": [
+    { "id": "7", "source": "Shop/Web App", "destination": "Shop/API.Customer REST API", "description": "calls" },
+    { "id": "8", "source": "Shop/API", "destination": "Shop/Database", "description": "reads and writes", "kind": "sync" }
+  ]
 }
 ```
 

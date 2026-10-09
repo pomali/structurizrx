@@ -76,7 +76,7 @@ impl DocumentState {
                 });
                 diags
             }
-            Err(err) => vec![diagnostics::syntax_error(&self.text, &err)],
+            Err(err) => diagnostics::syntax_errors(&self.text, &err),
         }
     }
 

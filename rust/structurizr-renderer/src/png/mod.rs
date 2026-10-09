@@ -44,8 +44,42 @@ pub fn svg_to_rgba(svg_content: &str) -> Result<(u32, u32, Vec<u8>), String> {
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
+/// Fonts for text rendering. `usvg::Options::default()` carries an *empty*
+/// font database, which silently drops every `<text>` node, so native builds
+/// load the system fonts once per process. The exporters ask for
+/// `Arial, sans-serif`; `sans-serif` is pointed at the first common sans face
+/// actually installed, so Linux boxes without Arial still get labels.
+/// wasm32 has no filesystem to load fonts from and keeps the empty database.
+#[cfg(not(target_arch = "wasm32"))]
+fn font_database() -> std::sync::Arc<usvg::fontdb::Database> {
+    use std::sync::{Arc, OnceLock};
+    static FONTS: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
+    FONTS
+        .get_or_init(|| {
+            let mut db = usvg::fontdb::Database::new();
+            db.load_system_fonts();
+            const SANS: [&str; 8] = [
+                "Arial", "Helvetica", "Helvetica Neue", "Liberation Sans", "DejaVu Sans",
+                "Noto Sans", "Segoe UI", "Verdana",
+            ];
+            let installed = |name: &str| {
+                db.faces().any(|f| f.families.iter().any(|(fam, _)| fam.eq_ignore_ascii_case(name)))
+            };
+            if let Some(name) = SANS.iter().find(|n| installed(n)) {
+                db.set_sans_serif_family(*name);
+            }
+            Arc::new(db)
+        })
+        .clone()
+}
+
 fn rasterize(svg_content: &str) -> Result<tiny_skia::Pixmap, String> {
-    let opt = usvg::Options::default();
+    #[allow(unused_mut)]
+    let mut opt = usvg::Options::default();
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        opt.fontdb = font_database();
+    }
     let tree =
         usvg::Tree::from_str(svg_content, &opt).map_err(|e| e.to_string())?;
 
@@ -84,6 +118,29 @@ mod tests {
         assert_eq!(w, 50);
         assert_eq!(h, 50);
         assert_eq!(data.len() as u32, w * h * 4);
+    }
+
+    /// Text must actually be drawn: with an empty font database resvg drops
+    /// `<text>` silently and the PNG comes out as bare boxes.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn text_is_rendered() {
+        if font_database().is_empty() {
+            eprintln!("no system fonts installed; skipping");
+            return;
+        }
+        let blank = concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40">"#,
+            r#"<rect width="120" height="40" fill="white"/></svg>"#
+        );
+        let with_text = concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40">"#,
+            r#"<rect width="120" height="40" fill="white"/>"#,
+            r#"<text x="10" y="28" font-family="Arial, sans-serif" font-size="20" fill="black">Hello</text></svg>"#
+        );
+        let (_, _, a) = svg_to_rgba(blank).unwrap();
+        let (_, _, b) = svg_to_rgba(with_text).unwrap();
+        assert_ne!(a, b, "the text left no pixels behind");
     }
 
     #[test]

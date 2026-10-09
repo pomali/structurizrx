@@ -118,11 +118,21 @@ memory. It still expects the `structurizrx` binary above to be on `PATH`.
 
 | Command | What it does |
 |---|---|
-| `validate <ws> [--strict] [--json]` | Parse + validate; `--strict` also fails on lint findings; `--json` emits `{valid, errors[], lint[]}` with stable codes |
-| `render <ws> --format svg\|mermaid\|plantuml\|dot` | Export diagrams (materializes generated views first) |
+| `validate <ws> [--strict] [--json]` | Parse + validate, reporting every error in the file at once; `--strict` also fails on lint findings; `--json` emits `{valid, errors[], lint[]}` with stable codes and file/line/column |
+| `lint <ws> [--strict] [--json]` | Blocking findings, hygiene warnings and dependency cycles in one report |
+| `render <ws> --format svg\|png\|mermaid\|plantuml\|dot` | Export diagrams (materializes generated views first) |
 | `serve <ws\|dir> [--port N] [--open]` | Live-reloading web viewer with a JSON API |
 | `digest <ws>` | Compact plain-text model + view summary, sized for LLM context |
 | `query <ws> "<selector>" [--json]` | Run a selector expression, e.g. `element.tag==Database` or `->api->2` |
+| `locate <ws> <ref…> [--json]` | Where an element, relationship, view or viewer link is declared (file:line) |
+| `diff <ws> [--from REV] [--to REV] [--against FILE]` | Model-level comparison of two git revisions or two files; `--fail-on-change` for CI |
+| `clusters <ws> [--level L]` | Communities vs declared structure, cycles, bridges, coupling metrics |
+| `graph <ws> [--format json\|dot]` | The whole workspace as one graph |
+| `fmt <ws> [--write\|--check\|-o FILE]` | Canonical DSL; converts `.json` to DSL and promotes a sketch to a full workspace |
+| `add <ws> "<statement>" [--in REF]` | Insert a statement into the right block, keeping comments; rolled back if it breaks the workspace |
+| `remove <ws> <ref> [--cascade]` | Delete a declaration, optionally with the relationships that use it |
+| `rename <ws> <ident> <new>` | Rename an identifier everywhere, across `!include`d files |
+| `mcp` | Serve the commands above as MCP tools over stdio for agent hosts |
 | `export <ws>` | Workspace JSON (superset of the Structurizr JSON schema) |
 | `docs` | Print the DSL cheat sheet ([llms.txt](llms.txt)) |
 
@@ -187,7 +197,8 @@ above) — separate from `docs/SPEC.md`, which is the internal design spec.
 Experimental and moving fast. The spec's phases 1–6 (model extensions, DSL
 extensions, selector engine, generated views, LLM affordances, rendering) are
 implemented. Notable gaps: deployment and dynamic views parse but are not yet
-rendered by the exporters, and there is no model→DSL emitter yet.
+rendered by the exporters. See [docs/ROADMAP.md](docs/ROADMAP.md) for the
+current assessment and what comes next.
 
 ## License
 

@@ -10,12 +10,19 @@ use ls_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 
 use crate::convert::line_range;
 
+/// One diagnostic per parse error: the parser recovers at statement
+/// boundaries, so a single parse can carry several.
+pub fn syntax_errors(text: &str, err: &ParseError) -> Vec<Diagnostic> {
+    err.errors().into_iter().map(|e| syntax_error(text, e)).collect()
+}
+
 pub fn syntax_error(text: &str, err: &ParseError) -> Diagnostic {
     let range = match err {
-        ParseError::Syntax { line, col, message } => {
+        ParseError::Syntax { file, line, col, .. } => {
             // An error inside an `!include`d file carries that file's line
             // number; mark the `!include` in this document instead.
-            let pos = included_file(message)
+            let pos = file
+                .as_deref()
                 .and_then(|file| include_line(text, file))
                 .unwrap_or(Pos { line: *line, col: *col });
             line_range(text, pos)
@@ -26,15 +33,10 @@ pub fn syntax_error(text: &str, err: &ParseError) -> Diagnostic {
         range,
         severity: Some(DiagnosticSeverity::ERROR),
         source: Some("structurizr-dsl".to_string()),
+        code: Some(ls_types::NumberOrString::String(err.code().to_string())),
         message: err.to_string(),
         ..Diagnostic::default()
     }
-}
-
-/// The file named by the parser's `in <file>: …` prefix for errors in an
-/// included file.
-fn included_file(message: &str) -> Option<&str> {
-    message.strip_prefix("in ")?.split_once(": ").map(|(file, _)| file)
 }
 
 /// Position of the `!include <file>` line in `text`. Only direct includes are

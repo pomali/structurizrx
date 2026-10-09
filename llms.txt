@@ -77,17 +77,27 @@ Well-known properties: `owner`, `layer`.
     structurizrx digest ws.dsl                # compact model + view summary for LLMs
     structurizrx query ws.dsl "->api->2" [--json]      # run a selector, list matches
     structurizrx locate ws.dsl "Shop/API" "<viewer link>" [--json]  # file:line of each declaration
-    structurizrx render ws.dsl --format svg|mermaid|plantuml|dot --output out/
+    structurizrx lint ws.dsl [--strict] [--json]       # blocking + hygiene warnings + cycles
+    structurizrx diff ws.dsl [--from HEAD~1] [--against other.dsl]  # model changes
+    structurizrx add ws.dsl 'cache = container "Cache"' --in shop   # edit in place
+    structurizrx remove ws.dsl Shop/Cache [--cascade]
+    structurizrx rename ws.dsl api gateway          # identifier, across !includes
+    structurizrx fmt ws.dsl [--write|--check]       # canonical DSL; json/sketch -> DSL
+    structurizrx render ws.dsl --format svg|png|mermaid|plantuml|dot --output out/
     structurizrx export ws.dsl                # JSON (superset of Structurizr)
     structurizrx serve ws.dsl --port 3000     # live-reload web viewer
     structurizrx docs                         # print this cheat sheet
+    structurizrx mcp                          # all of the above as MCP tools (stdio)
 
 Errors are strict by default: unknown identifiers, misplaced or misspelled
 keywords fail with the offending file/line, the accepted keywords, and a
 "did you mean" suggestion. Forward references are fine. `!sketch` opts out.
-`validate --json` emits {valid, errors[], lint[]} with stable codes
-(parse, unknown-element, unknown-port, unknown-milestone; lint: placeholder,
-uncertain, orphan, unbound-port).
+Every parse error in the file is reported in one run. `validate --json`
+emits {valid, errors[{code,file,line,column,message}], lint[]} with stable
+codes (unknown-identifier, unknown-keyword, unexpected-token, unclosed-block,
+include, syntax; unknown-element, unknown-port, unknown-milestone; lint:
+placeholder, uncertain, orphan, unbound-port). add/remove/rename re-parse
+after editing and write nothing if the result would not parse.
 
 References (`locate`) name things by path, never id: `Shop/API`,
 `Shop/API.http` (port), `Shop/API->Shop/DB "reads"`, `Production/Server/API`

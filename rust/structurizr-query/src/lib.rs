@@ -24,7 +24,7 @@ pub mod reference;
 use std::collections::BTreeSet;
 use structurizr_model::Workspace;
 
-pub use digest::{digest, element_names};
+pub use digest::{all_relationships, digest, element_names, element_paths, relationship_summaries, RelationshipSummary};
 pub use cluster::{cluster, ClusterAnalysis, ClusterOptions, Level};
 pub use index::{build_index, ElementEntry, Index, RelationshipEntry, ViewEntry};
 pub use graph::{graph, Graph, GraphLink, GraphNode};

@@ -74,7 +74,9 @@ The workspace dependency graph flows one way: `structurizr-model` ← `structuri
 Pure data types that mirror the [Structurizr JSON schema](https://structurizr.com/json). Every struct derives `Serialize`/`Deserialize` with `#[serde(rename_all = "camelCase")]`. The `Workspace` struct is the root type used everywhere else.
 
 ### `structurizr-dsl`
-Hand-written lexer (`lexer.rs`) → parser (`parser.rs`) → `Workspace`. The public API is `parse_file(path)` and `parse_str(dsl)`. An `IdentifierRegister` (`identifier_register.rs`) tracks DSL-variable-to-element-id bindings during parsing.
+Hand-written lexer (`lexer.rs`) → parser (`parser.rs`) → `Workspace`. The public API is `parse_file(path)` and `parse_str(dsl)`; `emit(ws)` / `emit_with_identifiers(ws, register)` (`emit.rs`) go the other way, model → canonical DSL, and are round-trip tested against every example in `tests/emit.rs`.
+
+The parser recovers at statement boundaries (`Parser::recover_statement`, called from the workspace, model, softwareSystem, container and views loops), so one parse reports every mistake as `ParseError::Multiple`. Use `ParseError::errors()` / `diagnostics()` rather than matching on a single `Syntax` value; `Syntax` carries the `!include`d `file` separately instead of prefixing it to the message. An `IdentifierRegister` (`identifier_register.rs`) tracks DSL-variable-to-element-id bindings during parsing.
 
 `parse_file_detailed` / `parse_str_detailed` also return `SourceLocations` (`source.rs`): model id → file, start line/col and end line of the declaring statement, resolved through `!include`s. Every id the parser reads from source must be allocated through `next_id()` (anchors on the last consumed token — the element keyword) or `next_id_from(token)` (relationships anchor on their source token, since a text-block description moves the last token to a later line); ids it synthesizes (relationships replicated onto deployment instances) use `next_derived_id()` and have no location — follow `linked_relationship_id`.
 
@@ -145,7 +147,12 @@ Selector-expression engine (spec §6.2), view generation (`generate_views`, spec
 `review.rs` is the read model behind the web review page: every element with its neighbourhood, the views showing it, and hygiene findings. Its checks are deliberately separate from `lint.rs` — `lint` is the gate that `validate --strict` fails on, so adding a review check (`missing-description`, `missing-technology`, `not-in-any-view`, `no-relationships`, `duplicate-name`, `relationship-undescribed`) can never change the exit status of an existing workspace. `lint`'s findings are folded into the review output marked `blocking: true`.
 
 ### `structurizr-cli`
-Entry point `structurizrx`. Subcommands: `validate [--strict]`, `render`, `export`, `digest`, `query`, `locate`, `serve`. `locate` (`locate.rs`) prints where a path or viewer link's selection is declared; the resolution and JSON shape live in `structurizr_web::locate`, shared with the server's locate API. Accepts both `.dsl` and `.json` workspace files. `render` and `serve` materialize generated (`auto`) views before rendering.
+Entry point `structurizrx`. Subcommands: `validate [--strict]`, `lint`, `render` (svg/png/mermaid/plantuml/dot), `export`, `export-site`, `export-viewer`, `digest`, `query`, `locate`, `diff`, `clusters`, `graph`, `fmt`, `add`, `remove`, `rename`, `serve`, `lsp`, `mcp`, `docs`. Accepts both `.dsl` and `.json` workspace files. `render` and `serve` materialize generated (`auto`) views before rendering.
+
+- `locate` (`locate.rs`) prints where a path or viewer link's selection is declared; the resolution and JSON shape live in `structurizr_web::locate`, shared with the server's locate API.
+- `diff`, `lint`, `clusters`, `graph` (`diff.rs`, `lint.rs`, `clusters.rs`, `graph.rs`) are the CLI faces of the viewer's diff, review, clusters and universe-graph pages; they call the same `structurizr_query` / `structurizr_web::git` functions, so keep the two in step.
+- `edit.rs` holds `add` / `remove` / `rename` / `fmt`. The edits are textual (comments and layout survive), addressed through the parser's `SourceLocations`, and every edit is written, re-parsed and rolled back on failure. They return an `Outcome` rather than printing, because `mcp.rs` calls them too.
+- `mcp.rs` is a hand-written MCP server (newline-delimited JSON-RPC over stdio, no SDK). Its tools wrap the commands above; add a tool there when you add a command agents should reach.
 
 
 ### `editors/vscode`

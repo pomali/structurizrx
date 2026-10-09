@@ -1,3 +1,4 @@
+pub mod emit;
 pub mod error;
 pub mod identifier_register;
 pub mod lexer;
@@ -5,6 +6,7 @@ pub mod parser;
 pub mod source;
 pub mod suggest;
 
+pub use emit::{emit, emit_with_identifiers};
 pub use error::ParseError;
 pub use identifier_register::{ElementType, IdentifierRegister};
 pub use parser::{

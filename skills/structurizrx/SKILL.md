@@ -36,12 +36,31 @@ upstream Structurizr and is strict by default, so do not write from memory.
 ## Workflow
 
 1. `structurizrx docs` — load the DSL reference (once per session).
-2. Write or edit the `.dsl` file.
-3. `structurizrx validate ws.dsl --json` — confirm it parses. Check `errors`
-   and `lint`, fix, and re-run. Add `--strict` to make lint findings fail.
+2. Write the `.dsl` file. For changes to an existing file, prefer the edit
+   commands over rewriting text (see below).
+3. `structurizrx validate ws.dsl --json` — confirm it parses. Every error in
+   the file comes back at once, each with `code`, `file`, `line` and
+   `column`, so fix them all before re-running. Add `--strict` to make lint
+   findings fail.
 4. `structurizrx digest ws.dsl` — read back a compact summary to confirm the
-   model matches intent.
+   model matches intent. `structurizrx lint ws.dsl` adds hygiene warnings
+   (missing descriptions, elements in no view) and dependency cycles.
 5. Render or serve only when an image is the actual deliverable.
+
+## Edit an existing model
+
+These keep comments and layout, find the right block (also in `!include`d
+files), and write nothing if the result would not parse:
+
+- `structurizrx add ws.dsl 'cache = container "Cache" "" "Redis"' --in shop`
+  — `--in` takes `model`, `views`, or an element identifier or name path.
+- `structurizrx remove ws.dsl Shop/Cache --cascade` — `--cascade` also removes
+  the relationships that use it.
+- `structurizrx rename ws.dsl api gateway` — an identifier, everywhere.
+- `structurizrx diff ws.dsl` — what changed against the last commit, as model
+  changes rather than a text diff. Use it to check your own edit.
+- `structurizrx fmt sketch.dsl -o ws.dsl` — promote a sketch to a full
+  workspace, or convert a `.json` workspace to DSL.
 
 Do not skip validate and digest. A model that renders is not always correct.
 

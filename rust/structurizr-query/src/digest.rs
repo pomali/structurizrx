@@ -1,7 +1,152 @@
-//! Plain-text model digest (spec §9.1) and element-name lookup, shared by
-//! the CLI (`structurizrx digest`, `query`) and the web server.
+//! Plain-text model digest (spec §9.1) and element/relationship naming,
+//! shared by the CLI (`structurizrx digest`, `query`) and the web server.
 
-use structurizr_model::Workspace;
+use std::collections::HashMap;
+
+use structurizr_model::{Port, Relationship, Workspace};
+
+/// Map every static-model element id to its qualified name path
+/// (`System/Container/Component`), the same paths the digest prints and
+/// `reference.rs` resolves.
+pub fn element_paths(ws: &Workspace) -> HashMap<String, String> {
+    let mut paths = HashMap::new();
+    for p in ws.model.people.iter().flatten() {
+        paths.insert(p.id.clone(), p.name.clone());
+    }
+    for s in ws.model.software_systems.iter().flatten() {
+        paths.insert(s.id.clone(), s.name.clone());
+        for c in s.containers.iter().flatten() {
+            let path = format!("{}/{}", s.name, c.name);
+            paths.insert(c.id.clone(), path.clone());
+            for comp in c.components.iter().flatten() {
+                paths.insert(comp.id.clone(), format!("{}/{}", path, comp.name));
+            }
+        }
+    }
+    for ce in ws.model.custom_elements.iter().flatten() {
+        paths.insert(ce.id.clone(), ce.name.clone());
+    }
+    paths
+}
+
+/// A relationship described by name paths rather than ids.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationshipSummary {
+    pub id: String,
+    /// Source name path, with `.port` when the relationship leaves a port.
+    pub source: String,
+    /// Destination name path, with `.port` when it arrives at a port.
+    pub destination: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technology: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub introduced: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retired: Option<String>,
+}
+
+impl RelationshipSummary {
+    /// The digest's one-line form: `A -> B "desc" [kind, status:x]`.
+    pub fn line(&self) -> String {
+        let mut markers = Vec::new();
+        if let Some(k) = &self.kind {
+            markers.push(k.clone());
+        }
+        if let Some(s) = &self.status {
+            markers.push(format!("status:{}", s));
+        }
+        if let Some(i) = &self.introduced {
+            markers.push(format!("introduced:{}", i));
+        }
+        if let Some(r) = &self.retired {
+            markers.push(format!("retired:{}", r));
+        }
+        let marker_s = if markers.is_empty() { String::new() } else { format!(" [{}]", markers.join(", ")) };
+        let desc = self.description.as_deref().map(|d| format!(" \"{}\"", d)).unwrap_or_default();
+        format!("{} -> {}{}{}", self.source, self.destination, desc, marker_s)
+    }
+}
+
+/// Every static-model relationship by id, described by name paths.
+pub fn relationship_summaries(ws: &Workspace) -> HashMap<String, RelationshipSummary> {
+    let paths = element_paths(ws);
+    let mut port_names: HashMap<(String, String), String> = HashMap::new();
+    let mut record_ports = |element_id: &str, ports: &Option<Vec<Port>>| {
+        for p in ports.iter().flatten() {
+            port_names.insert((element_id.to_string(), p.id.clone()), p.name.clone());
+        }
+    };
+    for s in ws.model.software_systems.iter().flatten() {
+        record_ports(&s.id, &s.ports);
+        for c in s.containers.iter().flatten() {
+            record_ports(&c.id, &c.ports);
+            for comp in c.components.iter().flatten() {
+                record_ports(&comp.id, &comp.ports);
+            }
+        }
+    }
+
+    let summarize = |r: &Relationship| -> RelationshipSummary {
+        let mut src = paths.get(&r.source_id).cloned().unwrap_or_else(|| r.source_id.clone());
+        let mut dst = paths.get(&r.destination_id).cloned().unwrap_or_else(|| r.destination_id.clone());
+        if let Some(pid) = &r.source_port_id {
+            if let Some(pname) = port_names.get(&(r.source_id.clone(), pid.clone())) {
+                src = format!("{}.{}", src, pname);
+            }
+        }
+        if let Some(pid) = &r.destination_port_id {
+            if let Some(pname) = port_names.get(&(r.destination_id.clone(), pid.clone())) {
+                dst = format!("{}.{}", dst, pname);
+            }
+        }
+        RelationshipSummary {
+            id: r.id.clone(),
+            source: src,
+            destination: dst,
+            description: r.description.clone(),
+            technology: r.technology.clone(),
+            kind: r.kind.as_ref().map(|k| format!("{:?}", k).to_lowercase()),
+            status: r.status.as_ref().map(|s| format!("{:?}", s).to_lowercase()),
+            introduced: r.introduced.clone(),
+            retired: r.retired.clone(),
+        }
+    };
+
+    let mut out = HashMap::new();
+    for r in all_relationships(ws) {
+        out.insert(r.id.clone(), summarize(r));
+    }
+    out
+}
+
+/// Static-model relationships in model order (people, then systems depth
+/// first, then custom elements).
+pub fn all_relationships(ws: &Workspace) -> Vec<&Relationship> {
+    let mut all = Vec::new();
+    for p in ws.model.people.iter().flatten() {
+        all.extend(p.relationships.iter().flatten());
+    }
+    for s in ws.model.software_systems.iter().flatten() {
+        all.extend(s.relationships.iter().flatten());
+        for c in s.containers.iter().flatten() {
+            all.extend(c.relationships.iter().flatten());
+            for comp in c.components.iter().flatten() {
+                all.extend(comp.relationships.iter().flatten());
+            }
+        }
+    }
+    for ce in ws.model.custom_elements.iter().flatten() {
+        all.extend(ce.relationships.iter().flatten());
+    }
+    all
+}
 
 /// Render a compact, deterministic plain-text digest of the model (spec §9.1):
 /// one line per element with its qualified name-path, ports, and markers; one
@@ -28,10 +173,7 @@ pub fn digest(ws: &Workspace) -> String {
     }
     let _ = writeln!(out);
 
-    // id → qualified name path, for relationship lines
-    let mut paths: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
-    // (element id, port id) → port name, for port-attached relationship endpoints
-    let mut port_names: std::collections::HashMap<(String, String), String> = std::collections::HashMap::new();
+    let paths = element_paths(ws);
 
     fn markers(
         status: &Option<structurizr_model::Status>,
@@ -55,7 +197,7 @@ pub fn digest(ws: &Workspace) -> String {
         if m.is_empty() { String::new() } else { format!(" [{}]", m.join(", ")) }
     }
 
-    fn ports_suffix(ports: &Option<Vec<structurizr_model::Port>>) -> String {
+    fn ports_suffix(ports: &Option<Vec<Port>>) -> String {
         match ports {
             Some(ps) if !ps.is_empty() => {
                 let list: Vec<String> = ps.iter().map(|p| {
@@ -70,80 +212,34 @@ pub fn digest(ws: &Workspace) -> String {
     }
 
     for p in ws.model.people.iter().flatten() {
-        paths.insert(&p.id, p.name.clone());
         let _ = writeln!(out, "person {}{}", p.name, markers(&p.status, &p.introduced, &p.retired, &None));
     }
-    let record_ports = |element_id: &str, ports: &Option<Vec<structurizr_model::Port>>,
-                            port_names: &mut std::collections::HashMap<(String, String), String>| {
-        for p in ports.iter().flatten() {
-            port_names.insert((element_id.to_string(), p.id.clone()), p.name.clone());
-        }
-    };
     for s in ws.model.software_systems.iter().flatten() {
-        paths.insert(&s.id, s.name.clone());
-        record_ports(&s.id, &s.ports, &mut port_names);
         let _ = writeln!(out, "system {}{}{}", s.name, markers(&s.status, &s.introduced, &s.retired, &None), ports_suffix(&s.ports));
         for c in s.containers.iter().flatten() {
-            let path = format!("{}/{}", s.name, c.name);
-            paths.insert(&c.id, path.clone());
-            record_ports(&c.id, &c.ports, &mut port_names);
+            let path = &paths[&c.id];
             let _ = writeln!(out, "  container {}{}{}", path, markers(&c.status, &c.introduced, &c.retired, &c.technology), ports_suffix(&c.ports));
             for comp in c.components.iter().flatten() {
-                let cpath = format!("{}/{}", path, comp.name);
-                paths.insert(&comp.id, cpath.clone());
-                record_ports(&comp.id, &comp.ports, &mut port_names);
+                let cpath = &paths[&comp.id];
                 let _ = writeln!(out, "    component {}{}{}", cpath, markers(&comp.status, &comp.introduced, &comp.retired, &comp.technology), ports_suffix(&comp.ports));
             }
         }
     }
     for ce in ws.model.custom_elements.iter().flatten() {
-        paths.insert(&ce.id, ce.name.clone());
         let _ = writeln!(out, "element {}", ce.name);
     }
     let _ = writeln!(out);
 
     // Relationships, in model order
-    let mut rel_lines: Vec<String> = Vec::new();
-    let mut push_rels = |rels: &Option<Vec<structurizr_model::Relationship>>, paths: &std::collections::HashMap<&str, String>| {
-        for r in rels.iter().flatten() {
-            let mut src = paths.get(r.source_id.as_str()).cloned().unwrap_or_else(|| r.source_id.clone());
-            let mut dst = paths.get(r.destination_id.as_str()).cloned().unwrap_or_else(|| r.destination_id.clone());
-            if let Some(pid) = &r.source_port_id {
-                if let Some(pname) = port_names.get(&(r.source_id.clone(), pid.clone())) {
-                    src = format!("{}.{}", src, pname);
-                }
-            }
-            if let Some(pid) = &r.destination_port_id {
-                if let Some(pname) = port_names.get(&(r.destination_id.clone(), pid.clone())) {
-                    dst = format!("{}.{}", dst, pname);
-                }
-            }
-            let mut markers = Vec::new();
-            if let Some(k) = &r.kind { markers.push(format!("{:?}", k).to_lowercase()); }
-            if let Some(s) = &r.status { markers.push(format!("status:{}", format!("{:?}", s).to_lowercase())); }
-            if let Some(i) = &r.introduced { markers.push(format!("introduced:{}", i)); }
-            if let Some(x) = &r.retired { markers.push(format!("retired:{}", x)); }
-            let marker_s = if markers.is_empty() { String::new() } else { format!(" [{}]", markers.join(", ")) };
-            let desc = r.description.as_deref().map(|d| format!(" \"{}\"", d)).unwrap_or_default();
-            rel_lines.push(format!("rel {} -> {}{}{}", src, dst, desc, marker_s));
-        }
-    };
-    for p in ws.model.people.iter().flatten() { push_rels(&p.relationships, &paths); }
-    for s in ws.model.software_systems.iter().flatten() {
-        push_rels(&s.relationships, &paths);
-        for c in s.containers.iter().flatten() {
-            push_rels(&c.relationships, &paths);
-            for comp in c.components.iter().flatten() { push_rels(&comp.relationships, &paths); }
-        }
-    }
-    for ce in ws.model.custom_elements.iter().flatten() { push_rels(&ce.relationships, &paths); }
-    for line in rel_lines {
-        let _ = writeln!(out, "{}", line);
+    let summaries = relationship_summaries(ws);
+    for r in all_relationships(ws) {
+        let _ = writeln!(out, "rel {}", summaries[&r.id].line());
     }
 
     // Views: key, type, scope, and content size — so a reader can see which
     // views exist and what a model change would affect. Generated views carry
-    // an `auto-` key prefix.
+    // an `auto-` key prefix. Relationship counts include the implied
+    // relationships the renderers lift onto visible ancestors.
     let scope_of = |id: &str| paths.get(id).cloned().unwrap_or_else(|| id.to_string());
     fn counts(
         ev: &Option<Vec<structurizr_model::ElementView>>,
@@ -222,8 +318,8 @@ pub fn digest(ws: &Workspace) -> String {
 }
 
 /// Map every element id in the model to a human-readable name for query output.
-pub fn element_names(ws: &Workspace) -> std::collections::HashMap<String, String> {
-    let mut names = std::collections::HashMap::new();
+pub fn element_names(ws: &Workspace) -> HashMap<String, String> {
+    let mut names = HashMap::new();
     for p in ws.model.people.iter().flatten() {
         names.insert(p.id.clone(), format!("person \"{}\"", p.name));
     }
@@ -241,4 +337,3 @@ pub fn element_names(ws: &Workspace) -> std::collections::HashMap<String, String
     }
     names
 }
-

@@ -26,6 +26,11 @@ const PERSON_HEAD_OVERLAP: i32 = 28;
 const EDGE_SPREAD: f64 = 30.0;
 /// Maximum pixel width of a wrapped edge-label line.
 const EDGE_LABEL_W: f64 = 180.0;
+/// Line height used when stacking wrapped edge-label lines.
+const EDGE_LABEL_LINE_H: f64 = 13.0;
+/// Square half-size (well, full side) kept clear around an edge's arrowhead
+/// tip when placing labels, so a label box never sits on top of it.
+const ARROW_CLEARANCE: f64 = 10.0;
 
 // Font sizes / line heights (Arial-ish metrics).
 const FS_TITLE: f64 = 18.0;
@@ -1281,6 +1286,14 @@ fn render_svg(
     // can never hide them.
     let mut overlay = String::new();
 
+    // Obstacles every label must stay clear of (every node's box, including
+    // the person/robot head overhang); boundary/group rectangles are fine to
+    // overlap and are not included. `placed_labels` accumulates every label
+    // box already placed (edge labels and port labels alike) so later labels
+    // steer clear of earlier ones too.
+    let node_obstacles: Vec<(f64, f64, f64, f64)> = nodes.iter().map(node_bounds).collect();
+    let mut placed_labels: Vec<(f64, f64, f64, f64)> = Vec::new();
+
     for edge in edges {
         let src = match pos.get(edge.src_id.as_str()) {
             Some(n) => *n,
@@ -1312,7 +1325,29 @@ fn render_svg(
                 cy + 20.0,
                 cy + 14.0,
             ));
-            draw_edge_label(&mut overlay, edge, x0 + 46.0, cy, stroke);
+            let lines = edge_label_lines(edge);
+            if !lines.is_empty() {
+                let (bw, bh) = label_box_size(&lines, FS_EDGE);
+                let avoid = (
+                    x0 - ARROW_CLEARANCE,
+                    cy + 14.0 - ARROW_CLEARANCE,
+                    2.0 * ARROW_CLEARANCE,
+                    2.0 * ARROW_CLEARANCE,
+                );
+                let (lx, ly) = find_label_center(
+                    x0 + 30.0,
+                    cy,
+                    x0 + 70.0,
+                    cy,
+                    bw,
+                    bh,
+                    &node_obstacles,
+                    &placed_labels,
+                    avoid,
+                );
+                draw_edge_label_lines(&mut overlay, &lines, lx, ly, stroke);
+                placed_labels.push((lx - bw / 2.0, ly - bh / 2.0, bw, bh));
+            }
             continue;
         }
 
@@ -1348,10 +1383,16 @@ fn render_svg(
         ));
 
         // Port glyphs: a small square on the element border where the
-        // relationship attaches through a declared port (spec §5.1).
-        for (gx, gy, pname) in [
-            (x1, y1, edge.src_port_name.as_deref()),
-            (x2, y2, edge.dst_port_name.as_deref()),
+        // relationship attaches through a declared port (spec §5.1). The
+        // port *name* label is placed outside the owning element, offset
+        // away from the incoming edge direction so it never sits on the
+        // glyph's arrowhead.
+        let (edx, edy) = (x2 - x1, y2 - y1);
+        let elen = (edx * edx + edy * edy).sqrt().max(1.0);
+        let (dir_x, dir_y) = (edx / elen, edy / elen);
+        for (gx, gy, pname, node) in [
+            (x1, y1, edge.src_port_name.as_deref(), src),
+            (x2, y2, edge.dst_port_name.as_deref(), dst),
         ] {
             if let Some(pname) = pname {
                 overlay.push_str(&format!(
@@ -1360,22 +1401,45 @@ fn render_svg(
                     gx - 4.0,
                     gy - 4.0,
                 ));
-                overlay.push_str(&format!(
-                    r##"    <text x="{:.1}" y="{:.1}" font-size="8" fill="{stroke}" text-anchor="middle">{}</text>
-"##,
-                    gx,
-                    gy - 7.0,
-                    xml_escape(pname)
-                ));
+                let text_w = text_width(pname, 8.0) + 6.0;
+                let text_h = 11.0;
+                let (lx, ly) = place_port_label(
+                    gx, gy, dir_x, dir_y, node, text_w, text_h, &node_obstacles, &placed_labels,
+                );
+                draw_port_label(&mut overlay, lx, ly, text_w, text_h, pname, stroke);
+                placed_labels.push((lx - text_w / 2.0, ly - text_h / 2.0, text_w, text_h));
             }
         }
 
-        // Edge label at the midpoint, nudged along the same perpendicular so
-        // parallel edges keep their labels apart.
+        // Edge label near the midpoint, nudged along the same perpendicular
+        // (so parallel edges keep their labels apart) and then steered clear
+        // of any node it would otherwise sit on top of.
         let extra = if count > 1 { off.signum() * 10.0 } else { 0.0 };
-        let lx = (x1 + x2) / 2.0 + px * extra;
-        let ly = (y1 + y2) / 2.0 + py * extra;
-        draw_edge_label(&mut overlay, edge, lx, ly, stroke);
+        let bias_x = px * extra;
+        let bias_y = py * extra;
+        let lines = edge_label_lines(edge);
+        if !lines.is_empty() {
+            let (bw, bh) = label_box_size(&lines, FS_EDGE);
+            let avoid = (
+                x2 - ARROW_CLEARANCE,
+                y2 - ARROW_CLEARANCE,
+                2.0 * ARROW_CLEARANCE,
+                2.0 * ARROW_CLEARANCE,
+            );
+            let (lx, ly) = find_label_center(
+                x1 + bias_x,
+                y1 + bias_y,
+                x2 + bias_x,
+                y2 + bias_y,
+                bw,
+                bh,
+                &node_obstacles,
+                &placed_labels,
+                avoid,
+            );
+            draw_edge_label_lines(&mut overlay, &lines, lx, ly, stroke);
+            placed_labels.push((lx - bw / 2.0, ly - bh / 2.0, bw, bh));
+        }
     }
 
     // Nodes
@@ -1393,21 +1457,48 @@ fn canon_pair<'a>(a: &'a str, b: &'a str) -> (&'a str, &'a str) {
     if a <= b { (a, b) } else { (b, a) }
 }
 
-/// Draw a wrapped edge label centred at (lx, ly) with a background halo so it
-/// stays readable where it crosses lines.
-fn draw_edge_label(svg: &mut String, edge: &Edge, lx: f64, ly: f64, color: &str) {
+/// Combined label + technology text for an edge, if any.
+fn edge_label_text(edge: &Edge) -> Option<String> {
     if edge.label.is_empty() && edge.technology.is_empty() {
-        return;
+        return None;
     }
-    let label_text = if edge.technology.is_empty() {
+    Some(if edge.technology.is_empty() {
         edge.label.clone()
     } else if edge.label.is_empty() {
         format!("[{}]", edge.technology)
     } else {
         format!("{} [{}]", edge.label, edge.technology)
-    };
-    let lines = clamp_lines(wrap_text(&label_text, EDGE_LABEL_W, FS_EDGE), 3);
-    let line_h = 13.0;
+    })
+}
+
+/// Wrapped, line-clamped label text for an edge — empty when the edge has
+/// neither a description nor a technology.
+fn edge_label_lines(edge: &Edge) -> Vec<String> {
+    match edge_label_text(edge) {
+        Some(t) => clamp_lines(wrap_text(&t, EDGE_LABEL_W, FS_EDGE), 3),
+        None => Vec::new(),
+    }
+}
+
+/// Bounding box size (width, height) of a stack of wrapped label lines,
+/// matching the geometry `draw_edge_label_lines` actually renders.
+fn label_box_size(lines: &[String], font_size: f64) -> (f64, f64) {
+    let w = lines
+        .iter()
+        .map(|l| text_width(l, font_size))
+        .fold(0.0_f64, f64::max)
+        + 8.0;
+    let h = lines.len() as f64 * EDGE_LABEL_LINE_H;
+    (w, h)
+}
+
+/// Draw pre-wrapped label lines centred at (lx, ly), each with its own
+/// background halo so the text stays readable where it crosses lines.
+fn draw_edge_label_lines(svg: &mut String, lines: &[String], lx: f64, ly: f64, color: &str) {
+    if lines.is_empty() {
+        return;
+    }
+    let line_h = EDGE_LABEL_LINE_H;
     let first_baseline = ly - (lines.len() as f64 - 1.0) * line_h / 2.0 + 3.5;
     for (i, line) in lines.iter().enumerate() {
         let baseline = first_baseline + i as f64 * line_h;
@@ -1425,6 +1516,144 @@ fn draw_edge_label(svg: &mut String, edge: &Edge, lx: f64, ly: f64, color: &str)
             xml_escape(line)
         ));
     }
+}
+
+/// Do two axis-aligned rects (x, y, w, h) overlap?
+fn rects_overlap(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> bool {
+    let (ax, ay, aw, ah) = a;
+    let (bx, by, bw, bh) = b;
+    ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
+}
+
+/// A node's full bounding box, including the person/robot head overhang —
+/// the region a label must stay clear of.
+fn node_bounds(node: &Node) -> (f64, f64, f64, f64) {
+    let top = node.y - node.top_overhang();
+    (
+        node.x as f64,
+        top as f64,
+        node.w as f64,
+        (node.y + node.h - top) as f64,
+    )
+}
+
+/// Find a free centre point for a `box_w` x `box_h` label near the line from
+/// (x1, y1) to (x2, y2): try the midpoint, then increasingly off-centre
+/// points along the line (so a label crossing a box can slide clear of it),
+/// skipping any candidate that would overlap a node, an already-placed
+/// label, or `avoid` (typically the destination arrowhead). If none of those
+/// are free, nudge perpendicular to the line in increasing steps. As a last
+/// resort, keep the midpoint.
+#[allow(clippy::too_many_arguments)]
+fn find_label_center(
+    x1: f64,
+    y1: f64,
+    x2: f64,
+    y2: f64,
+    box_w: f64,
+    box_h: f64,
+    obstacles: &[(f64, f64, f64, f64)],
+    placed: &[(f64, f64, f64, f64)],
+    avoid: (f64, f64, f64, f64),
+) -> (f64, f64) {
+    let dx = x2 - x1;
+    let dy = y2 - y1;
+    let len = (dx * dx + dy * dy).sqrt();
+    let (ux, uy) = if len > 1e-6 { (dx / len, dy / len) } else { (0.0, 1.0) };
+    let (px, py) = (-uy, ux);
+
+    let is_free = |cx: f64, cy: f64| {
+        let rect = (cx - box_w / 2.0, cy - box_h / 2.0, box_w, box_h);
+        !rects_overlap(rect, avoid)
+            && !obstacles.iter().any(|&o| rects_overlap(rect, o))
+            && !placed.iter().any(|&o| rects_overlap(rect, o))
+    };
+
+    let ts: [f64; 7] = [0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85];
+    let midpoint = (x1 + dx * 0.5, y1 + dy * 0.5);
+    for &t in &ts {
+        let cx = x1 + dx * t;
+        let cy = y1 + dy * t;
+        if is_free(cx, cy) {
+            return (cx, cy);
+        }
+    }
+
+    // Perpendicular nudge from the midpoint in increasing steps.
+    let (mcx, mcy) = midpoint;
+    for step in 1..=5 {
+        for sign in [1.0, -1.0] {
+            let off = sign * step as f64 * (box_h + 6.0);
+            let cx = mcx + px * off;
+            let cy = mcy + py * off;
+            if is_free(cx, cy) {
+                return (cx, cy);
+            }
+        }
+    }
+
+    midpoint
+}
+
+/// Place a port-name label outside the element next to its glyph, offset
+/// perpendicular to the incoming edge (unit direction `dir_x`/`dir_y`) on the
+/// side that points away from the node's centre, so it never sits on the
+/// arrowhead or under the box. Falls back to increasing offsets if the
+/// nearest spot collides with a node or another label.
+#[allow(clippy::too_many_arguments)]
+fn place_port_label(
+    gx: f64,
+    gy: f64,
+    dir_x: f64,
+    dir_y: f64,
+    node: &Node,
+    text_w: f64,
+    text_h: f64,
+    obstacles: &[(f64, f64, f64, f64)],
+    placed: &[(f64, f64, f64, f64)],
+) -> (f64, f64) {
+    let perp = (-dir_y, dir_x);
+    let outward = (gx - node.cx() as f64, gy - node.cy() as f64);
+    let sign = if perp.0 * outward.0 + perp.1 * outward.1 >= 0.0 { 1.0 } else { -1.0 };
+    let (ox, oy) = (perp.0 * sign, perp.1 * sign);
+
+    let is_free = |cx: f64, cy: f64| {
+        let rect = (cx - text_w / 2.0, cy - text_h / 2.0, text_w, text_h);
+        !obstacles.iter().any(|&o| rects_overlap(rect, o)) && !placed.iter().any(|&o| rects_overlap(rect, o))
+    };
+
+    let base_offset = 14.0;
+    let mut fallback = (gx + ox * base_offset - dir_x * 6.0, gy + oy * base_offset - dir_y * 6.0);
+    for step in 0..5 {
+        let off = base_offset + step as f64 * (text_h + 4.0);
+        let cx = gx + ox * off - dir_x * 6.0;
+        let cy = gy + oy * off - dir_y * 6.0;
+        if step == 0 {
+            fallback = (cx, cy);
+        }
+        if is_free(cx, cy) {
+            return (cx, cy);
+        }
+    }
+    fallback
+}
+
+/// Draw a port-name label with a background halo, centred at (cx, cy).
+fn draw_port_label(svg: &mut String, cx: f64, cy: f64, w: f64, h: f64, text: &str, color: &str) {
+    svg.push_str(&format!(
+        r##"    <rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="{COLOR_BG}" opacity="0.9"/>
+"##,
+        cx - w / 2.0,
+        cy - h / 2.0,
+        w,
+        h,
+    ));
+    svg.push_str(&format!(
+        r##"    <text x="{cx:.1}" y="{:.1}" font-size="8" fill="{color}" text-anchor="middle">{}</text>
+"##,
+        cy + 2.8,
+        xml_escape(text)
+    ));
 }
 
 /// Region within a node where the text block is centred. Shapes with caps,
@@ -2440,5 +2669,227 @@ mod tests {
 
         assert!(svg.contains("Sends"), "included relationship label should appear");
         assert!(!svg.contains("Replies"), "excluded relationship label must NOT appear");
+    }
+
+    // ── Label collision-avoidance tests ───────────────────────────────────────
+
+    type Rect = (f64, f64, f64, f64);
+
+    /// Parse rendered SVG `<rect>` elements into (node boxes, label boxes),
+    /// skipping the canvas background, the system-boundary rect and the small
+    /// port-attachment glyph squares.
+    fn extract_rects(svg: &str) -> (Vec<Rect>, Vec<Rect>) {
+        fn attr(tag: &str, name: &str) -> Option<String> {
+            let pat = format!("{name}=\"");
+            let start = tag.find(&pat)? + pat.len();
+            let rest = &tag[start..];
+            let end = rest.find('"')?;
+            Some(rest[..end].to_string())
+        }
+
+        let mut nodes = Vec::new();
+        let mut labels = Vec::new();
+        for chunk in svg.split("<rect ").skip(1) {
+            let tag_end = chunk.find("/>").unwrap_or(chunk.len());
+            let tag = &chunk[..tag_end];
+            let (Some(x), Some(y), Some(w), Some(h)) = (
+                attr(tag, "x").and_then(|s| s.parse::<f64>().ok()),
+                attr(tag, "y").and_then(|s| s.parse::<f64>().ok()),
+                attr(tag, "width").and_then(|s| s.parse::<f64>().ok()),
+                attr(tag, "height").and_then(|s| s.parse::<f64>().ok()),
+            ) else {
+                continue;
+            };
+            let fill = attr(tag, "fill");
+            let opacity = attr(tag, "opacity");
+            let dash = attr(tag, "stroke-dasharray");
+
+            // Skip the system-boundary rect (dashed "6,4"); overlapping it is fine.
+            if dash.as_deref() == Some("6,4") {
+                continue;
+            }
+            // Skip the small port-attachment glyph square.
+            if w == 8.0 && h == 8.0 && opacity.is_none() {
+                continue;
+            }
+            if fill.as_deref() == Some(COLOR_BG) && opacity.is_some() {
+                labels.push((x, y, w, h));
+            } else {
+                nodes.push((x, y, w, h));
+            }
+        }
+        (nodes, labels)
+    }
+
+    /// A container view shaped like the Big Bank plc sample: a person plus
+    /// five containers, with edges that cross intervening boxes (mobile app
+    /// straight down to the API, past the single-page application) and a
+    /// destination port — the exact geometry that used to draw labels on top
+    /// of node boxes and arrowheads.
+    #[test]
+    fn edge_and_port_labels_avoid_node_boxes() {
+        use structurizr_model::{Container, ContainerView, Person, Port, Relationship, SoftwareSystem, Workspace};
+
+        let mut workspace = Workspace::default();
+        workspace.name = "BigBankLike".to_string();
+
+        let containers = vec![
+            Container {
+                id: "mobile".to_string(),
+                name: "Mobile App".to_string(),
+                technology: Some("Xamarin".to_string()),
+                description: Some(
+                    "Provides a limited subset of the Internet banking functionality to customers via their mobile device."
+                        .to_string(),
+                ),
+                relationships: Some(vec![Relationship {
+                    id: "r-mobile-api".to_string(),
+                    source_id: "mobile".to_string(),
+                    destination_id: "api".to_string(),
+                    description: Some("Makes API calls to".to_string()),
+                    technology: Some("JSON/HTTPS".to_string()),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            },
+            Container {
+                id: "web".to_string(),
+                name: "Web Application".to_string(),
+                technology: Some("Java and Spring MVC".to_string()),
+                description: Some(
+                    "Delivers the static content and the Internet banking single page application.".to_string(),
+                ),
+                relationships: Some(vec![Relationship {
+                    id: "r-web-spa".to_string(),
+                    source_id: "web".to_string(),
+                    destination_id: "spa".to_string(),
+                    description: Some("Delivers to the customer's web browser".to_string()),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            },
+            Container {
+                id: "spa".to_string(),
+                name: "Single-Page Application".to_string(),
+                technology: Some("JavaScript and Angular".to_string()),
+                description: Some(
+                    "Provides all of the Internet banking functionality to customers via their web browser."
+                        .to_string(),
+                ),
+                relationships: Some(vec![Relationship {
+                    id: "r-spa-api".to_string(),
+                    source_id: "spa".to_string(),
+                    destination_id: "api".to_string(),
+                    description: Some("Makes API calls to".to_string()),
+                    technology: Some("JSON/HTTPS".to_string()),
+                    destination_port_id: Some("p1".to_string()),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            },
+            Container {
+                id: "api".to_string(),
+                name: "API Application".to_string(),
+                technology: Some("Java and Spring MVC".to_string()),
+                description: Some("Provides Internet banking functionality via a JSON/HTTPS API.".to_string()),
+                ports: Some(vec![Port {
+                    id: "p1".to_string(),
+                    name: "Customer REST API".to_string(),
+                    ..Default::default()
+                }]),
+                relationships: Some(vec![Relationship {
+                    id: "r-api-db".to_string(),
+                    source_id: "api".to_string(),
+                    destination_id: "db".to_string(),
+                    description: Some("Reads from and writes to".to_string()),
+                    technology: Some("SQL/TCP".to_string()),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            },
+            Container {
+                id: "db".to_string(),
+                name: "Database".to_string(),
+                technology: Some("Oracle Database Schema".to_string()),
+                description: Some(
+                    "Stores user registration information, hashed authentication credentials, access logs, etc."
+                        .to_string(),
+                ),
+                ..Default::default()
+            },
+        ];
+
+        let system = SoftwareSystem {
+            id: "sys".to_string(),
+            name: "Internet Banking System".to_string(),
+            containers: Some(containers),
+            ..Default::default()
+        };
+
+        let person = Person {
+            id: "person".to_string(),
+            name: "Personal Banking Customer".to_string(),
+            relationships: Some(vec![
+                Relationship {
+                    id: "r-person-mobile".to_string(),
+                    source_id: "person".to_string(),
+                    destination_id: "mobile".to_string(),
+                    description: Some("Views account balances, and makes payments using".to_string()),
+                    ..Default::default()
+                },
+                Relationship {
+                    id: "r-person-web".to_string(),
+                    source_id: "person".to_string(),
+                    destination_id: "web".to_string(),
+                    description: Some("Visits bigbank.com/ib using".to_string()),
+                    technology: Some("HTTPS".to_string()),
+                    ..Default::default()
+                },
+            ]),
+            ..Default::default()
+        };
+
+        workspace.model.people = Some(vec![person]);
+        workspace.model.software_systems = Some(vec![system]);
+        workspace.views.container_views = Some(vec![ContainerView {
+            software_system_id: "sys".to_string(),
+            key: Some("Containers".to_string()),
+            ..Default::default()
+        }]);
+
+        let diagrams = SvgExporter.export_workspace(&workspace);
+        let svg = &diagrams[0].content;
+
+        let (node_rects, label_rects) = extract_rects(svg);
+        assert!(!node_rects.is_empty(), "expected node boxes in the SVG");
+        assert!(!label_rects.is_empty(), "expected edge/port labels in the SVG");
+
+        for (li, lr) in label_rects.iter().enumerate() {
+            for (ni, nr) in node_rects.iter().enumerate() {
+                assert!(
+                    !rects_overlap(*lr, *nr),
+                    "label #{li} {lr:?} overlaps node box #{ni} {nr:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn find_label_center_avoids_obstacle_between_endpoints() {
+        // A box sits directly on the line's midpoint; the chosen centre must
+        // clear it (and the label's own half-extent) while roughly tracking
+        // the line.
+        let obstacle = (90.0, 40.0, 20.0, 20.0); // centred on (100, 50)
+        let (lx, ly) = find_label_center(0.0, 50.0, 200.0, 50.0, 40.0, 12.0, &[obstacle], &[], (0.0, 0.0, 0.0, 0.0));
+        let label_rect = (lx - 20.0, ly - 6.0, 40.0, 12.0);
+        assert!(!rects_overlap(label_rect, obstacle), "label must not sit on the obstacle: {label_rect:?}");
+    }
+
+    #[test]
+    fn find_label_center_avoids_arrowhead() {
+        let avoid = (190.0, 44.0, 20.0, 20.0); // around the destination point (200, 50)
+        let (lx, ly) = find_label_center(0.0, 50.0, 200.0, 50.0, 30.0, 12.0, &[], &[], avoid);
+        let label_rect = (lx - 15.0, ly - 6.0, 30.0, 12.0);
+        assert!(!rects_overlap(label_rect, avoid), "label must not cover the arrowhead: {label_rect:?}");
     }
 }

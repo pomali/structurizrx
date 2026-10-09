@@ -22,6 +22,11 @@ pub enum ElementType {
 pub struct IdentifierRegister {
     pub identifiers: HashMap<String, (String, ElementType)>,
     pub mode: IdentifierMode,
+    /// Lowercased identifier -> the identifier exactly as written in the DSL
+    /// source. Used by the emitter to keep original casing (`WebApp` rather
+    /// than `webapp`) when re-emitting DSL for an identifier the workspace
+    /// was originally parsed with.
+    pub spellings: HashMap<String, String>,
 }
 
 /// Whether identifiers are hierarchical or flat.
@@ -38,7 +43,9 @@ impl IdentifierRegister {
     }
 
     pub fn register(&mut self, identifier: &str, id: String, kind: ElementType) {
-        self.identifiers.insert(identifier.to_lowercase(), (id, kind));
+        let lower = identifier.to_lowercase();
+        self.spellings.insert(lower.clone(), identifier.to_string());
+        self.identifiers.insert(lower, (id, kind));
     }
 
     pub fn resolve(&self, identifier: &str) -> Option<&(String, ElementType)> {

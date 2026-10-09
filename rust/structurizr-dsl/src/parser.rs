@@ -200,6 +200,9 @@ struct Parser {
     view_anchors: Vec<(String, usize)>,
     /// Imported ADRs: (decision id, owning element id, file, line count).
     adr_files: Vec<(String, Option<String>, PathBuf, usize)>,
+    /// Errors recovered from at statement boundaries (spliced line numbers);
+    /// reported together once the whole file has been read.
+    errors: Vec<ParseError>,
 }
 
 /// A relationship endpoint identifier that had no binding at parse time.
@@ -321,6 +324,71 @@ impl Parser {
             anchors: Vec::new(),
             view_anchors: Vec::new(),
             adr_files: Vec::new(),
+            errors: Vec::new(),
+        }
+    }
+
+    /// Record `err` and skip the statement that began at token `start`, so
+    /// parsing continues with the next statement and one file reports every
+    /// mistake in it. A statement is the rest of its first line plus the
+    /// `{ … }` block it opens there. Errors that are not local to a
+    /// statement (end of input, I/O) are returned instead, as is the error
+    /// once too many have piled up to be worth reading.
+    fn recover_statement(&mut self, err: ParseError, start: usize) -> Result<(), ParseError> {
+        const MAX_ERRORS: usize = 20;
+        match err {
+            ParseError::Syntax { .. } if self.errors.len() < MAX_ERRORS => self.errors.push(err),
+            other => return Err(other),
+        }
+        self.pos = start.min(self.tokens.len());
+        let line = self.tokens.get(self.pos).map(|t| t.pos.line);
+        while let Some(tok) = self.tokens.get(self.pos) {
+            if Some(tok.pos.line) != line {
+                break;
+            }
+            match tok.token {
+                Token::CloseBrace => break,
+                Token::OpenBrace => {
+                    self.advance();
+                    self.skip_block();
+                    break;
+                }
+                _ => {
+                    self.advance();
+                }
+            }
+        }
+        // Always make progress, or the enclosing loop would spin.
+        if self.pos == start && !self.peek_close_brace() {
+            self.advance();
+        }
+        Ok(())
+    }
+
+    /// Resolve an error's spliced line number to its `!include`d file and
+    /// original line, and turn a bare end-of-input into a pointer at the
+    /// block that was never closed.
+    fn localize_error(&self, err: ParseError, unclosed: Option<crate::lexer::Pos>) -> ParseError {
+        match err {
+            ParseError::UnexpectedEof => match unclosed {
+                Some(pos) => {
+                    let message = format!(
+                        "unexpected end of input: block opened at {} (column {}) is never closed",
+                        self.describe_line(pos.line),
+                        pos.col
+                    );
+                    self.localize_error(ParseError::syntax(pos.line, pos.col, message), None)
+                }
+                None => ParseError::UnexpectedEof,
+            },
+            ParseError::Syntax { line, col, message, .. } => {
+                let (file, orig_line) = match &self.source_map {
+                    Some(map) => map.resolve(line),
+                    None => (None, line),
+                };
+                ParseError::Syntax { file: file.map(str::to_string), line: orig_line, col, message }
+            }
+            other => other,
         }
     }
 
@@ -329,32 +397,24 @@ impl Parser {
     /// reporting instead of a bare "unexpected end of input".
     fn parse_workspace_toplevel(&mut self) -> Result<Workspace, ParseError> {
         let unclosed = find_unclosed_brace(&self.tokens);
-        match self.parse_workspace() {
-            Ok(ws) => Ok(ws),
-            Err(ParseError::UnexpectedEof) => match unclosed {
-                Some(pos) => Err(ParseError::syntax(
-                    pos.line,
-                    pos.col,
-                    format!(
-                        "unexpected end of input: block opened at {} (column {}) is never closed",
-                        self.describe_line(pos.line),
-                        pos.col
-                    ),
-                )),
-                None => Err(ParseError::UnexpectedEof),
-            },
-            Err(ParseError::Syntax { line, col, message }) => {
-                let (file, orig_line) = match &self.source_map {
-                    Some(map) => map.resolve(line),
-                    None => (None, line),
-                };
-                let message = match file {
-                    Some(f) => format!("in {}: {}", f, message),
-                    None => message,
-                };
-                Err(ParseError::syntax(orig_line, col, message))
-            }
-            Err(e) => Err(e),
+        let result = self.parse_workspace();
+        let mut errors = std::mem::take(&mut self.errors);
+        match result {
+            Ok(ws) if errors.is_empty() => return Ok(ws),
+            Ok(_) => {}
+            Err(e) => errors.push(e),
+        }
+        let mut errors: Vec<ParseError> =
+            errors.into_iter().map(|e| self.localize_error(e, unclosed)).collect();
+        // Report in source order: entry file first, then each included file.
+        errors.sort_by_key(|e| match e {
+            ParseError::Syntax { file, line, col, .. } => (file.clone(), *line, *col),
+            _ => (None, usize::MAX, 0),
+        });
+        if errors.len() == 1 {
+            Err(errors.pop().unwrap())
+        } else {
+            Err(ParseError::Multiple(errors))
         }
     }
 
@@ -691,8 +751,7 @@ impl Parser {
     fn finalize_model(&mut self, model: &mut Model) -> Result<(), ParseError> {
         let pendings = std::mem::take(&mut self.pending_endpoints);
         let element_ids = collect_element_ids(model);
-        let mut failures: Vec<(usize, String)> = Vec::new();
-        let mut first_pos: Option<(usize, usize)> = None;
+        let mut failures: Vec<(usize, usize, String)> = Vec::new();
 
         for p in &pendings {
             if self.endpoint_resolves(&p.ident) {
@@ -712,7 +771,6 @@ impl Parser {
                     rewrite_rel_endpoint(model, &mut self.deferred_rels, &p.rel_id, p.source_side, &id, None);
                 }
             } else {
-                first_pos.get_or_insert((p.line, p.col));
                 let mut msg = format!("unknown element identifier '{}' in relationship", p.ident);
                 let candidates = self
                     .register
@@ -723,21 +781,14 @@ impl Parser {
                 if let Some(suggestion) = crate::suggest::closest(&p.ident, candidates) {
                     msg.push_str(&format!(" (did you mean '{}'?)", suggestion));
                 }
-                failures.push((p.line, msg));
+                failures.push((p.line, p.col, msg));
             }
         }
 
-        if let Some((line, col)) = first_pos {
-            let message = if failures.len() == 1 {
-                failures.remove(0).1
-            } else {
-                let lines: Vec<String> = failures
-                    .into_iter()
-                    .map(|(l, m)| format!("{}: {}", self.describe_line(l), m))
-                    .collect();
-                format!("unresolved identifiers:\n  {}", lines.join("\n  "))
-            };
-            return Err(ParseError::syntax(line, col, message));
+        // Each unresolved endpoint is its own error, at its own line; the
+        // parse fails at the top level once the whole file has been read.
+        for (line, col, msg) in failures {
+            self.errors.push(ParseError::syntax(line, col, msg));
         }
 
         for rel in std::mem::take(&mut self.deferred_rels) {
@@ -1100,7 +1151,10 @@ impl Parser {
         self.expect_open_brace()?;
 
         while !self.peek_close_brace() && self.peek().is_some() {
-            self.parse_workspace_item(&mut workspace)?;
+            let start = self.pos;
+            if let Err(e) = self.parse_workspace_item(&mut workspace) {
+                self.recover_statement(e, start)?;
+            }
         }
 
         self.expect_close_brace()?;
@@ -1406,7 +1460,10 @@ impl Parser {
 
     fn parse_model(&mut self, model: &mut Model) -> Result<(), ParseError> {
         while !self.peek_close_brace() && self.peek().is_some() {
-            self.parse_model_item(model, None)?;
+            let start = self.pos;
+            if let Err(e) = self.parse_model_item(model, None) {
+                self.recover_statement(e, start)?;
+            }
         }
         self.finalize_model(model)
     }
@@ -1661,6 +1718,8 @@ impl Parser {
             let mut ss_extras = ElementExtras::default();
 
             while !self.peek_close_brace() && self.peek().is_some() {
+                let start = self.pos;
+                let result = (|| -> Result<(), ParseError> {
                 let (ident, _) = self.peek_assignment();
                 let has_ident = ident.is_some();
                 let ident = ident.unwrap_or_default();
@@ -1772,6 +1831,11 @@ impl Parser {
                     } else {
                         let _ = self.consume_string();
                     }
+                }
+                Ok(())
+                })();
+                if let Err(e) = result {
+                    self.recover_statement(e, start)?;
                 }
             }
             self.expect_close_brace()?;
@@ -2114,6 +2178,8 @@ impl Parser {
             let mut cont_extras = ElementExtras::default();
 
             while !self.peek_close_brace() && self.peek().is_some() {
+                let start = self.pos;
+                let result = (|| -> Result<(), ParseError> {
                 let (ident, _) = self.peek_assignment();
                 let has_ident = ident.is_some();
                 let ident = ident.unwrap_or_default();
@@ -2222,6 +2288,11 @@ impl Parser {
                     } else {
                         let _ = self.consume_string();
                     }
+                }
+                Ok(())
+                })();
+                if let Err(e) = result {
+                    self.recover_statement(e, start)?;
                 }
             }
             self.expect_close_brace()?;
@@ -3136,6 +3207,8 @@ impl Parser {
 
     fn parse_views(&mut self, views: &mut ViewSet, model: &Model) -> Result<(), ParseError> {
         while !self.peek_close_brace() && self.peek().is_some() {
+            let start = self.pos;
+            let result = (|| -> Result<(), ParseError> {
             match self.peek() {
                 Some(Token::Word(w)) => {
                     let w = w.to_lowercase();
@@ -3289,10 +3362,15 @@ impl Parser {
                         }
                     }
                 }
-                Some(Token::CloseBrace) => break,
+                Some(Token::CloseBrace) => {}
                 _ => {
                     self.advance();
                 }
+            }
+            Ok(())
+            })();
+            if let Err(e) = result {
+                self.recover_statement(e, start)?;
             }
         }
         Ok(())

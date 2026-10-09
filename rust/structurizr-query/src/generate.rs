@@ -141,13 +141,85 @@ fn relationship_views(ids: &BTreeSet<String>) -> Option<Vec<RelationshipView>> {
     Some(ids.iter().map(|id| RelationshipView { id: id.clone(), ..Default::default() }).collect())
 }
 
-/// Relationships whose endpoints are both in `elems` (the induced-subgraph rule, §6.1).
+/// Lift relationship endpoint `e` to the level a view scoped to `boundary`
+/// shows it at: inside `boundary`'s subtree (or any ancestor's) it becomes
+/// the child of that scope it descends from; `boundary` itself and its
+/// ancestors are the drawn scope, not elements, and lift to `None`; anything
+/// outside lifts to its top-level ancestor. With no boundary everything
+/// lifts to the top level, as a landscape or context view shows it.
+fn lift_endpoint(idx: &Index, e: &str, boundary: Option<&str>) -> Option<String> {
+    let el = &idx.elements[*idx.by_id.get(e)?];
+    let mut chain: Vec<&str> = vec![e];
+    chain.extend(el.ancestors.iter().map(String::as_str));
+    if let Some(b) = boundary {
+        let bel = &idx.elements[*idx.by_id.get(b)?];
+        let scope: HashSet<&str> =
+            std::iter::once(b).chain(bel.ancestors.iter().map(String::as_str)).collect();
+        if let Some(k) = chain.iter().position(|c| scope.contains(c)) {
+            return if k == 0 { None } else { Some(chain[k - 1].to_string()) };
+        }
+    }
+    chain.last().map(|s| s.to_string())
+}
+
+/// Elements connected to `id` once every relationship is lifted to the
+/// levels a view scoped to `boundary` shows (see [`lift_endpoint`]), so a
+/// component calling another system counts as its container calling that
+/// system — the implied relationships the rendered view draws.
+fn lifted_neighbors(idx: &Index, id: &str, boundary: Option<&str>) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for r in &idx.relationships {
+        let s = lift_endpoint(idx, &r.source_id, boundary);
+        let d = lift_endpoint(idx, &r.dest_id, boundary);
+        match (s.as_deref(), d.as_deref()) {
+            (Some(s), Some(d)) if s == id && d != id => {
+                out.insert(d.to_string());
+            }
+            (Some(s), Some(d)) if d == id && s != id => {
+                out.insert(s.to_string());
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Relationships a view over `elems` shows: those with both endpoints in the
+/// set (the induced-subgraph rule, §6.1), plus relationships between their
+/// descendants lifted onto the nearest visible ancestors — the implied
+/// relationships upstream Structurizr and this crate's renderers draw, so a
+/// landscape view connects two systems whose containers talk. One lifted
+/// relationship per (source, destination) pair, the first in model order,
+/// and none where a same-level relationship already connects the pair.
 fn induced_rels(idx: &Index, elems: &BTreeSet<String>) -> BTreeSet<String> {
-    idx.relationships
-        .iter()
-        .filter(|r| elems.contains(&r.source_id) && elems.contains(&r.dest_id))
-        .map(|r| r.id.clone())
-        .collect()
+    let lift = |id: &str| -> Option<String> {
+        if elems.contains(id) {
+            return Some(id.to_string());
+        }
+        let i = *idx.by_id.get(id)?;
+        idx.elements[i].ancestors.iter().find(|a| elems.contains(*a)).cloned()
+    };
+    let mut out = BTreeSet::new();
+    let mut pairs: HashSet<(String, String)> = HashSet::new();
+    for r in &idx.relationships {
+        if elems.contains(&r.source_id) && elems.contains(&r.dest_id) {
+            out.insert(r.id.clone());
+            pairs.insert((r.source_id.clone(), r.dest_id.clone()));
+        }
+    }
+    for r in &idx.relationships {
+        if out.contains(&r.id) {
+            continue;
+        }
+        let (Some(src), Some(dst)) = (lift(&r.source_id), lift(&r.dest_id)) else {
+            continue;
+        };
+        if src == dst || !pairs.insert((src, dst)) {
+            continue;
+        }
+        out.insert(r.id.clone());
+    }
+    out
 }
 
 /// Push a generated landscape-shaped view unless its key already exists.
@@ -237,15 +309,15 @@ fn asof_sets(idx: &Index, order: &[String], at: usize) -> (BTreeSet<String>, BTr
         .filter(|e| exists_at(order, at, &e.introduced, &e.retired))
         .map(|e| e.id.clone())
         .collect();
-    let rels: BTreeSet<String> = idx
+    let existing: HashSet<&str> = idx
         .relationships
         .iter()
-        .filter(|r| {
-            exists_at(order, at, &r.introduced, &r.retired)
-                && elems.contains(&r.source_id)
-                && elems.contains(&r.dest_id)
-        })
-        .map(|r| r.id.clone())
+        .filter(|r| exists_at(order, at, &r.introduced, &r.retired))
+        .map(|r| r.id.as_str())
+        .collect();
+    let rels: BTreeSet<String> = induced_rels(idx, &elems)
+        .into_iter()
+        .filter(|id| existing.contains(id.as_str()))
         .collect();
     (elems, rels)
 }
@@ -278,21 +350,7 @@ fn gen_default(ws: &mut Workspace, idx: &Index, generated: &mut Vec<String>) {
         generated.push(key);
     }
 
-    // Direct-neighbor helper over the index.
-    let neighbors = |id: &str| -> BTreeSet<String> {
-        idx.relationships
-            .iter()
-            .filter_map(|r| {
-                if r.source_id == id {
-                    Some(r.dest_id.clone())
-                } else if r.dest_id == id {
-                    Some(r.source_id.clone())
-                } else {
-                    None
-                }
-            })
-            .collect()
-    };
+    let neighbors = |id: &str, boundary: Option<&str>| lifted_neighbors(idx, id, boundary);
 
     let systems: Vec<(String, String)> = idx
         .elements
@@ -307,7 +365,7 @@ fn gen_default(ws: &mut Workspace, idx: &Index, generated: &mut Vec<String>) {
         if existing.contains(&key) {
             continue;
         }
-        let mut elems: BTreeSet<String> = neighbors(sys_id)
+        let mut elems: BTreeSet<String> = neighbors(sys_id, None)
             .into_iter()
             .filter(|n| {
                 idx.by_id.get(n).is_some_and(|i| {
@@ -346,12 +404,9 @@ fn gen_default(ws: &mut Workspace, idx: &Index, generated: &mut Vec<String>) {
         }
         let mut elems = containers.clone();
         for c in &containers {
-            for n in neighbors(c) {
-                // external context: anything directly connected, except the parent system
-                if n != *sys_id {
-                    elems.insert(n);
-                }
-            }
+            // External context: anything connected to a container once
+            // relationships are lifted to the levels this view shows.
+            elems.extend(neighbors(c, Some(sys_id)));
         }
         let rels = induced_rels(idx, &elems);
         let view = ContainerView {
@@ -389,11 +444,7 @@ fn gen_default(ws: &mut Workspace, idx: &Index, generated: &mut Vec<String>) {
         }
         let mut elems = components.clone();
         for c in &components {
-            for n in neighbors(c) {
-                if n != *cont_id {
-                    elems.insert(n);
-                }
-            }
+            elems.extend(neighbors(c, Some(cont_id)));
         }
         let rels = induced_rels(idx, &elems);
         let view = ComponentView {
@@ -656,12 +707,7 @@ fn gen_paths(
     let fwd = reach(&a_id, true);
     let bwd = reach(&b_id, false);
     let elems: BTreeSet<String> = fwd.intersection(&bwd).cloned().collect();
-    let rels: BTreeSet<String> = idx
-        .relationships
-        .iter()
-        .filter(|r| elems.contains(&r.source_id) && elems.contains(&r.dest_id))
-        .map(|r| r.id.clone())
-        .collect();
+    let rels = induced_rels(idx, &elems);
 
     let a_name = idx.elements[a].name.clone();
     let b_name = idx.elements[b].name.clone();

@@ -1447,6 +1447,7 @@ name = "structurizr-cli"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "base64",
  "clap",
  "serde_json",
  "structurizr-dsl",
@@ -1463,6 +1464,7 @@ name = "structurizr-dsl"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "serde",
  "serde_json",
  "structurizr-model",
  "thiserror 1.0.69",
