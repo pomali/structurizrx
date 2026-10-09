@@ -96,69 +96,34 @@ impl Video for IntroVideo<'_> {
         }
 
         let progress = (t / total * 980.0).clamp(0.5, 980.0);
-        let section_ticks: Vec<Svgr> = (0..=DURATIONS.len())
-            .map(|i| {
-                let x = 160.0 + DURATIONS[..i].iter().sum::<f32>() / total * 980.0;
-                fframes::svgr!(<line x1={x} y1="982" x2={x} y2="998" stroke={INK} stroke-width="1.5" />)
-            })
-            .collect();
-        let zone_ticks: Vec<Svgr> = (1..8)
-            .map(|i| {
-                let x = 56.0 + i as f32 * 1808.0 / 8.0;
-                let y = 56.0 + i as f32 * 968.0 / 8.0;
-                fframes::svgr!(<g stroke={INK} stroke-width="1.5">
-                    <line x1={x} y1="40" x2={x} y2="56" />
-                    <line x1={x} y1="1024" x2={x} y2="1040" />
-                    <line x1="40" y1={y} x2="56" y2={y} />
-                    <line x1="1864" y1={y} x2="1880" y2={y} />
-                </g>)
-            })
-            .collect();
-        let timecode = format!("T+{:02}:{:04.1}", (t / 60.0) as u32, t % 60.0);
 
         fframes::svgr!(
             <svg xmlns="http://www.w3.org/2000/svg" width={WIDTH} height={HEIGHT} viewBox="0 0 1920 1080">
                 <defs>
-                    <pattern id="minor" width="40" height="40" patternUnits="userSpaceOnUse">
-                        <path d="M40 0 H0 V40" fill="none" stroke={GRID} stroke-width="1" />
-                    </pattern>
-                    <pattern id="major" width="200" height="200" patternUnits="userSpaceOnUse">
-                        <rect width="200" height="200" fill="url(#minor)" />
-                        <path d="M200 0 H0 V200" fill="none" stroke={GRID_MAJOR} stroke-width="1.5" />
+                    <pattern id="grid" width="200" height="200" patternUnits="userSpaceOnUse">
+                        <path d="M200 0 H0 V200" fill="none" stroke={GRID} stroke-width="1.5" />
                     </pattern>
                 </defs>
                 <rect width="1920" height="1080" fill={PAPER} />
-                <rect x="56" y="56" width="1808" height="968" fill="url(#major)" />
-                // Sheet border: outer and inner frame, zone ticks.
-                <rect x="40" y="40" width="1840" height="1000" fill="none" stroke={INK} stroke-width="2.5" />
-                <rect x="56" y="56" width="1808" height="968" fill="none" stroke={INK} stroke-width="1" />
-                {zone_ticks}
+                <rect x="48" y="48" width="1824" height="984" fill="url(#grid)" />
+                <rect x="48" y="48" width="1824" height="984" fill="none" stroke={INK} stroke-width="2" />
 
                 {ctx.render_scenes(&frame)}
 
-                // Progress along the document, one tick per section.
-                <g font-family={MONO} font-weight="500">
-                    <rect x="156" y="944" width="1004" height="72" fill={PAPER} />
-                    <text x="160" y="970" font-size="18" letter-spacing="3" fill={MUTED}>"DWG SX-000  ·  SCALE 1:1  ·  UNITS: ELEMENTS"</text>
-                    <line x1="160" y1="990" x2="1140" y2="990" stroke={GRID_MAJOR} stroke-width="2" />
-                    <rect x="160" y="988" width={progress} height="4" fill={BLUE} />
-                    {section_ticks}
-                </g>
+                // Progress along the document.
+                <line x1="160" y1="988" x2="1140" y2="988" stroke={GRID_MAJOR} stroke-width="2" />
+                <rect x="160" y="986" width={progress} height="4" fill={BLUE} />
                 // Title block.
                 <g font-family={MONO}>
-                    <rect x="1184" y="944" width="680" height="80" fill={PAPER} stroke={INK} stroke-width="1.5" />
-                    <path d="M1424 944 V1024 M1584 944 V1024 M1734 944 V1024" stroke={INK} stroke-width="1" />
+                    <rect x="1464" y="952" width="408" height="80" fill={PAPER} stroke={INK} stroke-width="1.5" />
+                    <path d="M1724 952 V1032" stroke={INK} stroke-width="1" />
                     <g font-size="15" letter-spacing="2" fill={MUTED} font-weight="500">
-                        <text x="1198" y="966">"TITLE"</text>
-                        <text x="1438" y="966">"SECTION"</text>
-                        <text x="1598" y="966">"SHEET"</text>
-                        <text x="1748" y="966">"TIME"</text>
+                        <text x="1480" y="974">"SECTION"</text>
+                        <text x="1740" y="974">"SHEET"</text>
                     </g>
-                    <g font-size="22" fill={INK} font-weight="600">
-                        <text x="1198" y="1004">"STRUCTURIZRX"</text>
-                        <text x="1438" y="1004" font-size="17">{SHEET_NAMES[sheet]}</text>
-                        <text x="1598" y="1004">{format!("{} / {}", sheet + 1, DURATIONS.len())}</text>
-                        <text x="1748" y="1004" font-size="19" font-weight="500">{timecode}</text>
+                    <g font-size="20" fill={INK} font-weight="600">
+                        <text x="1480" y="1012">{SHEET_NAMES[sheet]}</text>
+                        <text x="1740" y="1012">{format!("{} / {}", sheet + 1, DURATIONS.len())}</text>
                     </g>
                 </g>
             </svg>
@@ -239,13 +204,12 @@ fn node<'a>(cx: f32, cy: f32, w: f32, h: f32, name: &'a str, kind: &'a str, size
     </g>)
 }
 
-/// Section header: "§n  NAME" with a rule drawn across, and a reference on the right.
-fn header<'a>(frame: &Frame, number: &'a str, name: &'a str, reference: &'a str) -> Svgr<'a> {
+/// Section header: "§n  NAME" with a rule drawn across.
+fn header<'a>(frame: &Frame, number: &'a str, name: &'a str) -> Svgr<'a> {
     let rule = (1600.0 * draw(frame, 0.05)).max(0.5);
     fframes::svgr!(<g font-family={MONO} opacity={ramp(frame, 0.0)}>
         <text x="160" y="160" font-size="30" font-weight="600" fill={BLUE}>{number}</text>
         <text x="236" y="160" font-size="26" font-weight="500" letter-spacing="5" fill={INK}>{name}</text>
-        <text x="1760" y="160" text-anchor="end" font-size="24" font-weight="500" letter-spacing="3" fill={MUTED}>{reference}</text>
         <rect x="160" y="182" width={rule} height="2" fill={INK} />
     </g>)
 }
@@ -309,12 +273,9 @@ impl Scene for Cover {
         let mid = 160.0 + dim_w / 2.0;
         let ticks = ramp(&frame, 1.4);
 
-        let spin = t * 12.0;
-        let target = ramp(&frame, 0.4);
-
         fframes::svgr!(<g opacity={sheet_opacity(&frame, 0)}>
             <g font-family={MONO} opacity={ramp(&frame, 0.0)}>
-                <text x="160" y="330" font-size="28" font-weight="500" letter-spacing="5" fill={MUTED}>"DWG SX-000 — SYSTEM SPECIFICATION"</text>
+                <text x="160" y="330" font-size="28" font-weight="500" letter-spacing="5" fill={MUTED}>"SYSTEM SPECIFICATION"</text>
                 <rect x="160" y="352" width="120" height="3" fill={BLUE} />
             </g>
             <text x="156" y="540" font-family={MONO} font-weight="600" font-size="168" letter-spacing="0" fill={INK}>{shown}</text>
@@ -336,21 +297,7 @@ impl Scene for Cover {
             </g>
 
             <g opacity={ramp(&frame, 1.7)} transform={format!("translate(0 {})", rise(&frame, 1.7))}>
-                <text x="158" y="790" font-family={COND} font-weight="600" font-size="96" fill={INK}>"Architecture, specified."</text>
-            </g>
-            <g opacity={ramp(&frame, 2.1)}>
-                <text x="160" y="860" font-family={MONO} font-weight="400" font-size="32" fill={MUTED}>"C4 models as code — for people and for LLM agents."</text>
-            </g>
-
-            // Registration target, slowly turning.
-            <g transform="translate(1600 340)" opacity={target} stroke={INK} fill="none" stroke-width="1.5">
-                <circle r="70" />
-                <circle r="34" stroke={BLUE} />
-                <line x1="-100" y1="0" x2="100" y2="0" />
-                <line x1="0" y1="-100" x2="0" y2="100" />
-                <g transform={format!("rotate({spin})")} stroke={BLUE} stroke-width="3">
-                    <path d="M0 -70 A70 70 0 0 1 70 0" />
-                </g>
+                <text x="158" y="800" font-family={COND} font-weight="600" font-size="96" fill={INK}>"Architecture, specified."</text>
             </g>
         </g>)
     }
@@ -399,13 +346,13 @@ impl Scene for Problem {
     }
 
     fn render_frame<'a>(&'a self, frame: Frame, _ctx: &FFramesContext<'a, '_>) -> Svgr<'a> {
-        let body = ["Slides, wikis, whiteboards:", "every copy tells a", "different story —", "and none match the code."];
+        let body = ["Slides, wikis, whiteboards —", "none match the code."];
         let lines: Vec<Svgr> = body
             .iter()
             .enumerate()
             .map(|(i, line)| {
                 let start = 0.8 + i as f32 * 0.12;
-                let fill = if i == 3 { RED } else { INK };
+                let fill = if i == 1 { RED } else { INK };
                 fframes::svgr!(<g opacity={ramp(&frame, start)} transform={format!("translate(0 {})", rise(&frame, start) * 0.5)}>
                     <text x="160" y={440.0 + i as f32 * 60.0} font-family={MONO} font-size="36" font-weight="400" fill={fill}>{*line}</text>
                 </g>)
@@ -413,12 +360,11 @@ impl Scene for Problem {
             .collect();
 
         fframes::svgr!(<g opacity={sheet_opacity(&frame, 1)}>
-            {header(&frame, "§1", "THE PROBLEM", "REQ SX-1.0")}
+            {header(&frame, "§1", "THE PROBLEM")}
             {title(&frame, "Diagrams drift.", 0.2)}
             {lines}
-            {stale_card(&frame, 940.0, 360.0, -2.0, "FIG.1  wiki/arch.png", ["Web", "API", "DB"], 0.6, "OUTDATED", 2.3)}
-            {stale_card(&frame, 1370.0, 400.0, 1.5, "FIG.2  slides_v7.key", ["Web", "Auth", "DB"], 0.75, "NO API?", 2.6)}
-            {stale_card(&frame, 1140.0, 640.0, -1.0, "FIG.3  whiteboard.jpg", ["Shop", "Pay", "Store"], 0.9, "CONTRADICTS", 2.9)}
+            {stale_card(&frame, 950.0, 380.0, -2.0, "FIG.1  wiki/arch.png", ["Web", "API", "DB"], 0.6, "OUTDATED", 2.2)}
+            {stale_card(&frame, 1370.0, 570.0, 1.5, "FIG.2  slides_v7.key", ["Web", "Auth", "DB"], 0.8, "CONTRADICTS", 2.6)}
         </g>)
     }
 }
@@ -488,7 +434,7 @@ impl Scene for Model {
         let boundary = appear(1);
 
         fframes::svgr!(<g opacity={sheet_opacity(&frame, 2)}>
-            {header(&frame, "§2", "THE MODEL", "REQ SX-2.0")}
+            {header(&frame, "§2", "THE MODEL")}
             {title(&frame, "One model, as text.", 0.2)}
 
             <g opacity={panel}>
@@ -496,7 +442,6 @@ impl Scene for Model {
                 <line x1="160" y1="414" x2="960" y2="414" stroke={INK} stroke-width="1" />
                 <line x1="226" y1="414" x2="226" y2="870" stroke={GRID_MAJOR} stroke-width="1" />
                 <text x="180" y="400" font-family={MONO} font-size="22" font-weight="500" fill={MUTED}>"ws.dsl"</text>
-                <text x="940" y="400" text-anchor="end" font-family={MONO} font-size="22" font-weight="500" fill={MUTED}>"SOURCE OF TRUTH"</text>
             </g>
             {code}
 
@@ -582,7 +527,7 @@ impl Scene for Views {
             .collect();
 
         fframes::svgr!(<g opacity={sheet_opacity(&frame, 3)}>
-            {header(&frame, "§3", "VIEWS", "REQ SX-3.0")}
+            {header(&frame, "§3", "VIEWS")}
             {title(&frame, "Views are queries.", 0.2)}
             {frames}
             <g opacity={ramp(&frame, 1.9)} transform={format!("translate(0 {})", rise(&frame, 1.9) * 0.5)}>
@@ -617,23 +562,8 @@ impl Scene for Checked {
         let cmd1 = typed(cmd, t, 0.5, 45.0);
         let cmd2 = typed(cmd, t, 2.0, 45.0);
 
-        let clauses = [("4.1", "validate --strict"), ("4.2", "lint · review"), ("4.3", "diff git revisions"), ("4.4", "MCP server for agents")];
-        let list: Vec<Svgr> = clauses
-            .iter()
-            .enumerate()
-            .map(|(i, (n, text))| {
-                let start = 0.7 + i as f32 * 0.12;
-                let y = 420.0 + i as f32 * 66.0;
-                fframes::svgr!(<g opacity={ramp(&frame, start)} transform={format!("translate(0 {})", rise(&frame, start) * 0.5)} font-family={MONO} font-size="32">
-                    <text x="1240" y={y} font-weight="600" fill={BLUE}>{*n}</text>
-                    <text x="1330" y={y} font-weight="400" fill={INK}>{*text}</text>
-                    <line x1="1240" y1={y + 22.0} x2="1760" y2={y + 22.0} stroke={GRID_MAJOR} stroke-width="1.5" />
-                </g>)
-            })
-            .collect();
-
         fframes::svgr!(<g opacity={sheet_opacity(&frame, 4)}>
-            {header(&frame, "§4", "VERIFICATION", "REQ SX-4.0")}
+            {header(&frame, "§4", "VERIFICATION")}
             {title(&frame, "Checked like code.", 0.2)}
 
             <g opacity={ramp(&frame, 0.3)}>
@@ -651,8 +581,6 @@ impl Scene for Checked {
                 <text x="190" y="616" fill={CARD} opacity={show(2.0)}>{cmd2}</text>
                 <text x="190" y="664" fill={TERM_BLUE} font-weight="600" opacity={show(2.85)}>"OK  5 elements · 3 views · 0 findings"</text>
             </g>
-
-            {list}
 
             <g opacity={ramp(&frame, 3.0)} transform={format!("translate(0 {})", rise(&frame, 3.0) * 0.5)}>
                 <text x="160" y="810" font-family={COND} font-weight="600" font-size="52" fill={INK}>"Errors precise enough for an LLM agent"</text>
@@ -683,7 +611,7 @@ impl Scene for Release {
         let so = smooth((frame.seconds() - stamp_at) / 0.12);
 
         fframes::svgr!(<g opacity={sheet_opacity(&frame, 5)}>
-            {header(&frame, "§5", "RELEASE", "REQ SX-5.0")}
+            {header(&frame, "§5", "RELEASE")}
             <g opacity={ramp(&frame, 0.2)} transform={format!("translate(0 {})", rise(&frame, 0.2))}>
                 <text x="156" y="420" font-family={MONO} font-weight="600" font-size="140" fill={INK}>"structurizrx"</text>
             </g>
@@ -696,9 +624,6 @@ impl Scene for Release {
                     <tspan fill={BLUE}>"$ "</tspan>
                     "structurizrx serve ws.dsl --open"
                 </text>
-            </g>
-            <g opacity={ramp(&frame, 0.95)}>
-                <text x="160" y="760" font-family={MONO} font-size="28" font-weight="500" letter-spacing="4" fill={MUTED}>"SVG · PNG · MERMAID · PLANTUML · DOT · JSON"</text>
             </g>
 
             <g opacity={so} transform={format!("translate(1480 560) scale({s}) rotate(-8)")}>
