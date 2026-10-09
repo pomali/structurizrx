@@ -58,12 +58,16 @@ impl SourceLocations {
 
     /// Every located model id (elements, ports, relationships), unordered.
     pub fn iter(&self) -> impl Iterator<Item = (&str, &SourceLocation)> {
-        self.by_id.iter().map(|(id, location)| (id.as_str(), location))
+        self.by_id
+            .iter()
+            .map(|(id, location)| (id.as_str(), location))
     }
 
     /// Every view declared with an explicit key, unordered.
     pub fn views(&self) -> impl Iterator<Item = (&str, &SourceLocation)> {
-        self.views.iter().map(|(key, location)| (key.as_str(), location))
+        self.views
+            .iter()
+            .map(|(key, location)| (key.as_str(), location))
     }
 
     /// The statement declaring the view with `key`. Views without an explicit
@@ -89,7 +93,12 @@ impl SourceLocations {
         self.views.insert(key, location);
     }
 
-    pub(crate) fn push_decision(&mut self, id: String, element_id: Option<String>, location: SourceLocation) {
+    pub(crate) fn push_decision(
+        &mut self,
+        id: String,
+        element_id: Option<String>,
+        location: SourceLocation,
+    ) {
         self.decisions.push((id, element_id, location));
     }
 }

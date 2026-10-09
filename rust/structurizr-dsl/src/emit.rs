@@ -40,18 +40,87 @@ fn reserved_words() -> HashSet<String> {
         }
     }
     let extra = [
-        "workspace", "model", "views", "person", "softwaresystem", "container", "component",
-        "group", "element", "deploymentenvironment", "deploymentnode", "containerinstance",
-        "softwaresysteminstance", "infrastructurenode", "this", "auto", "include", "exclude",
-        "styles", "theme", "themes", "kind", "status", "port", "enterprise", "specification",
-        "milestones", "perspectives", "properties", "documentation", "docs", "configuration",
-        "filtered", "dynamic", "deployment", "systemlandscape", "systemcontext", "image",
-        "custom", "branding", "instanceof", "instances", "deploymentgroup", "protocol",
-        "direction", "technology", "description", "url", "tags", "perspective", "introduced",
-        "retired", "autolayout", "default", "in", "out", "inout", "sync", "async", "publish",
-        "subscribe", "dataflow", "dependency", "deploy", "idea", "draft", "specified",
-        "implemented", "deprecated", "focus", "layer", "slice", "paths", "rollup", "asof",
-        "delta", "lint", "depth", "splitby", "true", "false",
+        "workspace",
+        "model",
+        "views",
+        "person",
+        "softwaresystem",
+        "container",
+        "component",
+        "group",
+        "element",
+        "deploymentenvironment",
+        "deploymentnode",
+        "containerinstance",
+        "softwaresysteminstance",
+        "infrastructurenode",
+        "this",
+        "auto",
+        "include",
+        "exclude",
+        "styles",
+        "theme",
+        "themes",
+        "kind",
+        "status",
+        "port",
+        "enterprise",
+        "specification",
+        "milestones",
+        "perspectives",
+        "properties",
+        "documentation",
+        "docs",
+        "configuration",
+        "filtered",
+        "dynamic",
+        "deployment",
+        "systemlandscape",
+        "systemcontext",
+        "image",
+        "custom",
+        "branding",
+        "instanceof",
+        "instances",
+        "deploymentgroup",
+        "protocol",
+        "direction",
+        "technology",
+        "description",
+        "url",
+        "tags",
+        "perspective",
+        "introduced",
+        "retired",
+        "autolayout",
+        "default",
+        "in",
+        "out",
+        "inout",
+        "sync",
+        "async",
+        "publish",
+        "subscribe",
+        "dataflow",
+        "dependency",
+        "deploy",
+        "idea",
+        "draft",
+        "specified",
+        "implemented",
+        "deprecated",
+        "focus",
+        "layer",
+        "slice",
+        "paths",
+        "rollup",
+        "asof",
+        "delta",
+        "lint",
+        "depth",
+        "splitby",
+        "true",
+        "false",
     ];
     for w in extra {
         set.insert(w.to_string());
@@ -67,7 +136,10 @@ struct IdentAllocator {
 
 impl IdentAllocator {
     fn new(reserved: HashSet<String>) -> Self {
-        Self { used: HashSet::new(), reserved }
+        Self {
+            used: HashSet::new(),
+            reserved,
+        }
     }
 
     fn is_free(&self, candidate: &str) -> bool {
@@ -79,7 +151,11 @@ impl IdentAllocator {
     /// collision (case-insensitive) with an already-used identifier or a DSL
     /// keyword.
     fn alloc(&mut self, base: &str) -> String {
-        let base = if base.is_empty() { "element".to_string() } else { base.to_string() };
+        let base = if base.is_empty() {
+            "element".to_string()
+        } else {
+            base.to_string()
+        };
         let base = if base.chars().next().is_some_and(|c| c.is_ascii_digit()) {
             format!("_{}", base)
         } else {
@@ -123,7 +199,11 @@ fn camel_from_name(name: &str) -> String {
         let is_acronym = word.chars().count() > 1
             && word.chars().any(char::is_alphabetic)
             && !word.chars().any(char::is_lowercase);
-        let word = if is_acronym { word.to_lowercase() } else { word.clone() };
+        let word = if is_acronym {
+            word.to_lowercase()
+        } else {
+            word.clone()
+        };
         let mut chars = word.chars();
         if let Some(first) = chars.next() {
             if i == 0 {
@@ -182,7 +262,11 @@ impl Ctx {
             if *kind == ElementType::Relationship {
                 continue;
             }
-            let spelling = identifiers.spellings.get(lower_key).cloned().unwrap_or_else(|| lower_key.clone());
+            let spelling = identifiers
+                .spellings
+                .get(lower_key)
+                .cloned()
+                .unwrap_or_else(|| lower_key.clone());
             candidates.entry(id.clone()).or_default().push(spelling);
         }
         for (id, mut opts) in candidates {
@@ -199,7 +283,11 @@ impl Ctx {
             if *kind != ElementType::Relationship {
                 continue;
             }
-            let spelling = identifiers.spellings.get(lower_key).cloned().unwrap_or_else(|| lower_key.clone());
+            let spelling = identifiers
+                .spellings
+                .get(lower_key)
+                .cloned()
+                .unwrap_or_else(|| lower_key.clone());
             let chosen = alloc.alloc(&spelling);
             rel_name.insert(id.clone(), chosen);
         }
@@ -279,7 +367,10 @@ impl Ctx {
             let key = if self.rel_name.contains_key(&r.id) {
                 "model".to_string()
             } else {
-                scope.get(&r.source_id).cloned().unwrap_or_else(|| "model".to_string())
+                scope
+                    .get(&r.source_id)
+                    .cloned()
+                    .unwrap_or_else(|| "model".to_string())
             };
             self.scope_rels.entry(key).or_default().push(r);
         }
@@ -386,9 +477,17 @@ impl Ctx {
         let mut map = HashMap::new();
         for port in ports {
             let is_valid = !port.id.is_empty()
-                && port.id.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_')
+                && port
+                    .id
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphabetic() || c == '_')
                 && port.id.chars().all(|c| c.is_alphanumeric() || c == '_');
-            let base = if is_valid { port.id.clone() } else { camel_from_name(&port.name) };
+            let base = if is_valid {
+                port.id.clone()
+            } else {
+                camel_from_name(&port.name)
+            };
             let ident = alloc.alloc(&base);
             map.insert(port.id.clone(), ident);
         }
@@ -424,7 +523,10 @@ impl Ctx {
         self.collect_deployment_relationships(ws.model.deployment_nodes.iter().flatten());
     }
 
-    fn collect_deployment_relationships<'a>(&mut self, nodes: impl Iterator<Item = &'a DeploymentNode>) {
+    fn collect_deployment_relationships<'a>(
+        &mut self,
+        nodes: impl Iterator<Item = &'a DeploymentNode>,
+    ) {
         for node in nodes {
             for r in node.relationships.iter().flatten() {
                 self.rel_by_id.insert(r.id.clone(), r.clone());
@@ -451,7 +553,10 @@ impl Ctx {
     }
 
     fn ident(&self, id: &str) -> String {
-        self.id_to_ident.get(id).cloned().unwrap_or_else(|| id.to_string())
+        self.id_to_ident
+            .get(id)
+            .cloned()
+            .unwrap_or_else(|| id.to_string())
     }
 
     /// An endpoint identifier: `elemIdent` or `elemIdent.portIdent`.
@@ -495,8 +600,9 @@ fn insert_path<T>(nodes: &mut Vec<Node<T>>, path: &[String], item: T) {
         return;
     }
     let head = &path[0];
-    if let Some(Node::Group(_, children)) =
-        nodes.iter_mut().find(|n| matches!(n, Node::Group(name, _) if name == head))
+    if let Some(Node::Group(_, children)) = nodes
+        .iter_mut()
+        .find(|n| matches!(n, Node::Group(name, _) if name == head))
     {
         insert_path(children, &path[1..], item);
         return;
@@ -569,7 +675,14 @@ fn strip_tags(tags: &Option<String>, defaults: &[&str]) -> (Option<String>, bool
         }
         remaining.push(p.to_string());
     }
-    (if remaining.is_empty() { None } else { Some(remaining.join(",")) }, uncertain)
+    (
+        if remaining.is_empty() {
+            None
+        } else {
+            Some(remaining.join(","))
+        },
+        uncertain,
+    )
 }
 
 fn status_word(s: Status) -> &'static str {
@@ -655,8 +768,15 @@ impl Ctx {
         out.line(0, &format!("workspace{} {{", name_desc));
         out.line(0, "");
 
-        if ws.documentation.as_ref().is_some_and(|d| d.decisions.as_ref().is_some_and(|v| !v.is_empty())) {
-            out.line(1, "// decisions were imported from an !adrs directory; re-add the directive by hand");
+        if ws
+            .documentation
+            .as_ref()
+            .is_some_and(|d| d.decisions.as_ref().is_some_and(|v| !v.is_empty()))
+        {
+            out.line(
+                1,
+                "// decisions were imported from an !adrs directory; re-add the directive by hand",
+            );
         }
 
         if let Some(milestones) = &ws.milestones {
@@ -725,7 +845,10 @@ impl Ctx {
         let mut keys: Vec<&String> = props.keys().collect();
         keys.sort();
         for k in keys {
-            out.line(indent + 1, &format!("{} {}", bare_or_quote(k), quote(&props[k])));
+            out.line(
+                indent + 1,
+                &format!("{} {}", bare_or_quote(k), quote(&props[k])),
+            );
         }
         out.line(indent, "}");
     }
@@ -945,7 +1068,12 @@ impl Ctx {
         let head = format!(
             "{} = container{}",
             self.ident(&c.id),
-            positional(&[Some(c.name.clone()), c.description.clone(), c.technology.clone(), tags])
+            positional(&[
+                Some(c.name.clone()),
+                c.description.clone(),
+                c.technology.clone(),
+                tags
+            ])
         );
 
         let mut body = Out::new();
@@ -998,7 +1126,12 @@ impl Ctx {
         let head = format!(
             "{} = component{}",
             self.ident(&comp.id),
-            positional(&[Some(comp.name.clone()), comp.description.clone(), comp.technology.clone(), tags])
+            positional(&[
+                Some(comp.name.clone()),
+                comp.description.clone(),
+                comp.technology.clone(),
+                tags
+            ])
         );
         self.render_element_common(
             out,
@@ -1023,7 +1156,12 @@ impl Ctx {
         let head = format!(
             "{} = element{}",
             self.ident(&ce.id),
-            positional(&[Some(ce.name.clone()), ce.metadata.clone(), ce.description.clone(), tags])
+            positional(&[
+                Some(ce.name.clone()),
+                ce.metadata.clone(),
+                ce.description.clone(),
+                tags
+            ])
         );
         self.render_element_common(
             out,
@@ -1045,7 +1183,15 @@ impl Ctx {
 
     /// Render a leaf element (person/component/custom element: no nested
     /// elements of their own, only attrs+ports+relationships).
-    fn render_element_common(&self, out: &mut Out, indent: usize, head: &str, uncertain: bool, attrs: Attrs, element_id: &str) {
+    fn render_element_common(
+        &self,
+        out: &mut Out,
+        indent: usize,
+        head: &str,
+        uncertain: bool,
+        attrs: Attrs,
+        element_id: &str,
+    ) {
         let mut body = Out::new();
         self.render_attrs(&mut body, indent + 1, &attrs);
         for port in attrs.ports.into_iter().flatten() {
@@ -1061,7 +1207,13 @@ impl Ctx {
     /// `allow_name` is false for deployment-environment-level relationships:
     /// that grammar position doesn't accept `name = a -> b` (only bare
     /// `a -> b`), so a named relationship there is emitted unnamed.
-    fn render_relationships_named(&self, out: &mut Out, indent: usize, rels: &[Relationship], allow_name: bool) {
+    fn render_relationships_named(
+        &self,
+        out: &mut Out,
+        indent: usize,
+        rels: &[Relationship],
+        allow_name: bool,
+    ) {
         for r in rels {
             if r.linked_relationship_id.is_some() {
                 continue;
@@ -1070,12 +1222,25 @@ impl Ctx {
         }
     }
 
-    fn render_relationship(&self, out: &mut Out, indent: usize, r: &Relationship, allow_name: bool) {
+    fn render_relationship(
+        &self,
+        out: &mut Out,
+        indent: usize,
+        r: &Relationship,
+        allow_name: bool,
+    ) {
         let (tags, uncertain) = strip_tags(&r.tags, &["Relationship"]);
         let src = self.endpoint(&r.source_id, &r.source_port_id);
         let dst = self.endpoint(&r.destination_id, &r.destination_port_id);
-        let name = if allow_name { self.rel_name.get(&r.id).cloned() } else { None };
-        let prefix = name.as_deref().map(|n| format!("{} = ", n)).unwrap_or_default();
+        let name = if allow_name {
+            self.rel_name.get(&r.id).cloned()
+        } else {
+            None
+        };
+        let prefix = name
+            .as_deref()
+            .map(|n| format!("{} = ", n))
+            .unwrap_or_default();
         let head = format!(
             "{}{} -> {}{}",
             prefix,
@@ -1093,7 +1258,10 @@ impl Ctx {
             || r.properties.as_ref().is_some_and(|p| !p.is_empty());
 
         if !needs_body {
-            out.line(indent, &format!("{}{}", head, if uncertain { " ?" } else { "" }));
+            out.line(
+                indent,
+                &format!("{}{}", head, if uncertain { " ?" } else { "" }),
+            );
             return;
         }
 
@@ -1122,14 +1290,22 @@ impl Ctx {
             }
         }
 
-        out.line(indent, &format!("{}{} {{", head, if uncertain { " ?" } else { "" }));
+        out.line(
+            indent,
+            &format!("{}{} {{", head, if uncertain { " ?" } else { "" }),
+        );
         out.buf.push_str(&body.buf);
         out.line(indent, "}");
     }
 
     // ─── Deployment ─────────────────────────────────────────────────────
 
-    fn render_deployment_environments(&self, out: &mut Out, indent: usize, nodes: &[DeploymentNode]) {
+    fn render_deployment_environments(
+        &self,
+        out: &mut Out,
+        indent: usize,
+        nodes: &[DeploymentNode],
+    ) {
         let mut order: Vec<String> = Vec::new();
         let mut by_env: HashMap<String, Vec<&DeploymentNode>> = HashMap::new();
         for n in nodes {
@@ -1164,7 +1340,12 @@ impl Ctx {
         let mut head = format!(
             "{} = deploymentNode{}",
             self.ident(&node.id),
-            positional(&[Some(node.name.clone()), node.description.clone(), node.technology.clone(), tags])
+            positional(&[
+                Some(node.name.clone()),
+                node.description.clone(),
+                node.technology.clone(),
+                tags
+            ])
         );
         if let Some(c) = count {
             head.push(' ');
@@ -1219,7 +1400,12 @@ impl Ctx {
         emit_block(out, indent, &head, false, &body.buf);
     }
 
-    fn render_software_system_instance(&self, out: &mut Out, indent: usize, ssi: &SoftwareSystemInstance) {
+    fn render_software_system_instance(
+        &self,
+        out: &mut Out,
+        indent: usize,
+        ssi: &SoftwareSystemInstance,
+    ) {
         let (tags, _uncertain) = strip_tags(&ssi.tags, &["Software System Instance"]);
         let ref_ident = self.ref_or_raw(&ssi.software_system_id);
         let head = format!(
@@ -1245,7 +1431,12 @@ impl Ctx {
         let head = format!(
             "{} = infrastructureNode{}",
             self.ident(&inf.id),
-            positional(&[Some(inf.name.clone()), inf.description.clone(), inf.technology.clone(), tags])
+            positional(&[
+                Some(inf.name.clone()),
+                inf.description.clone(),
+                inf.technology.clone(),
+                tags
+            ])
         );
         let mut body = Out::new();
         if let Some(props) = &inf.properties {
@@ -1345,7 +1536,11 @@ impl Ctx {
             if skip_auto_materialized(&v.key) {
                 continue;
             }
-            let scope = v.software_system_id.as_deref().map(|id| self.ident(id)).unwrap_or_else(|| "*".to_string());
+            let scope = v
+                .software_system_id
+                .as_deref()
+                .map(|id| self.ident(id))
+                .unwrap_or_else(|| "*".to_string());
             let head = format!(
                 "deployment {} {}{}",
                 scope,
@@ -1385,7 +1580,13 @@ impl Ctx {
                 if !themes.is_empty() {
                     let words: Vec<String> = themes
                         .iter()
-                        .map(|t| if t == DEFAULT_THEME_URL { "default".to_string() } else { quote(t) })
+                        .map(|t| {
+                            if t == DEFAULT_THEME_URL {
+                                "default".to_string()
+                            } else {
+                                quote(t)
+                            }
+                        })
                         .collect();
                     out.line(2, &format!("theme {}", words.join(" ")));
                 }
@@ -1407,7 +1608,12 @@ impl Ctx {
         layout: Option<&AutomaticLayout>,
     ) {
         let scope = scope_ident.map(|s| format!(" {}", s)).unwrap_or_default();
-        let head = format!("{}{}{}", keyword, scope, positional(&[key.clone(), title.clone()]));
+        let head = format!(
+            "{}{}{}",
+            keyword,
+            scope,
+            positional(&[key.clone(), title.clone()])
+        );
         let mut body = Out::new();
         self.render_include_and_layout(&mut body, 3, elements, description, layout);
         emit_block(out, 2, &head, false, &body.buf);
@@ -1436,7 +1642,11 @@ impl Ctx {
             out.line(indent, &format!("description {}", quote(desc)));
         }
         if let Some(layout) = layout {
-            let dir = layout.rank_direction.as_deref().map(rank_dir_word).unwrap_or_else(|| "tb".to_string());
+            let dir = layout
+                .rank_direction
+                .as_deref()
+                .map(rank_dir_word)
+                .unwrap_or_else(|| "tb".to_string());
             let mut line = format!("autoLayout {}", dir);
             if let (Some(rs), Some(ns)) = (layout.rank_separation, layout.node_separation) {
                 line.push_str(&format!(" {} {}", rs, ns));
@@ -1466,27 +1676,51 @@ impl Ctx {
     }
 
     fn render_dynamic_view(&self, out: &mut Out, v: &DynamicView) {
-        let scope = v.element_id.as_deref().map(|id| self.ident(id)).unwrap_or_else(|| "*".to_string());
-        let head = format!("dynamic {}{}", scope, positional(&[v.key.clone(), v.title.clone()]));
+        let scope = v
+            .element_id
+            .as_deref()
+            .map(|id| self.ident(id))
+            .unwrap_or_else(|| "*".to_string());
+        let head = format!(
+            "dynamic {}{}",
+            scope,
+            positional(&[v.key.clone(), v.title.clone()])
+        );
         let mut steps: Vec<&RelationshipView> = v.relationship_views.iter().flatten().collect();
-        steps.sort_by_key(|rv| rv.order.as_deref().and_then(|o| o.parse::<i64>().ok()).unwrap_or(0));
+        steps.sort_by_key(|rv| {
+            rv.order
+                .as_deref()
+                .and_then(|o| o.parse::<i64>().ok())
+                .unwrap_or(0)
+        });
         let mut body = Out::new();
         for rv in steps {
-            let Some(r) = self.rel_by_id.get(&rv.id) else { continue };
+            let Some(r) = self.rel_by_id.get(&rv.id) else {
+                continue;
+            };
             let (src, dst) = if rv.response == Some(true) {
                 (&r.destination_id, &r.source_id)
             } else {
                 (&r.source_id, &r.destination_id)
             };
             let desc = rv.description.clone().or_else(|| r.description.clone());
-            let line = format!("{} -> {}{}", self.ident(src), self.ident(dst), positional(&[desc]));
+            let line = format!(
+                "{} -> {}{}",
+                self.ident(src),
+                self.ident(dst),
+                positional(&[desc])
+            );
             body.line(3, &line);
         }
         if let Some(desc) = &v.description {
             body.line(3, &format!("description {}", quote(desc)));
         }
         if let Some(layout) = &v.automatic_layout {
-            let dir = layout.rank_direction.as_deref().map(rank_dir_word).unwrap_or_else(|| "tb".to_string());
+            let dir = layout
+                .rank_direction
+                .as_deref()
+                .map(rank_dir_word)
+                .unwrap_or_else(|| "tb".to_string());
             body.line(3, &format!("autoLayout {}", dir));
         }
         emit_block(out, 2, &head, false, &body.buf);
@@ -1495,10 +1729,21 @@ impl Ctx {
     fn auto_view_line(&self, spec: &AutoViewSpec) -> String {
         match spec.generator.as_str() {
             "focus" => {
-                let target = spec.target.as_deref().map(|t| self.ref_or_raw(t)).unwrap_or_default();
+                let target = spec
+                    .target
+                    .as_deref()
+                    .map(|t| self.ref_or_raw(t))
+                    .unwrap_or_default();
                 let mut opts = Vec::new();
                 if let Some(d) = spec.depth {
-                    opts.push(format!("depth {}", if d == u32::MAX { "*".to_string() } else { d.to_string() }));
+                    opts.push(format!(
+                        "depth {}",
+                        if d == u32::MAX {
+                            "*".to_string()
+                        } else {
+                            d.to_string()
+                        }
+                    ));
                 }
                 if let Some(dir) = &spec.direction {
                     opts.push(format!("direction {}", dir));
@@ -1516,11 +1761,26 @@ impl Ctx {
                 }
             }
             "perspective" | "layer" | "asof" | "rollup" => {
-                format!("auto {} {}", spec.generator, spec.target.as_deref().map(bare_or_quote).unwrap_or_default())
+                format!(
+                    "auto {} {}",
+                    spec.generator,
+                    spec.target
+                        .as_deref()
+                        .map(bare_or_quote)
+                        .unwrap_or_default()
+                )
             }
             "paths" => {
-                let t1 = spec.target.as_deref().map(|t| self.ref_or_raw(t)).unwrap_or_default();
-                let t2 = spec.target2.as_deref().map(|t| self.ref_or_raw(t)).unwrap_or_default();
+                let t1 = spec
+                    .target
+                    .as_deref()
+                    .map(|t| self.ref_or_raw(t))
+                    .unwrap_or_default();
+                let t2 = spec
+                    .target2
+                    .as_deref()
+                    .map(|t| self.ref_or_raw(t))
+                    .unwrap_or_default();
                 format!("auto paths {} {}", t1, t2)
             }
             "delta" => format!(
@@ -1528,7 +1788,10 @@ impl Ctx {
                 spec.target.as_deref().unwrap_or_default(),
                 spec.target2.as_deref().unwrap_or_default()
             ),
-            "slice" => format!("auto slice {}", spec.expression.as_deref().unwrap_or_default()),
+            "slice" => format!(
+                "auto slice {}",
+                spec.expression.as_deref().unwrap_or_default()
+            ),
             "lint" => "auto lint".to_string(),
             _ => "auto".to_string(),
         }
@@ -1618,7 +1881,10 @@ enum ModelLeaf<'a> {
 /// lines (with trailing newline), or empty.
 fn emit_block(out: &mut Out, indent: usize, head: &str, uncertain: bool, body: &str) {
     if body.is_empty() {
-        out.line(indent, &format!("{}{}", head, if uncertain { " ?" } else { "" }));
+        out.line(
+            indent,
+            &format!("{}{}", head, if uncertain { " ?" } else { "" }),
+        );
     } else {
         if uncertain {
             out.line(indent, &format!("{} ? {{", head));
@@ -1631,7 +1897,9 @@ fn emit_block(out: &mut Out, indent: usize, head: &str, uncertain: bool, body: &
 }
 
 fn bare_or_quote(s: &str) -> String {
-    let simple = !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.');
+    let simple = !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.');
     if simple {
         s.to_string()
     } else {

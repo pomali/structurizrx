@@ -43,7 +43,11 @@ enum Commands {
     Render {
         file: PathBuf,
         /// Output format: svg, png, mermaid, plantuml, or dot
-        #[arg(long, default_value = "plantuml", value_name = "svg|png|mermaid|plantuml|dot")]
+        #[arg(
+            long,
+            default_value = "plantuml",
+            value_name = "svg|png|mermaid|plantuml|dot"
+        )]
         format: String,
         #[arg(long, short, default_value = ".")]
         output: PathBuf,
@@ -69,9 +73,7 @@ enum Commands {
         output: PathBuf,
     },
     /// Print a compact plain-text summary of the model, sized for LLM context
-    Digest {
-        file: PathBuf,
-    },
+    Digest { file: PathBuf },
     /// Run a selector expression against a workspace (spec §6.2),
     /// e.g. `query ws.dsl "element.tag==Database"` or `query ws.dsl "->api->2"`
     Query {
@@ -136,7 +138,11 @@ enum Commands {
     Clusters {
         file: PathBuf,
         /// Level to project the model onto
-        #[arg(long, default_value = "container", value_name = "system|container|component")]
+        #[arg(
+            long,
+            default_value = "container",
+            value_name = "system|container|component"
+        )]
         level: String,
         /// Keep only elements carrying one of these tags (repeatable)
         #[arg(long)]
@@ -253,7 +259,11 @@ enum LoadError {
 }
 
 fn load_workspace_detailed(path: &Path) -> std::result::Result<Workspace, LoadError> {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
     if ext == "json" {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read {}", path.display()))
@@ -299,21 +309,38 @@ fn load_workspace(path: &PathBuf) -> Result<Workspace> {
             .with_context(|| format!("Failed to parse JSON from {}", path.display()))?;
         Ok(ws)
     } else {
-        parse_file(path)
-            .with_context(|| format!("Failed to parse DSL from {}", path.display()))
+        parse_file(path).with_context(|| format!("Failed to parse DSL from {}", path.display()))
     }
 }
 
 /// View-type name paired with how many views of that type are defined.
 fn view_type_counts(views: &ViewSet) -> Vec<(&'static str, usize)> {
     vec![
-        ("systemLandscape", views.system_landscape_views.as_ref().map_or(0, Vec::len)),
-        ("systemContext", views.system_context_views.as_ref().map_or(0, Vec::len)),
-        ("container", views.container_views.as_ref().map_or(0, Vec::len)),
-        ("component", views.component_views.as_ref().map_or(0, Vec::len)),
+        (
+            "systemLandscape",
+            views.system_landscape_views.as_ref().map_or(0, Vec::len),
+        ),
+        (
+            "systemContext",
+            views.system_context_views.as_ref().map_or(0, Vec::len),
+        ),
+        (
+            "container",
+            views.container_views.as_ref().map_or(0, Vec::len),
+        ),
+        (
+            "component",
+            views.component_views.as_ref().map_or(0, Vec::len),
+        ),
         ("dynamic", views.dynamic_views.as_ref().map_or(0, Vec::len)),
-        ("deployment", views.deployment_views.as_ref().map_or(0, Vec::len)),
-        ("filtered", views.filtered_views.as_ref().map_or(0, Vec::len)),
+        (
+            "deployment",
+            views.deployment_views.as_ref().map_or(0, Vec::len),
+        ),
+        (
+            "filtered",
+            views.filtered_views.as_ref().map_or(0, Vec::len),
+        ),
         ("image", views.image_views.as_ref().map_or(0, Vec::len)),
         ("custom", views.custom_views.as_ref().map_or(0, Vec::len)),
     ]
@@ -450,7 +477,11 @@ async fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
-        Commands::Render { file, format, output } => {
+        Commands::Render {
+            file,
+            format,
+            output,
+        } => {
             let mut workspace = load_workspace(&file)?;
             let generated = structurizr_query::generate_views(&mut workspace)
                 .map_err(|e| anyhow::anyhow!("view generation: {}", e))?;
@@ -528,7 +559,11 @@ async fn main() -> Result<()> {
             }
             print!("{}", structurizr_query::digest(&workspace));
         }
-        Commands::Query { file, expression, json } => {
+        Commands::Query {
+            file,
+            expression,
+            json,
+        } => {
             let workspace = load_workspace(&file)?;
             let selection = structurizr_query::query(&expression, &workspace)
                 .map_err(|e| anyhow::anyhow!("{}", e))?;
@@ -567,13 +602,30 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        Commands::Locate { file, references, json } => {
+        Commands::Locate {
+            file,
+            references,
+            json,
+        } => {
             if !locate::run(&file, &references, json)? {
                 std::process::exit(1);
             }
         }
-        Commands::Diff { file, from, to, against, json, fail_on_change } => {
-            let changed = diff::run(&diff::Args { file, from, to, against, json })?;
+        Commands::Diff {
+            file,
+            from,
+            to,
+            against,
+            json,
+            fail_on_change,
+        } => {
+            let changed = diff::run(&diff::Args {
+                file,
+                from,
+                to,
+                against,
+                json,
+            })?;
             if changed && fail_on_change {
                 std::process::exit(1);
             }
@@ -583,34 +635,77 @@ async fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
-        Commands::Clusters { file, level, include, exclude, no_implied, json } => {
-            clusters::run(&clusters::Args { file, level, include, exclude, implied: !no_implied, json })?;
+        Commands::Clusters {
+            file,
+            level,
+            include,
+            exclude,
+            no_implied,
+            json,
+        } => {
+            clusters::run(&clusters::Args {
+                file,
+                level,
+                include,
+                exclude,
+                implied: !no_implied,
+                json,
+            })?;
         }
         Commands::Graph { file, format } => {
             graph::run(&file, &format)?;
         }
-        Commands::Add { file, statement, parent, json } => {
+        Commands::Add {
+            file,
+            statement,
+            parent,
+            json,
+        } => {
             edit::add(&file, &statement, &parent)?.print(json);
         }
-        Commands::Remove { file, reference, cascade, json } => {
+        Commands::Remove {
+            file,
+            reference,
+            cascade,
+            json,
+        } => {
             edit::remove(&file, &reference, cascade)?.print(json);
         }
-        Commands::Rename { file, identifier, new_identifier, json } => {
+        Commands::Rename {
+            file,
+            identifier,
+            new_identifier,
+            json,
+        } => {
             edit::rename(&file, &identifier, &new_identifier)?.print(json);
         }
-        Commands::Fmt { file, output, write, check, force } => {
+        Commands::Fmt {
+            file,
+            output,
+            write,
+            check,
+            force,
+        } => {
             let (text, losses) = edit::format(&file)?;
             if check {
                 let current = std::fs::read_to_string(&file)
                     .with_context(|| format!("Failed to read {}", file.display()))?;
                 if current != text {
-                    eprintln!("{} is not in canonical form (run `structurizrx fmt --write`)", file.display());
+                    eprintln!(
+                        "{} is not in canonical form (run `structurizrx fmt --write`)",
+                        file.display()
+                    );
                     std::process::exit(1);
                 }
             } else if write {
-                let is_json = file.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("json"));
+                let is_json = file
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| e.eq_ignore_ascii_case("json"));
                 if is_json {
-                    anyhow::bail!("--write would put DSL into a .json file; use --output ws.dsl instead");
+                    anyhow::bail!(
+                        "--write would put DSL into a .json file; use --output ws.dsl instead"
+                    );
                 }
                 if !losses.is_empty() && !force {
                     anyhow::bail!(
@@ -619,10 +714,12 @@ async fn main() -> Result<()> {
                         losses.join("; ")
                     );
                 }
-                std::fs::write(&file, &text).with_context(|| format!("Cannot write {}", file.display()))?;
+                std::fs::write(&file, &text)
+                    .with_context(|| format!("Cannot write {}", file.display()))?;
                 println!("formatted {}", file.display());
             } else if let Some(out) = output {
-                std::fs::write(&out, &text).with_context(|| format!("Cannot write {}", out.display()))?;
+                std::fs::write(&out, &text)
+                    .with_context(|| format!("Cannot write {}", out.display()))?;
                 for l in &losses {
                     eprintln!("note: {}", l);
                 }

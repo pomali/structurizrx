@@ -38,7 +38,10 @@ mod tests {
 
     #[test]
     fn suggests_close_match() {
-        assert_eq!(closest("statuss", ["status", "tags"]), Some("status".to_string()));
+        assert_eq!(
+            closest("statuss", ["status", "tags"]),
+            Some("status".to_string())
+        );
         assert_eq!(closest("shoop", ["shop", "user"]), Some("shop".to_string()));
     }
 
@@ -49,6 +52,9 @@ mod tests {
 
     #[test]
     fn case_insensitive() {
-        assert_eq!(closest("softwaresystm", ["softwareSystem"]), Some("softwareSystem".to_string()));
+        assert_eq!(
+            closest("softwaresystm", ["softwareSystem"]),
+            Some("softwareSystem".to_string())
+        );
     }
 }

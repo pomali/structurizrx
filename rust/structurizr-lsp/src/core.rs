@@ -167,7 +167,13 @@ impl Core {
         let file = location.file.as_ref().filter(|_| !doc.is_here(location))?;
         Some(Location {
             uri: Uri::from_file_path(file)?,
-            range: point_range(Pos { line: location.line, col: location.col }, len),
+            range: point_range(
+                Pos {
+                    line: location.line,
+                    col: location.col,
+                },
+                len,
+            ),
         })
     }
 
@@ -189,7 +195,11 @@ impl Core {
             None
         } else {
             let documents = self.documents.read().unwrap();
-            documents.get(uri)?.declarations.get(&word.to_lowercase()).copied()
+            documents
+                .get(uri)?
+                .declarations
+                .get(&word.to_lowercase())
+                .copied()
         };
         let decl_start = decl_pos.map(pos_to_position);
         Some(
@@ -204,7 +214,11 @@ impl Core {
         )
     }
 
-    pub fn document_highlight(&self, uri: &Uri, position: Position) -> Option<Vec<DocumentHighlight>> {
+    pub fn document_highlight(
+        &self,
+        uri: &Uri,
+        position: Position,
+    ) -> Option<Vec<DocumentHighlight>> {
         let (_, ranges) = self.identifier_ranges(uri, position)?;
         Some(
             ranges
@@ -225,11 +239,13 @@ impl Core {
         let cursor = position_to_pos(position);
         // The occurrence under the cursor, i.e. the one the editor will
         // highlight and pre-fill.
-        ranges.into_iter().find(|r| {
-            r.start.line as usize + 1 == cursor.line
-                && (r.start.character..=r.end.character).contains(&(cursor.col as u32 - 1))
-        })
-        .or_else(|| Some(point_range(cursor, word.chars().count())))
+        ranges
+            .into_iter()
+            .find(|r| {
+                r.start.line as usize + 1 == cursor.line
+                    && (r.start.character..=r.end.character).contains(&(cursor.col as u32 - 1))
+            })
+            .or_else(|| Some(point_range(cursor, word.chars().count())))
     }
 
     pub fn rename(&self, uri: &Uri, position: Position, new_name: &str) -> Option<WorkspaceEdit> {
@@ -376,22 +392,43 @@ impl<'a> Outline<'a> {
         self.names.insert(id, name);
         self.declared.push((id, name.to_string(), kind, None));
         for port in ports.iter().flatten() {
-            self.declared.push((&port.id, port.name.clone(), SymbolKind::PROPERTY, None));
+            self.declared
+                .push((&port.id, port.name.clone(), SymbolKind::PROPERTY, None));
         }
         self.relationships.extend(relationships.iter().flatten());
     }
 
     fn deployment_node(&mut self, node: &'a DeploymentNode) {
-        self.element(&node.id, &node.name, SymbolKind::NAMESPACE, &None, &node.relationships);
+        self.element(
+            &node.id,
+            &node.name,
+            SymbolKind::NAMESPACE,
+            &None,
+            &node.relationships,
+        );
         for inf in node.infrastructure_nodes.iter().flatten() {
-            self.element(&inf.id, &inf.name, SymbolKind::INTERFACE, &None, &inf.relationships);
+            self.element(
+                &inf.id,
+                &inf.name,
+                SymbolKind::INTERFACE,
+                &None,
+                &inf.relationships,
+            );
         }
         for ci in node.container_instances.iter().flatten() {
-            let name = self.names.get(ci.container_id.as_str()).copied().unwrap_or("instance");
+            let name = self
+                .names
+                .get(ci.container_id.as_str())
+                .copied()
+                .unwrap_or("instance");
             self.element(&ci.id, name, SymbolKind::VARIABLE, &None, &ci.relationships);
         }
         for si in node.software_system_instances.iter().flatten() {
-            let name = self.names.get(si.software_system_id.as_str()).copied().unwrap_or("instance");
+            let name = self
+                .names
+                .get(si.software_system_id.as_str())
+                .copied()
+                .unwrap_or("instance");
             self.element(&si.id, name, SymbolKind::VARIABLE, &None, &si.relationships);
         }
         for child in node.children.iter().flatten() {
@@ -409,19 +446,49 @@ fn build_symbols(doc: &DocumentState, analyzed: &Analyzed) -> Vec<DocumentSymbol
     let model = &analyzed.workspace.model;
     let mut outline = Outline::default();
     for p in model.people.iter().flatten() {
-        outline.element(&p.id, &p.name, SymbolKind::OBJECT, &p.ports, &p.relationships);
+        outline.element(
+            &p.id,
+            &p.name,
+            SymbolKind::OBJECT,
+            &p.ports,
+            &p.relationships,
+        );
     }
     for s in model.software_systems.iter().flatten() {
-        outline.element(&s.id, &s.name, SymbolKind::MODULE, &s.ports, &s.relationships);
+        outline.element(
+            &s.id,
+            &s.name,
+            SymbolKind::MODULE,
+            &s.ports,
+            &s.relationships,
+        );
         for c in s.containers.iter().flatten() {
-            outline.element(&c.id, &c.name, SymbolKind::CLASS, &c.ports, &c.relationships);
+            outline.element(
+                &c.id,
+                &c.name,
+                SymbolKind::CLASS,
+                &c.ports,
+                &c.relationships,
+            );
             for comp in c.components.iter().flatten() {
-                outline.element(&comp.id, &comp.name, SymbolKind::STRUCT, &comp.ports, &comp.relationships);
+                outline.element(
+                    &comp.id,
+                    &comp.name,
+                    SymbolKind::STRUCT,
+                    &comp.ports,
+                    &comp.relationships,
+                );
             }
         }
     }
     for e in model.custom_elements.iter().flatten() {
-        outline.element(&e.id, &e.name, SymbolKind::OBJECT, &e.ports, &e.relationships);
+        outline.element(
+            &e.id,
+            &e.name,
+            SymbolKind::OBJECT,
+            &e.ports,
+            &e.relationships,
+        );
     }
     // After the static model, so instances can take their element's name.
     for node in model.deployment_nodes.iter().flatten() {
@@ -429,22 +496,44 @@ fn build_symbols(doc: &DocumentState, analyzed: &Analyzed) -> Vec<DocumentSymbol
     }
 
     let mut flat = Vec::new();
-    let here = |id: &str| analyzed.locations.get(id).filter(|location| doc.is_here(location));
+    let here = |id: &str| {
+        analyzed
+            .locations
+            .get(id)
+            .filter(|location| doc.is_here(location))
+    };
     for (id, name, kind, detail) in outline.declared {
         if let Some(location) = here(id) {
             flat.push(symbol(doc, location, name, kind, detail));
         }
     }
-    let name_of = |id: &str| outline.names.get(id).map_or_else(|| id.to_string(), |n| n.to_string());
+    let name_of = |id: &str| {
+        outline
+            .names
+            .get(id)
+            .map_or_else(|| id.to_string(), |n| n.to_string())
+    };
     for r in &outline.relationships {
         if let Some(location) = here(&r.id) {
             let name = format!("{} → {}", name_of(&r.source_id), name_of(&r.destination_id));
-            flat.push(symbol(doc, location, name, SymbolKind::EVENT, r.description.clone()));
+            flat.push(symbol(
+                doc,
+                location,
+                name,
+                SymbolKind::EVENT,
+                r.description.clone(),
+            ));
         }
     }
     for (key, location) in analyzed.locations.views() {
         if doc.is_here(location) {
-            flat.push(symbol(doc, location, format!("view {key}"), SymbolKind::PACKAGE, None));
+            flat.push(symbol(
+                doc,
+                location,
+                format!("view {key}"),
+                SymbolKind::PACKAGE,
+                None,
+            ));
         }
     }
     nest(flat)
@@ -462,7 +551,10 @@ fn symbol(
     kind: SymbolKind,
     detail: Option<String>,
 ) -> DocumentSymbol {
-    let start = pos_to_position(Pos { line: location.line, col: location.col });
+    let start = pos_to_position(Pos {
+        line: location.line,
+        col: location.col,
+    });
     let end_line = location.end_line.max(location.line);
     let end_character = doc
         .text
@@ -470,9 +562,15 @@ fn symbol(
         .nth(end_line - 1)
         .map_or(0, |line| line.chars().count() as u32);
     let end = if end_line == location.line {
-        Position { line: start.line, character: end_character.max(start.character + 1) }
+        Position {
+            line: start.line,
+            character: end_character.max(start.character + 1),
+        }
     } else {
-        Position { line: (end_line - 1) as u32, character: end_character }
+        Position {
+            line: (end_line - 1) as u32,
+            character: end_character,
+        }
     };
     DocumentSymbol {
         name,
@@ -481,7 +579,13 @@ fn symbol(
         tags: None,
         deprecated: None,
         range: Range { start, end },
-        selection_range: point_range(Pos { line: location.line, col: location.col }, 1),
+        selection_range: point_range(
+            Pos {
+                line: location.line,
+                col: location.col,
+            },
+            1,
+        ),
         children: None,
     }
 }
@@ -491,7 +595,11 @@ fn nest(mut flat: Vec<DocumentSymbol>) -> Vec<DocumentSymbol> {
     let key = |p: Position| (p.line, p.character);
     flat.sort_by_key(|s| (key(s.range.start), std::cmp::Reverse(key(s.range.end))));
 
-    fn attach(stack: &mut [DocumentSymbol], roots: &mut Vec<DocumentSymbol>, symbol: DocumentSymbol) {
+    fn attach(
+        stack: &mut [DocumentSymbol],
+        roots: &mut Vec<DocumentSymbol>,
+        symbol: DocumentSymbol,
+    ) {
         match stack.last_mut() {
             Some(parent) => parent.children.get_or_insert_with(Vec::new).push(symbol),
             None => roots.push(symbol),
@@ -502,7 +610,9 @@ fn nest(mut flat: Vec<DocumentSymbol>) -> Vec<DocumentSymbol> {
     let mut stack: Vec<DocumentSymbol> = Vec::new();
     for symbol in flat {
         while let Some(top) = stack.last() {
-            if key(top.range.start) <= key(symbol.range.start) && key(symbol.range.end) <= key(top.range.end) {
+            if key(top.range.start) <= key(symbol.range.start)
+                && key(symbol.range.end) <= key(top.range.end)
+            {
                 break;
             }
             let done = stack.pop().expect("non-empty");

@@ -286,12 +286,32 @@ impl<'a> Catalog<'a> {
             catalog.add(&p.id, &p.name, "person", None, &p.ports, &p.relationships);
         }
         for s in model.software_systems.iter().flatten() {
-            let system = catalog.add(&s.id, &s.name, "softwareSystem", None, &s.ports, &s.relationships);
+            let system = catalog.add(
+                &s.id,
+                &s.name,
+                "softwareSystem",
+                None,
+                &s.ports,
+                &s.relationships,
+            );
             for c in s.containers.iter().flatten() {
-                let container =
-                    catalog.add(&c.id, &c.name, "container", Some(system), &c.ports, &c.relationships);
+                let container = catalog.add(
+                    &c.id,
+                    &c.name,
+                    "container",
+                    Some(system),
+                    &c.ports,
+                    &c.relationships,
+                );
                 for comp in c.components.iter().flatten() {
-                    catalog.add(&comp.id, &comp.name, "component", Some(container), &comp.ports, &comp.relationships);
+                    catalog.add(
+                        &comp.id,
+                        &comp.name,
+                        "component",
+                        Some(container),
+                        &comp.ports,
+                        &comp.relationships,
+                    );
                 }
             }
         }
@@ -304,7 +324,11 @@ impl<'a> Catalog<'a> {
         }
 
         let views = &workspace.views;
-        let keys = views.system_landscape_views.iter().flatten().map(|v| &v.key)
+        let keys = views
+            .system_landscape_views
+            .iter()
+            .flatten()
+            .map(|v| &v.key)
             .chain(views.system_context_views.iter().flatten().map(|v| &v.key))
             .chain(views.container_views.iter().flatten().map(|v| &v.key))
             .chain(views.component_views.iter().flatten().map(|v| &v.key))
@@ -313,8 +337,14 @@ impl<'a> Catalog<'a> {
             .chain(views.filtered_views.iter().flatten().map(|v| &v.key));
         catalog.view_keys = keys.flatten().cloned().collect();
 
-        for d in workspace.documentation.iter().flat_map(|doc| doc.decisions.iter().flatten()) {
-            catalog.decisions.push((d.id.clone(), d.element_id.clone(), d.title.clone()));
+        for d in workspace
+            .documentation
+            .iter()
+            .flat_map(|doc| doc.decisions.iter().flatten())
+        {
+            catalog
+                .decisions
+                .push((d.id.clone(), d.element_id.clone(), d.title.clone()));
         }
         catalog
     }
@@ -355,7 +385,11 @@ impl<'a> Catalog<'a> {
             path,
             kind,
             parent,
-            ports: ports.iter().flatten().map(|p| (p.id.clone(), p.name.clone())).collect(),
+            ports: ports
+                .iter()
+                .flatten()
+                .map(|p| (p.id.clone(), p.name.clone()))
+                .collect(),
         });
         self.relationships.extend(relationships.iter().flatten());
         i
@@ -363,23 +397,59 @@ impl<'a> Catalog<'a> {
 
     fn add_deployment_node(&mut self, node: &'a DeploymentNode, parent: Option<usize>) {
         let i = match parent {
-            Some(_) => self.add(&node.id, &node.name, "deploymentNode", parent, &None, &node.relationships),
+            Some(_) => self.add(
+                &node.id,
+                &node.name,
+                "deploymentNode",
+                parent,
+                &None,
+                &node.relationships,
+            ),
             None => {
                 let environment = node.environment.as_deref().unwrap_or("Default");
                 let path = format!("{}/{}", environment, node.name);
-                self.add_at(&node.id, &node.name, path, "deploymentNode", None, &None, &node.relationships)
+                self.add_at(
+                    &node.id,
+                    &node.name,
+                    path,
+                    "deploymentNode",
+                    None,
+                    &None,
+                    &node.relationships,
+                )
             }
         };
         for inf in node.infrastructure_nodes.iter().flatten() {
-            self.add(&inf.id, &inf.name, "infrastructureNode", Some(i), &None, &inf.relationships);
+            self.add(
+                &inf.id,
+                &inf.name,
+                "infrastructureNode",
+                Some(i),
+                &None,
+                &inf.relationships,
+            );
         }
         for ci in node.container_instances.iter().flatten() {
             let name = self.name_of(&ci.container_id);
-            self.add(&ci.id, &name, "containerInstance", Some(i), &None, &ci.relationships);
+            self.add(
+                &ci.id,
+                &name,
+                "containerInstance",
+                Some(i),
+                &None,
+                &ci.relationships,
+            );
         }
         for si in node.software_system_instances.iter().flatten() {
             let name = self.name_of(&si.software_system_id);
-            self.add(&si.id, &name, "softwareSystemInstance", Some(i), &None, &si.relationships);
+            self.add(
+                &si.id,
+                &name,
+                "softwareSystemInstance",
+                Some(i),
+                &None,
+                &si.relationships,
+            );
         }
         for child in node.children.iter().flatten() {
             self.add_deployment_node(child, Some(i));
@@ -387,13 +457,17 @@ impl<'a> Catalog<'a> {
     }
 
     fn name_of(&self, id: &str) -> String {
-        self.by_id.get(id).map_or_else(|| id.to_string(), |&i| self.entries[i].name.clone())
+        self.by_id
+            .get(id)
+            .map_or_else(|| id.to_string(), |&i| self.entries[i].name.clone())
     }
 
     /// The canonical path of element `id`, or the id itself when the catalog
     /// has no such element.
     pub fn path_of(&self, id: &str) -> String {
-        self.by_id.get(id).map_or_else(|| id.to_string(), |&i| self.entries[i].path.clone())
+        self.by_id
+            .get(id)
+            .map_or_else(|| id.to_string(), |&i| self.entries[i].path.clone())
     }
 
     /// Every element and port path, in model order.
@@ -401,7 +475,11 @@ impl<'a> Catalog<'a> {
         let mut out = Vec::new();
         for e in &self.entries {
             out.push(e.path.clone());
-            out.extend(e.ports.iter().map(|(_, port)| format!("{}.{}", e.path, port)));
+            out.extend(
+                e.ports
+                    .iter()
+                    .map(|(_, port)| format!("{}.{}", e.path, port)),
+            );
         }
         out
     }
@@ -413,20 +491,32 @@ impl<'a> Catalog<'a> {
                 let ends = self.ends(path)?;
                 Ok(ends.into_iter().map(|end| self.end_target(end)).collect())
             }
-            Reference::Relationship { from, to, description } => {
-                self.resolve_relationship(from, to, description.as_deref())
-            }
+            Reference::Relationship {
+                from,
+                to,
+                description,
+            } => self.resolve_relationship(from, to, description.as_deref()),
             Reference::View(key) => {
                 let exact: Vec<&String> = self.view_keys.iter().filter(|k| *k == key).collect();
                 let found = if exact.is_empty() {
-                    self.view_keys.iter().filter(|k| k.eq_ignore_ascii_case(key)).collect()
+                    self.view_keys
+                        .iter()
+                        .filter(|k| k.eq_ignore_ascii_case(key))
+                        .collect()
                 } else {
                     exact
                 };
                 if found.is_empty() {
-                    return Err(Miss { kind: MissKind::View, name: key.clone(), candidates: self.view_keys.clone() });
+                    return Err(Miss {
+                        kind: MissKind::View,
+                        name: key.clone(),
+                        candidates: self.view_keys.clone(),
+                    });
                 }
-                Ok(found.into_iter().map(|k| Target::View { key: k.clone() }).collect())
+                Ok(found
+                    .into_iter()
+                    .map(|k| Target::View { key: k.clone() })
+                    .collect())
             }
             Reference::Decision(id) => {
                 let found: Vec<Target> = self
@@ -441,7 +531,11 @@ impl<'a> Catalog<'a> {
                     .collect();
                 if found.is_empty() {
                     let candidates = self.decisions.iter().map(|(d, _, _)| d.clone()).collect();
-                    return Err(Miss { kind: MissKind::Decision, name: id.clone(), candidates });
+                    return Err(Miss {
+                        kind: MissKind::Decision,
+                        name: id.clone(),
+                        candidates,
+                    });
                 }
                 Ok(found)
             }
@@ -454,7 +548,10 @@ impl<'a> Catalog<'a> {
     fn ends(&self, path: &str) -> Result<Vec<End>, Miss> {
         let key = path.trim().to_lowercase();
         let found: Vec<End> = match self.by_path.get(&key) {
-            Some(entries) => entries.iter().map(|&entry| End { entry, port: None }).collect(),
+            Some(entries) => entries
+                .iter()
+                .map(|&entry| End { entry, port: None })
+                .collect(),
             None => key
                 .rsplit_once('.')
                 .and_then(|(element, port)| {
@@ -468,14 +565,21 @@ impl<'a> Catalog<'a> {
                                 .ports
                                 .iter()
                                 .position(|(_, name)| name.to_lowercase() == port)
-                                .map(|p| End { entry, port: Some(p) })
+                                .map(|p| End {
+                                    entry,
+                                    port: Some(p),
+                                })
                         })
                         .collect()
                 })
                 .unwrap_or_default(),
         };
         if found.is_empty() {
-            return Err(Miss { kind: MissKind::Element, name: path.trim().to_string(), candidates: self.paths() });
+            return Err(Miss {
+                kind: MissKind::Element,
+                name: path.trim().to_string(),
+                candidates: self.paths(),
+            });
         }
         Ok(found)
     }
@@ -496,16 +600,27 @@ impl<'a> Catalog<'a> {
                 port_id: e.ports[p].0.clone(),
                 path: self.end_path(end),
             },
-            None => Target::Element { id: e.id.clone(), path: e.path.clone(), kind: e.kind },
+            None => Target::Element {
+                id: e.id.clone(),
+                path: e.path.clone(),
+                kind: e.kind,
+            },
         }
     }
 
-    fn resolve_relationship(&self, from: &str, to: &str, description: Option<&str>) -> Result<Vec<Target>, Miss> {
+    fn resolve_relationship(
+        &self,
+        from: &str,
+        to: &str,
+        description: Option<&str>,
+    ) -> Result<Vec<Target>, Miss> {
         let froms = self.ends(from)?;
         let tos = self.ends(to)?;
         let described = |r: &Relationship| {
             description.is_none_or(|d| {
-                r.description.as_deref().is_some_and(|rd| rd.trim().eq_ignore_ascii_case(d.trim()))
+                r.description
+                    .as_deref()
+                    .is_some_and(|rd| rd.trim().eq_ignore_ascii_case(d.trim()))
             })
         };
 
@@ -528,7 +643,10 @@ impl<'a> Catalog<'a> {
                 return Err(Miss {
                     kind: MissKind::Relationship,
                     name: description.unwrap_or_default().to_string(),
-                    candidates: between.iter().filter_map(|r| r.description.clone()).collect(),
+                    candidates: between
+                        .iter()
+                        .filter_map(|r| r.description.clone())
+                        .collect(),
                 });
             }
             return Ok(matched);
@@ -540,7 +658,9 @@ impl<'a> Catalog<'a> {
             let via: Vec<RelationshipMatch> = self
                 .relationships
                 .iter()
-                .filter(|r| self.within(&froms, &r.source_id) && self.within(&tos, &r.destination_id))
+                .filter(|r| {
+                    self.within(&froms, &r.source_id) && self.within(&tos, &r.destination_id)
+                })
                 .filter(|r| described(r))
                 .map(|r| self.relationship_match(r))
                 .collect();
@@ -563,13 +683,18 @@ impl<'a> Catalog<'a> {
     fn at_end(&self, ends: &[End], id: &str, port_id: Option<&str>) -> bool {
         ends.iter().any(|end| {
             let e = &self.entries[end.entry];
-            e.id == id && end.port.is_none_or(|p| Some(e.ports[p].0.as_str()) == port_id)
+            e.id == id
+                && end
+                    .port
+                    .is_none_or(|p| Some(e.ports[p].0.as_str()) == port_id)
         })
     }
 
     /// Whether element `id` is one of `ends` or a descendant of one.
     fn within(&self, ends: &[End], id: &str) -> bool {
-        let Some(&start) = self.by_id.get(id) else { return false };
+        let Some(&start) = self.by_id.get(id) else {
+            return false;
+        };
         ends.iter().any(|end| {
             let mut current = Some(start);
             while let Some(i) = current {
@@ -586,7 +711,10 @@ impl<'a> Catalog<'a> {
         let end = |id: &str, port_id: Option<&str>| {
             let path = self.path_of(id);
             let port = self.by_id.get(id).and_then(|&i| {
-                self.entries[i].ports.iter().find(|(pid, _)| Some(pid.as_str()) == port_id)
+                self.entries[i]
+                    .ports
+                    .iter()
+                    .find(|(pid, _)| Some(pid.as_str()) == port_id)
             });
             match port {
                 Some((_, name)) => format!("{path}.{name}"),
@@ -654,12 +782,25 @@ mod tests {
 
     #[test]
     fn parses_reference_forms() {
-        assert_eq!(parse_reference(" Shop/API "), Reference::Element("Shop/API".into()));
-        assert_eq!(parse_reference("view:context"), Reference::View("context".into()));
-        assert_eq!(parse_reference("Decision: 3"), Reference::Decision("3".into()));
+        assert_eq!(
+            parse_reference(" Shop/API "),
+            Reference::Element("Shop/API".into())
+        );
+        assert_eq!(
+            parse_reference("view:context"),
+            Reference::View("context".into())
+        );
+        assert_eq!(
+            parse_reference("Decision: 3"),
+            Reference::Decision("3".into())
+        );
         assert_eq!(
             parse_reference("Shop/API -> Shop/DB"),
-            Reference::Relationship { from: "Shop/API".into(), to: "Shop/DB".into(), description: None }
+            Reference::Relationship {
+                from: "Shop/API".into(),
+                to: "Shop/DB".into(),
+                description: None
+            }
         );
         assert_eq!(
             parse_reference(r#"Shop/API->Shop/DB "reads orders""#),
@@ -679,10 +820,16 @@ mod tests {
         .unwrap();
         assert_eq!(link.workspace.as_deref(), Some("big-bank"));
         assert_eq!(link.view.as_deref(), Some("containers"));
-        assert_eq!(link.selection, vec!["Shop/API", r#"Shop/API->Shop/DB "reads""#]);
+        assert_eq!(
+            link.selection,
+            vec!["Shop/API", r#"Shop/API->Shop/DB "reads""#]
+        );
 
         let graph = parse_viewer_link("http://h/workspace/shop/graph#sel=Shop").unwrap();
-        assert_eq!((graph.view, graph.selection), (None, vec!["Shop".to_string()]));
+        assert_eq!(
+            (graph.view, graph.selection),
+            (None, vec!["Shop".to_string()])
+        );
 
         let diagram = parse_viewer_link("/workspace/shop/diagram/context?x=1").unwrap();
         assert_eq!(diagram.view.as_deref(), Some("context"));
@@ -695,29 +842,59 @@ mod tests {
     #[test]
     fn resolves_elements_case_insensitively_and_names_with_dots() {
         let ws = workspace();
-        assert!(matches!(one(&ws, "shop/api"), Target::Element { kind: "container", ref path, .. } if path == "Shop/API"));
-        assert!(matches!(one(&ws, "Shop/shop.db"), Target::Element { kind: "container", .. }));
-        assert!(matches!(one(&ws, "Shop/API/Orders"), Target::Element { kind: "component", .. }));
+        assert!(
+            matches!(one(&ws, "shop/api"), Target::Element { kind: "container", ref path, .. } if path == "Shop/API")
+        );
+        assert!(matches!(
+            one(&ws, "Shop/shop.db"),
+            Target::Element {
+                kind: "container",
+                ..
+            }
+        ));
+        assert!(matches!(
+            one(&ws, "Shop/API/Orders"),
+            Target::Element {
+                kind: "component",
+                ..
+            }
+        ));
     }
 
     #[test]
     fn resolves_ports() {
         let ws = workspace();
-        assert!(matches!(one(&ws, "Shop/API.http"), Target::Port { ref path, .. } if path == "Shop/API.HTTP"));
+        assert!(
+            matches!(one(&ws, "Shop/API.http"), Target::Port { ref path, .. } if path == "Shop/API.HTTP")
+        );
     }
 
     #[test]
     fn resolves_deployment_elements_under_their_environment() {
         let ws = workspace();
-        assert!(matches!(one(&ws, "Production/Server"), Target::Element { kind: "deploymentNode", .. }));
-        assert!(matches!(one(&ws, "Production/Server/API"), Target::Element { kind: "containerInstance", .. }));
+        assert!(matches!(
+            one(&ws, "Production/Server"),
+            Target::Element {
+                kind: "deploymentNode",
+                ..
+            }
+        ));
+        assert!(matches!(
+            one(&ws, "Production/Server/API"),
+            Target::Element {
+                kind: "containerInstance",
+                ..
+            }
+        ));
     }
 
     #[test]
     fn resolves_relationships_narrowed_by_description() {
         let ws = workspace();
         assert_eq!(resolve(&ws, "Shop/API->Shop/shop.db").unwrap().len(), 2);
-        let Target::Relationship(r) = one(&ws, r#"Shop/API->Shop/shop.db "WRITES""#) else { panic!() };
+        let Target::Relationship(r) = one(&ws, r#"Shop/API->Shop/shop.db "WRITES""#) else {
+            panic!()
+        };
         assert_eq!(r.description.as_deref(), Some("writes"));
 
         let miss = resolve(&ws, r#"Shop/API->Shop/shop.db "deletes""#).unwrap_err();
@@ -728,21 +905,34 @@ mod tests {
     #[test]
     fn relationship_ends_include_ports() {
         let ws = workspace();
-        let Target::Relationship(r) = one(&ws, "User->Shop/API") else { panic!() };
+        let Target::Relationship(r) = one(&ws, "User->Shop/API") else {
+            panic!()
+        };
         assert_eq!(r.to, "Shop/API.HTTP");
-        assert!(matches!(one(&ws, "User->Shop/API.http"), Target::Relationship(_)));
+        assert!(matches!(
+            one(&ws, "User->Shop/API.http"),
+            Target::Relationship(_)
+        ));
     }
 
     #[test]
     fn undeclared_pairs_resolve_to_the_relationships_implying_them() {
         let ws = workspace();
-        let Target::Implied { from, to, via } = one(&ws, "Shop->Pay") else { panic!() };
+        let Target::Implied { from, to, via } = one(&ws, "Shop->Pay") else {
+            panic!()
+        };
         assert_eq!((from.as_str(), to.as_str()), ("Shop", "Pay"));
         assert_eq!(via.len(), 1);
-        assert_eq!((via[0].from.as_str(), via[0].to.as_str()), ("Shop/API/Orders", "Pay/Gateway"));
+        assert_eq!(
+            (via[0].from.as_str(), via[0].to.as_str()),
+            ("Shop/API/Orders", "Pay/Gateway")
+        );
 
         let miss = resolve(&ws, "Pay->Shop").unwrap_err();
-        assert_eq!((miss.kind, miss.name.as_str()), (MissKind::Relationship, "Pay->Shop"));
+        assert_eq!(
+            (miss.kind, miss.name.as_str()),
+            (MissKind::Relationship, "Pay->Shop")
+        );
     }
 
     #[test]
@@ -757,6 +947,9 @@ mod tests {
         assert_eq!((miss.kind, miss.name.as_str()), (MissKind::Element, "Nope"));
 
         assert!(matches!(one(&ws, "view:context"), Target::View { .. }));
-        assert_eq!(resolve(&ws, "view:contxt").unwrap_err().candidates, vec!["context"]);
+        assert_eq!(
+            resolve(&ws, "view:contxt").unwrap_err().candidates,
+            vec!["context"]
+        );
     }
 }

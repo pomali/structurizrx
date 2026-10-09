@@ -39,10 +39,23 @@ impl Outcome {
 
 /// Parse the workspace with locations, or explain why it does not parse.
 fn parse(file: &Path) -> Result<Parsed> {
-    if file.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("json")) {
-        bail!("{} is a JSON workspace; edits apply to DSL source only", file.display());
+    if file
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+    {
+        bail!(
+            "{} is a JSON workspace; edits apply to DSL source only",
+            file.display()
+        );
     }
-    structurizr_dsl::parse_file_detailed(file).map_err(|e| anyhow!("{} does not parse:\n{}", file.display(), render_errors(&e, file)))
+    structurizr_dsl::parse_file_detailed(file).map_err(|e| {
+        anyhow!(
+            "{} does not parse:\n{}",
+            file.display(),
+            render_errors(&e, file)
+        )
+    })
 }
 
 fn render_errors(e: &ParseError, entry: &Path) -> String {
@@ -51,7 +64,13 @@ fn render_errors(e: &ParseError, entry: &Path) -> String {
         .map(|d| {
             let path = ParseError::resolve_file(d, entry);
             if d.line > 0 {
-                format!("  {}:{}:{}: {}", path.display(), d.line, d.column, d.message)
+                format!(
+                    "  {}:{}:{}: {}",
+                    path.display(),
+                    d.line,
+                    d.column,
+                    d.message
+                )
             } else {
                 format!("  {}: {}", path.display(), d.message)
             }
@@ -73,7 +92,10 @@ fn resolve(parsed: &Parsed, reference: &str) -> Result<Resolved> {
             ElementType::Relationship => format!("relationship {}", reference),
             other => format!("{:?} {}", other, reference).to_lowercase(),
         };
-        return Ok(Resolved { id: id.clone(), label });
+        return Ok(Resolved {
+            id: id.clone(),
+            label,
+        });
     }
     let catalog = Catalog::new(&parsed.workspace);
     let targets = catalog
@@ -82,34 +104,55 @@ fn resolve(parsed: &Parsed, reference: &str) -> Result<Resolved> {
     let mut ids: Vec<Resolved> = targets
         .into_iter()
         .filter_map(|t| match t {
-            Target::Element { id, path, kind } => Some(Resolved { id, label: format!("{} {}", kind, path) }),
-            Target::Relationship(m) => Some(Resolved { id: m.id.clone(), label: structurizr_web::locate::describe(&m) }),
-            Target::Port { path, element_id, port_id } => {
+            Target::Element { id, path, kind } => Some(Resolved {
+                id,
+                label: format!("{} {}", kind, path),
+            }),
+            Target::Relationship(m) => Some(Resolved {
+                id: m.id.clone(),
+                label: structurizr_web::locate::describe(&m),
+            }),
+            Target::Port {
+                path,
+                element_id,
+                port_id,
+            } => {
                 // Ports are declared inside their element; the parser locates
                 // them by port id.
                 let _ = element_id;
-                Some(Resolved { id: port_id, label: format!("port {}", path) })
+                Some(Resolved {
+                    id: port_id,
+                    label: format!("port {}", path),
+                })
             }
             _ => None,
         })
         .collect();
     match ids.len() {
-        0 => bail!("'{}' names nothing that can be edited (use an element, relationship or port)", reference),
+        0 => bail!(
+            "'{}' names nothing that can be edited (use an element, relationship or port)",
+            reference
+        ),
         1 => Ok(ids.remove(0)),
         n => bail!(
             "'{}' is ambiguous ({} matches): {}",
             reference,
             n,
-            ids.iter().map(|r| r.label.clone()).collect::<Vec<_>>().join(", ")
+            ids.iter()
+                .map(|r| r.label.clone())
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
     }
 }
 
 fn location_of<'a>(parsed: &'a Parsed, id: &str, label: &str) -> Result<&'a SourceLocation> {
-    parsed
-        .locations
-        .get(id)
-        .ok_or_else(|| anyhow!("{} has no statement of its own in the source (it is derived), so it cannot be edited", label))
+    parsed.locations.get(id).ok_or_else(|| {
+        anyhow!(
+            "{} has no statement of its own in the source (it is derived), so it cannot be edited",
+            label
+        )
+    })
 }
 
 /// Text of every file this edit touches, keyed by path, with a snapshot of
@@ -121,7 +164,10 @@ struct Files {
 
 impl Files {
     fn new() -> Self {
-        Files { text: BTreeMap::new(), original: BTreeMap::new() }
+        Files {
+            text: BTreeMap::new(),
+            original: BTreeMap::new(),
+        }
     }
 
     fn load(&mut self, path: &Path) -> Result<&mut String> {
@@ -140,7 +186,8 @@ impl Files {
     fn commit(&self, entry: &Path) -> Result<()> {
         for (path, text) in &self.text {
             if self.original.get(path) != Some(text) {
-                std::fs::write(path, text).with_context(|| format!("cannot write {}", path.display()))?;
+                std::fs::write(path, text)
+                    .with_context(|| format!("cannot write {}", path.display()))?;
             }
         }
         if let Err(e) = structurizr_dsl::parse_file(entry) {
@@ -211,7 +258,12 @@ pub struct Inserted {
 /// Insert `statement` at the end of the block that starts on `start_line`
 /// and closes on `end_line` (1-based, `end_line == start_line` for a
 /// statement without a block, which then gets one).
-fn insert_in_block(text: &mut String, start_line: usize, end_line: usize, statement: &str) -> usize {
+fn insert_in_block(
+    text: &mut String,
+    start_line: usize,
+    end_line: usize,
+    statement: &str,
+) -> usize {
     let (mut lines, ends_nl) = split_lines(text);
     let start_idx = start_line.saturating_sub(1).min(lines.len() - 1);
     let outer = leading_ws(&lines[start_idx]).to_string();
@@ -318,9 +370,15 @@ pub fn add(file: &Path, statement: &str, parent: &str) -> Result<Outcome> {
             match top_block(text, block) {
                 Some((start, end)) => {
                     let line = insert_in_block(text, start, end, statement);
-                    Inserted { file: file.to_path_buf(), line }
+                    Inserted {
+                        file: file.to_path_buf(),
+                        line,
+                    }
                 }
-                None if block == "model" && !text.trim_start().starts_with("workspace") && !text.contains("workspace") => {
+                None if block == "model"
+                    && !text.trim_start().starts_with("workspace")
+                    && !text.contains("workspace") =>
+                {
                     // A sketch: statements live at the top level.
                     let (mut lines, _) = split_lines(text);
                     while lines.last().is_some_and(|l| l.trim().is_empty()) {
@@ -329,9 +387,16 @@ pub fn add(file: &Path, statement: &str, parent: &str) -> Result<Outcome> {
                     lines.extend(indent_statement(statement, ""));
                     let line = lines.len();
                     *text = join_lines(&lines, true);
-                    Inserted { file: file.to_path_buf(), line }
+                    Inserted {
+                        file: file.to_path_buf(),
+                        line,
+                    }
                 }
-                None => bail!("{} has no `{} {{ … }}` block to add to", file.display(), block),
+                None => bail!(
+                    "{} has no `{} {{ … }}` block to add to",
+                    file.display(),
+                    block
+                ),
             }
         }
         _ => {
@@ -388,8 +453,16 @@ pub fn remove(file: &Path, reference: &str, cascade: bool) -> Result<Outcome> {
             }
             if inside.contains(&r.source_id) || inside.contains(&r.destination_id) {
                 if let Some(rl) = parsed.locations.get(&r.id) {
-                    let label = summaries.get(&r.id).map(|s| s.line()).unwrap_or_else(|| r.id.clone());
-                    ranges.push((path_of(rl), rl.line, rl.end_line, format!("relationship {}", label)));
+                    let label = summaries
+                        .get(&r.id)
+                        .map(|s| s.line())
+                        .unwrap_or_else(|| r.id.clone());
+                    ranges.push((
+                        path_of(rl),
+                        rl.line,
+                        rl.end_line,
+                        format!("relationship {}", label),
+                    ));
                 }
             }
         }
@@ -400,7 +473,9 @@ pub fn remove(file: &Path, reference: &str, cascade: bool) -> Result<Outcome> {
     let keep: Vec<(PathBuf, usize, usize, String)> = ranges
         .iter()
         .filter(|(p, s, e, _)| {
-            !ranges.iter().any(|(p2, s2, e2, _)| p2 == p && (s2, e2) != (s, e) && *s2 <= *s && *e <= *e2)
+            !ranges
+                .iter()
+                .any(|(p2, s2, e2, _)| p2 == p && (s2, e2) != (s, e) && *s2 <= *s && *e <= *e2)
         })
         .cloned()
         .collect();
@@ -421,13 +496,22 @@ pub fn remove(file: &Path, reference: &str, cascade: bool) -> Result<Outcome> {
         if cascade {
             e
         } else {
-            anyhow!("{}\n(use --cascade to also remove the relationships that refer to it)", e)
+            anyhow!(
+                "{}\n(use --cascade to also remove the relationships that refer to it)",
+                e
+            )
         }
     })?;
     let mut text = String::new();
     for (p, s, e, label) in &keep {
         if e > s {
-            text.push_str(&format!("removed {} ({}:{}-{})\n", label, p.display(), s, e));
+            text.push_str(&format!(
+                "removed {} ({}:{}-{})\n",
+                label,
+                p.display(),
+                s,
+                e
+            ));
         } else {
             text.push_str(&format!("removed {} ({}:{})\n", label, p.display(), s));
         }
@@ -445,25 +529,46 @@ pub fn remove(file: &Path, reference: &str, cascade: bool) -> Result<Outcome> {
 /// Returns the text and why writing it over the source would lose
 /// something, if it would.
 pub fn format(file: &Path) -> Result<(String, Vec<String>)> {
-    let is_json = file.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("json"));
+    let is_json = file
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("json"));
     if is_json {
         let ws = crate::load_workspace(&file.to_path_buf())?;
         return Ok((structurizr_dsl::emit(&ws), Vec::new()));
     }
-    let parsed = structurizr_dsl::parse_file_detailed(file)
-        .map_err(|e| anyhow!("{} does not parse:\n{}", file.display(), render_errors(&e, file)))?;
+    let parsed = structurizr_dsl::parse_file_detailed(file).map_err(|e| {
+        anyhow!(
+            "{} does not parse:\n{}",
+            file.display(),
+            render_errors(&e, file)
+        )
+    })?;
     let text = structurizr_dsl::emit_with_identifiers(&parsed.workspace, &parsed.identifiers);
-    let source = std::fs::read_to_string(file).with_context(|| format!("cannot read {}", file.display()))?;
+    let source =
+        std::fs::read_to_string(file).with_context(|| format!("cannot read {}", file.display()))?;
     let mut losses = Vec::new();
     let mut comments = false;
     let mut directives: Vec<&str> = Vec::new();
     for line in source.lines() {
         let t = line.trim_start();
-        if t.starts_with("//") || t.starts_with('#') || t.starts_with("/*") || line.contains(" // ") {
+        if t.starts_with("//") || t.starts_with('#') || t.starts_with("/*") || line.contains(" // ")
+        {
             comments = true;
         }
-        for d in ["!include", "!docs", "!adrs", "!decisions", "!const", "!constant", "!var"] {
-            if t.len() >= d.len() && t[..d.len()].eq_ignore_ascii_case(d) && !directives.contains(&d) {
+        for d in [
+            "!include",
+            "!docs",
+            "!adrs",
+            "!decisions",
+            "!const",
+            "!constant",
+            "!var",
+        ] {
+            if t.len() >= d.len()
+                && t[..d.len()].eq_ignore_ascii_case(d)
+                && !directives.contains(&d)
+            {
                 directives.push(d);
             }
         }
@@ -474,7 +579,9 @@ pub fn format(file: &Path) -> Result<(String, Vec<String>)> {
     for d in directives {
         losses.push(match d {
             "!include" => "`!include`d files would be inlined into one file".to_string(),
-            "!docs" | "!adrs" | "!decisions" => format!("`{}` directory imports are not re-emitted", d),
+            "!docs" | "!adrs" | "!decisions" => {
+                format!("`{}` directory imports are not re-emitted", d)
+            }
             other => format!("`{}` values are substituted, not kept", other),
         });
     }
@@ -491,11 +598,14 @@ fn include_closure(entry: &Path) -> Result<Vec<PathBuf>> {
             return Ok(());
         }
         out.push(path.to_path_buf());
-        let text = std::fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("cannot read {}", path.display()))?;
         let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
         for line in text.lines() {
             let trimmed = line.trim_start();
-            let rest = trimmed.strip_prefix("!include ").or_else(|| trimmed.strip_prefix("!INCLUDE "));
+            let rest = trimmed
+                .strip_prefix("!include ")
+                .or_else(|| trimmed.strip_prefix("!INCLUDE "));
             if let Some(rest) = rest {
                 let rel = rest.trim().trim_matches('"');
                 let inc = dir.join(rel);
@@ -552,7 +662,9 @@ fn rename_in_text(text: &mut String, old: &str, new: &str) -> usize {
     // Apply right-to-left within each line so earlier columns stay valid.
     edits.sort_by(|a, b| (b.0, b.1).cmp(&(a.0, a.1)));
     for (line, col, len, replacement) in &edits {
-        let Some(l) = lines.get_mut(line - 1) else { continue };
+        let Some(l) = lines.get_mut(line - 1) else {
+            continue;
+        };
         let chars: Vec<char> = l.chars().collect();
         let start = col - 1;
         if start + len > chars.len() {
@@ -599,7 +711,12 @@ pub fn rename(file: &Path, old: &str, new: &str) -> Result<Outcome> {
     let plural = |n: usize| if n == 1 { "" } else { "s" };
     let mut text = format!(
         "renamed {} -> {} ({} occurrence{} in {} file{})\n",
-        old, new, total, plural(total), counts.len(), plural(counts.len())
+        old,
+        new,
+        total,
+        plural(total),
+        counts.len(),
+        plural(counts.len())
     );
     for (p, n) in &counts {
         text.push_str(&format!("  {}: {}\n", p.display(), n));
@@ -628,14 +745,20 @@ mod tests {
     fn insert_into_single_line_statement_opens_a_block() {
         let mut text = "    api = container \"API\"\n".to_string();
         insert_in_block(&mut text, 1, 1, "technology \"Rust\"");
-        assert_eq!(text, "    api = container \"API\" {\n        technology \"Rust\"\n    }\n");
+        assert_eq!(
+            text,
+            "    api = container \"API\" {\n        technology \"Rust\"\n    }\n"
+        );
     }
 
     #[test]
     fn insert_into_inline_block_splits_it() {
         let mut text = "    api = container \"API\" { tags \"x\" }\n".to_string();
         insert_in_block(&mut text, 1, 1, "technology \"Rust\"");
-        assert_eq!(text, "    api = container \"API\" { tags \"x\"\n        technology \"Rust\"\n    }\n");
+        assert_eq!(
+            text,
+            "    api = container \"API\" { tags \"x\"\n        technology \"Rust\"\n    }\n"
+        );
     }
 
     #[test]

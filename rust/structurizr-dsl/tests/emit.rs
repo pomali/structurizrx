@@ -46,13 +46,21 @@ fn build_deployment_paths(
     let node_path = format!("{}/{}", prefix, node.name);
     paths.insert(node.id.clone(), node_path.clone());
     for ci in node.container_instances.iter().flatten() {
-        let target = element_paths.get(&ci.container_id).cloned().unwrap_or_else(|| ci.container_id.clone());
+        let target = element_paths
+            .get(&ci.container_id)
+            .cloned()
+            .unwrap_or_else(|| ci.container_id.clone());
         paths.insert(ci.id.clone(), format!("{}/{}(instance)", node_path, target));
     }
     for ssi in node.software_system_instances.iter().flatten() {
-        let target =
-            element_paths.get(&ssi.software_system_id).cloned().unwrap_or_else(|| ssi.software_system_id.clone());
-        paths.insert(ssi.id.clone(), format!("{}/{}(instance)", node_path, target));
+        let target = element_paths
+            .get(&ssi.software_system_id)
+            .cloned()
+            .unwrap_or_else(|| ssi.software_system_id.clone());
+        paths.insert(
+            ssi.id.clone(),
+            format!("{}/{}(instance)", node_path, target),
+        );
     }
     for inf in node.infrastructure_nodes.iter().flatten() {
         paths.insert(inf.id.clone(), format!("{}/{}", node_path, inf.name));
@@ -153,8 +161,14 @@ fn relationship_tuples(ws: &Workspace, paths: &HashMap<String, String>) -> HashS
         if r.linked_relationship_id.is_some() {
             continue;
         }
-        let src = paths.get(&r.source_id).cloned().unwrap_or_else(|| r.source_id.clone());
-        let dst = paths.get(&r.destination_id).cloned().unwrap_or_else(|| r.destination_id.clone());
+        let src = paths
+            .get(&r.source_id)
+            .cloned()
+            .unwrap_or_else(|| r.source_id.clone());
+        let dst = paths
+            .get(&r.destination_id)
+            .cloned()
+            .unwrap_or_else(|| r.destination_id.clone());
         let kind = r.kind.map(|k| format!("{:?}", k)).unwrap_or_default();
         let status = r.status.map(|s| format!("{:?}", s)).unwrap_or_default();
         out.insert((
@@ -190,13 +204,18 @@ type PortTuple = (String, String, String, String);
 fn port_tuples(ws: &Workspace, paths: &HashMap<String, String>) -> HashSet<PortTuple> {
     let mut out = HashSet::new();
     let mut push = |elem_id: &str, ports: &Option<Vec<Port>>| {
-        let path = paths.get(elem_id).cloned().unwrap_or_else(|| elem_id.to_string());
+        let path = paths
+            .get(elem_id)
+            .cloned()
+            .unwrap_or_else(|| elem_id.to_string());
         for port in ports.iter().flatten() {
             out.insert((
                 path.clone(),
                 port.name.clone(),
                 port.protocol.clone().unwrap_or_default(),
-                port.direction.map(|d| format!("{:?}", d)).unwrap_or_default(),
+                port.direction
+                    .map(|d| format!("{:?}", d))
+                    .unwrap_or_default(),
             ));
         }
     };
@@ -222,7 +241,13 @@ fn milestone_tuples(ws: &Workspace) -> HashSet<(String, String, String)> {
     ws.milestones
         .iter()
         .flatten()
-        .map(|m| (m.name.clone(), m.date.clone().unwrap_or_default(), m.description.clone().unwrap_or_default()))
+        .map(|m| {
+            (
+                m.name.clone(),
+                m.date.clone().unwrap_or_default(),
+                m.description.clone().unwrap_or_default(),
+            )
+        })
         .collect()
 }
 
@@ -232,7 +257,10 @@ fn auto_view_tuples(ws: &Workspace, paths: &HashMap<String, String>) -> HashSet<
         .iter()
         .flatten()
         .map(|s| {
-            let resolve = |t: &Option<String>| t.as_ref().map(|v| paths.get(v).cloned().unwrap_or_else(|| v.clone()));
+            let resolve = |t: &Option<String>| {
+                t.as_ref()
+                    .map(|v| paths.get(v).cloned().unwrap_or_else(|| v.clone()))
+            };
             format!(
                 "{}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
                 s.generator,
@@ -250,13 +278,69 @@ fn auto_view_tuples(ws: &Workspace, paths: &HashMap<String, String>) -> HashSet<
 
 fn view_key_counts(ws: &Workspace) -> HashMap<&'static str, HashSet<Option<String>>> {
     let mut m: HashMap<&'static str, HashSet<Option<String>>> = HashMap::new();
-    m.insert("systemLandscape", ws.views.system_landscape_views.iter().flatten().map(|v| v.key.clone()).collect());
-    m.insert("systemContext", ws.views.system_context_views.iter().flatten().map(|v| v.key.clone()).collect());
-    m.insert("container", ws.views.container_views.iter().flatten().map(|v| v.key.clone()).collect());
-    m.insert("component", ws.views.component_views.iter().flatten().map(|v| v.key.clone()).collect());
-    m.insert("dynamic", ws.views.dynamic_views.iter().flatten().map(|v| v.key.clone()).collect());
-    m.insert("deployment", ws.views.deployment_views.iter().flatten().map(|v| v.key.clone()).collect());
-    m.insert("filtered", ws.views.filtered_views.iter().flatten().map(|v| v.key.clone()).collect());
+    m.insert(
+        "systemLandscape",
+        ws.views
+            .system_landscape_views
+            .iter()
+            .flatten()
+            .map(|v| v.key.clone())
+            .collect(),
+    );
+    m.insert(
+        "systemContext",
+        ws.views
+            .system_context_views
+            .iter()
+            .flatten()
+            .map(|v| v.key.clone())
+            .collect(),
+    );
+    m.insert(
+        "container",
+        ws.views
+            .container_views
+            .iter()
+            .flatten()
+            .map(|v| v.key.clone())
+            .collect(),
+    );
+    m.insert(
+        "component",
+        ws.views
+            .component_views
+            .iter()
+            .flatten()
+            .map(|v| v.key.clone())
+            .collect(),
+    );
+    m.insert(
+        "dynamic",
+        ws.views
+            .dynamic_views
+            .iter()
+            .flatten()
+            .map(|v| v.key.clone())
+            .collect(),
+    );
+    m.insert(
+        "deployment",
+        ws.views
+            .deployment_views
+            .iter()
+            .flatten()
+            .map(|v| v.key.clone())
+            .collect(),
+    );
+    m.insert(
+        "filtered",
+        ws.views
+            .filtered_views
+            .iter()
+            .flatten()
+            .map(|v| v.key.clone())
+            .collect(),
+    );
     m
 }
 
@@ -272,7 +356,15 @@ fn style_tuples(ws: &Workspace) -> (HashSet<String>, HashSet<String>) {
         .map(|e| {
             format!(
                 "{}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
-                e.tag, e.shape, e.background, e.color, e.stroke, e.font_size, e.border, e.opacity, e.width
+                e.tag,
+                e.shape,
+                e.background,
+                e.color,
+                e.stroke,
+                e.font_size,
+                e.border,
+                e.opacity,
+                e.width
             )
         })
         .collect();
@@ -287,7 +379,14 @@ fn style_tuples(ws: &Workspace) -> (HashSet<String>, HashSet<String>) {
         .map(|r| {
             format!(
                 "{}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
-                r.tag, r.thickness, r.color, r.font_size, r.line_style, r.routing, r.opacity, r.dashed
+                r.tag,
+                r.thickness,
+                r.color,
+                r.font_size,
+                r.line_style,
+                r.routing,
+                r.opacity,
+                r.dashed
             )
         })
         .collect();
@@ -301,13 +400,29 @@ fn assert_round_trip(path: &str) {
     let parsed = parse_file_detailed(path).unwrap_or_else(|e| panic!("parse {}: {}", path, e));
     let emitted = structurizr_dsl::emit_with_identifiers(&parsed.workspace, &parsed.identifiers);
     let reparsed = parse_str(&emitted).unwrap_or_else(|e| {
-        panic!("re-parse of emitted DSL for {} failed: {}\n\n--- emitted ---\n{}", path, e, emitted)
+        panic!(
+            "re-parse of emitted DSL for {} failed: {}\n\n--- emitted ---\n{}",
+            path, e, emitted
+        )
     });
 
-    assert_eq!(parsed.workspace.name, reparsed.name, "name mismatch for {}", path);
-    assert_eq!(parsed.workspace.description, reparsed.description, "description mismatch for {}", path);
+    assert_eq!(
+        parsed.workspace.name, reparsed.name,
+        "name mismatch for {}",
+        path
+    );
+    assert_eq!(
+        parsed.workspace.description, reparsed.description,
+        "description mismatch for {}",
+        path
+    );
 
-    assert_eq!(element_tuples(&parsed.workspace), element_tuples(&reparsed), "elements mismatch for {}", path);
+    assert_eq!(
+        element_tuples(&parsed.workspace),
+        element_tuples(&reparsed),
+        "elements mismatch for {}",
+        path
+    );
 
     let paths_a = build_paths(&parsed.workspace);
     let paths_b = build_paths(&reparsed);
@@ -317,8 +432,18 @@ fn assert_round_trip(path: &str) {
         "relationships mismatch for {}",
         path
     );
-    assert_eq!(port_tuples(&parsed.workspace, &paths_a), port_tuples(&reparsed, &paths_b), "ports mismatch for {}", path);
-    assert_eq!(milestone_tuples(&parsed.workspace), milestone_tuples(&reparsed), "milestones mismatch for {}", path);
+    assert_eq!(
+        port_tuples(&parsed.workspace, &paths_a),
+        port_tuples(&reparsed, &paths_b),
+        "ports mismatch for {}",
+        path
+    );
+    assert_eq!(
+        milestone_tuples(&parsed.workspace),
+        milestone_tuples(&reparsed),
+        "milestones mismatch for {}",
+        path
+    );
     assert_eq!(
         auto_view_tuples(&parsed.workspace, &paths_a),
         auto_view_tuples(&reparsed, &paths_b),
@@ -328,7 +453,15 @@ fn assert_round_trip(path: &str) {
 
     let counts_a = view_key_counts(&parsed.workspace);
     let counts_b = view_key_counts(&reparsed);
-    for kind in ["systemLandscape", "systemContext", "container", "component", "dynamic", "deployment", "filtered"] {
+    for kind in [
+        "systemLandscape",
+        "systemContext",
+        "container",
+        "component",
+        "dynamic",
+        "deployment",
+        "filtered",
+    ] {
         assert_eq!(
             counts_a[kind].len(),
             counts_b[kind].len(),
@@ -340,11 +473,17 @@ fn assert_round_trip(path: &str) {
         );
     }
 
-    assert_eq!(style_tuples(&parsed.workspace), style_tuples(&reparsed), "styles mismatch for {}", path);
+    assert_eq!(
+        style_tuples(&parsed.workspace),
+        style_tuples(&reparsed),
+        "styles mismatch for {}",
+        path
+    );
 
     // Idempotence: emit(reparsed) is a fixed point.
     let emitted2 = structurizr_dsl::emit(&reparsed);
-    let reparsed2 = parse_str(&emitted2).unwrap_or_else(|e| panic!("re-parse of second emit for {} failed: {}", path, e));
+    let reparsed2 = parse_str(&emitted2)
+        .unwrap_or_else(|e| panic!("re-parse of second emit for {} failed: {}", path, e));
     let emitted3 = structurizr_dsl::emit(&reparsed2);
     assert_eq!(emitted2, emitted3, "emit is not idempotent for {}", path);
 }
@@ -366,19 +505,28 @@ fn round_trip_site_examples() {
 
 #[test]
 fn round_trip_big_bank_plc() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/big-bank-plc/workspace.dsl");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../examples/big-bank-plc/workspace.dsl"
+    );
     assert_round_trip(path);
 }
 
 #[test]
 fn round_trip_getting_started() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/getting-started/workspace.dsl");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../examples/getting-started/workspace.dsl"
+    );
     assert_round_trip(path);
 }
 
 #[test]
 fn round_trip_microservices() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/microservices/workspace.dsl");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../examples/microservices/workspace.dsl"
+    );
     assert_round_trip(path);
 }
 
@@ -390,13 +538,25 @@ fn round_trip_microservices() {
 /// `softwareSystem`s tagged `Placeholder`.
 #[test]
 fn sketch_promotes_to_full_workspace() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../site/examples/sketch.dsl");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../site/examples/sketch.dsl"
+    );
     let parsed = parse_file_detailed(path).expect("parse sketch");
     let emitted = structurizr_dsl::emit_with_identifiers(&parsed.workspace, &parsed.identifiers);
 
-    assert!(emitted.trim_start().starts_with("workspace"), "emitted sketch should open with `workspace {{`");
-    assert!(emitted.contains("softwareSystem"), "emitted sketch should declare its placeholder systems");
-    assert!(emitted.contains("Placeholder"), "placeholder tag should survive promotion to a full workspace");
+    assert!(
+        emitted.trim_start().starts_with("workspace"),
+        "emitted sketch should open with `workspace {{`"
+    );
+    assert!(
+        emitted.contains("softwareSystem"),
+        "emitted sketch should declare its placeholder systems"
+    );
+    assert!(
+        emitted.contains("Placeholder"),
+        "placeholder tag should survive promotion to a full workspace"
+    );
 
     let reparsed = parse_str(&emitted).expect("re-parse promoted sketch");
     assert_eq!(element_tuples(&parsed.workspace), element_tuples(&reparsed));
@@ -484,23 +644,44 @@ workspace "Kitchen Sink" "Exercises the whole DSL surface" {
 "#;
     let (ws, ids) = structurizr_dsl::parse_str_with_identifiers(dsl).expect("parse kitchen sink");
     let emitted = structurizr_dsl::emit_with_identifiers(&ws, &ids);
-    let reparsed = parse_str(&emitted)
-        .unwrap_or_else(|e| panic!("re-parse of kitchen-sink emit failed: {}\n\n--- emitted ---\n{}", e, emitted));
+    let reparsed = parse_str(&emitted).unwrap_or_else(|e| {
+        panic!(
+            "re-parse of kitchen-sink emit failed: {}\n\n--- emitted ---\n{}",
+            e, emitted
+        )
+    });
 
     assert_eq!(element_tuples(&ws), element_tuples(&reparsed));
     let paths_a = build_paths(&ws);
     let paths_b = build_paths(&reparsed);
-    assert_eq!(relationship_tuples(&ws, &paths_a), relationship_tuples(&reparsed, &paths_b));
+    assert_eq!(
+        relationship_tuples(&ws, &paths_a),
+        relationship_tuples(&reparsed, &paths_b)
+    );
     assert_eq!(port_tuples(&ws, &paths_a), port_tuples(&reparsed, &paths_b));
     assert_eq!(milestone_tuples(&ws), milestone_tuples(&reparsed));
-    assert_eq!(auto_view_tuples(&ws, &paths_a), auto_view_tuples(&reparsed, &paths_b));
+    assert_eq!(
+        auto_view_tuples(&ws, &paths_a),
+        auto_view_tuples(&reparsed, &paths_b)
+    );
     assert_eq!(style_tuples(&ws), style_tuples(&reparsed));
 
     // Uncertain markers on both the person and the extra relationship must
     // round-trip: the customer keeps an (unstripped-by-us) `Uncertain` tag,
     // and the second api->db relationship does too.
-    let customer = reparsed.model.people.as_ref().unwrap().iter().find(|p| p.name == "Customer").unwrap();
-    assert!(customer.tags.as_deref().unwrap_or_default().contains("Uncertain"));
+    let customer = reparsed
+        .model
+        .people
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|p| p.name == "Customer")
+        .unwrap();
+    assert!(customer
+        .tags
+        .as_deref()
+        .unwrap_or_default()
+        .contains("Uncertain"));
 
     // Named relationship (`orderFlow = api -> db`) keeps its name in the
     // first emission (which has the source register). A relationship's name
@@ -509,10 +690,17 @@ workspace "Kitchen Sink" "Exercises the whole DSL surface" {
     // along too (`parse_str_with_identifiers` + `emit_with_identifiers`),
     // not through the plain `parse_str`/`emit` used for the plumbing
     // equivalence checks above.
-    assert!(emitted.contains("orderFlow ="), "named relationship should be named in the first emission");
-    let (reparsed_with_ids, ids2) = structurizr_dsl::parse_str_with_identifiers(&emitted).expect("re-parse with ids");
+    assert!(
+        emitted.contains("orderFlow ="),
+        "named relationship should be named in the first emission"
+    );
+    let (reparsed_with_ids, ids2) =
+        structurizr_dsl::parse_str_with_identifiers(&emitted).expect("re-parse with ids");
     let emitted2 = structurizr_dsl::emit_with_identifiers(&reparsed_with_ids, &ids2);
-    assert!(emitted2.contains("orderFlow ="), "named relationship should still be named after round-tripping");
+    assert!(
+        emitted2.contains("orderFlow ="),
+        "named relationship should still be named after round-tripping"
+    );
 
     // Idempotence.
     let reparsed2 = parse_str(&emitted2).expect("re-parse second emit");

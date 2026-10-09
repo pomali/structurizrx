@@ -169,20 +169,28 @@ struct Edge {
 /// Default dash theming: ideas/drafts and placeholders render sketchy (spec §4.2).
 fn dash_for(status: Option<structurizr_model::Status>, tags: Option<&str>) -> Option<&'static str> {
     let has_tag = |t: &str| {
-        tags.map(|ts| ts.split(',').any(|x| x.trim() == t)).unwrap_or(false)
+        tags.map(|ts| ts.split(',').any(|x| x.trim() == t))
+            .unwrap_or(false)
     };
     if has_tag("Placeholder") || has_tag("Uncertain") {
         return Some("3,4");
     }
     match status {
-        Some(structurizr_model::Status::Idea) | Some(structurizr_model::Status::Draft) => Some("8,5"),
+        Some(structurizr_model::Status::Idea) | Some(structurizr_model::Status::Draft) => {
+            Some("8,5")
+        }
         _ => None,
     }
 }
 
 /// Async-family relationship kinds render dashed, matching common C4 practice.
 fn edge_dash(rel: &Relationship) -> Option<&'static str> {
-    if rel.tags.as_deref().map(|ts| ts.split(',').any(|x| x.trim() == "Uncertain")).unwrap_or(false) {
+    if rel
+        .tags
+        .as_deref()
+        .map(|ts| ts.split(',').any(|x| x.trim() == "Uncertain"))
+        .unwrap_or(false)
+    {
         return Some("3,4");
     }
     use structurizr_model::RelationshipKind::*;
@@ -292,8 +300,7 @@ fn make_node(
         Some(d) if !d.trim().is_empty() => clamp_lines(wrap_text(d, inner, FS_DESC), 3),
         _ => Vec::new(),
     };
-    let mut content_h =
-        name_lines.len() as i32 * LH_NAME + meta_lines.len() as i32 * LH_SMALL;
+    let mut content_h = name_lines.len() as i32 * LH_NAME + meta_lines.len() as i32 * LH_SMALL;
     if !desc_lines.is_empty() {
         content_h += 6 + desc_lines.len() as i32 * LH_SMALL;
     }
@@ -317,7 +324,13 @@ fn make_node(
 }
 
 fn person_node(p: &Person, styles: Option<&Styles>) -> Node {
-    let s = resolve_node_style(p.tags.as_deref(), "Person", styles, COLOR_PERSON, COLOR_TEXT_LIGHT);
+    let s = resolve_node_style(
+        p.tags.as_deref(),
+        "Person",
+        styles,
+        COLOR_PERSON,
+        COLOR_TEXT_LIGHT,
+    );
     make_node(
         &p.id,
         &p.name,
@@ -330,7 +343,13 @@ fn person_node(p: &Person, styles: Option<&Styles>) -> Node {
 }
 
 fn system_node(ss: &SoftwareSystem, styles: Option<&Styles>, default_fill: &str) -> Node {
-    let s = resolve_node_style(ss.tags.as_deref(), "Software System", styles, default_fill, COLOR_TEXT_LIGHT);
+    let s = resolve_node_style(
+        ss.tags.as_deref(),
+        "Software System",
+        styles,
+        default_fill,
+        COLOR_TEXT_LIGHT,
+    );
     make_node(
         &ss.id,
         &ss.name,
@@ -347,7 +366,13 @@ fn container_node(c: &Container, styles: Option<&Styles>) -> Node {
         Some(t) => format!("Container: {t}"),
         None => "Container".to_string(),
     };
-    let s = resolve_node_style(c.tags.as_deref(), "Container", styles, COLOR_CONTAINER, COLOR_TEXT_LIGHT);
+    let s = resolve_node_style(
+        c.tags.as_deref(),
+        "Container",
+        styles,
+        COLOR_CONTAINER,
+        COLOR_TEXT_LIGHT,
+    );
     make_node(
         &c.id,
         &c.name,
@@ -364,7 +389,13 @@ fn component_node(comp: &Component, styles: Option<&Styles>) -> Node {
         Some(t) => format!("Component: {t}"),
         None => "Component".to_string(),
     };
-    let s = resolve_node_style(comp.tags.as_deref(), "Component", styles, COLOR_CONTAINER, COLOR_TEXT_LIGHT);
+    let s = resolve_node_style(
+        comp.tags.as_deref(),
+        "Component",
+        styles,
+        COLOR_CONTAINER,
+        COLOR_TEXT_LIGHT,
+    );
     make_node(
         &comp.id,
         &comp.name,
@@ -377,7 +408,13 @@ fn component_node(comp: &Component, styles: Option<&Styles>) -> Node {
 }
 
 fn custom_node(ce: &CustomElement, styles: Option<&Styles>) -> Node {
-    let s = resolve_node_style(ce.tags.as_deref(), "Element", styles, COLOR_SYSTEM_EXT, COLOR_TEXT_LIGHT);
+    let s = resolve_node_style(
+        ce.tags.as_deref(),
+        "Element",
+        styles,
+        COLOR_SYSTEM_EXT,
+        COLOR_TEXT_LIGHT,
+    );
     make_node(
         &ce.id,
         &ce.name,
@@ -401,7 +438,10 @@ impl DiagramExporter for SvgExporter {
 
         if let Some(sl_views) = &views.system_landscape_views {
             for v in sl_views {
-                let key = v.key.clone().unwrap_or_else(|| "SystemLandscape".to_string());
+                let key = v
+                    .key
+                    .clone()
+                    .unwrap_or_else(|| "SystemLandscape".to_string());
                 let title = v.title.as_deref().unwrap_or(&key);
                 let content = render_landscape(title, v, workspace);
                 diagrams.push(Diagram::new(key, content, DiagramFormat::Svg));
@@ -459,7 +499,12 @@ fn lift_edges(edges: Vec<Edge>, model: &Model, visible: &HashSet<String>) -> Vec
         if src == dst {
             continue;
         }
-        if !seen.insert((src.clone(), dst.clone(), e.label.clone(), e.technology.clone())) {
+        if !seen.insert((
+            src.clone(),
+            dst.clone(),
+            e.label.clone(),
+            e.technology.clone(),
+        )) {
             continue;
         }
         // A lifted endpoint is no longer the element the port belongs to.
@@ -558,7 +603,11 @@ fn render_system_context(title: &str, view: &SystemContextView, workspace: &Work
         if !elem_allowed(&elem_filter, &ss.id) {
             continue;
         }
-        let fill = if &ss.id == focal_id { COLOR_SYSTEM } else { COLOR_SYSTEM_EXT };
+        let fill = if &ss.id == focal_id {
+            COLOR_SYSTEM
+        } else {
+            COLOR_SYSTEM_EXT
+        };
         nodes.push(system_node(ss, styles, fill));
     }
 
@@ -613,7 +662,10 @@ fn render_container_view(title: &str, view: &ContainerView, workspace: &Workspac
     let boundary = if container_ids.is_empty() {
         None
     } else {
-        let c_nodes: Vec<&Node> = nodes.iter().filter(|n| container_ids.contains(&n.id)).collect();
+        let c_nodes: Vec<&Node> = nodes
+            .iter()
+            .filter(|n| container_ids.contains(&n.id))
+            .collect();
         Some(boundary_rect(&c_nodes, &focal_system_name))
     };
 
@@ -670,7 +722,10 @@ fn render_component_view(title: &str, view: &ComponentView, workspace: &Workspac
     let boundary = if component_ids.is_empty() {
         None
     } else {
-        let c_nodes: Vec<&Node> = nodes.iter().filter(|n| component_ids.contains(&n.id)).collect();
+        let c_nodes: Vec<&Node> = nodes
+            .iter()
+            .filter(|n| component_ids.contains(&n.id))
+            .collect();
         Some(boundary_rect(&c_nodes, &focal_container_name))
     };
 
@@ -767,7 +822,10 @@ fn layout(nodes: &mut [Node], edges: &[Edge], boundary_ids: Option<&HashSet<Stri
     let mut pairs: Vec<(usize, usize)> = Vec::new();
     let mut seen: HashSet<(usize, usize)> = HashSet::new();
     for e in edges {
-        if let (Some(&s), Some(&d)) = (id_to_idx.get(e.src_id.as_str()), id_to_idx.get(e.dst_id.as_str())) {
+        if let (Some(&s), Some(&d)) = (
+            id_to_idx.get(e.src_id.as_str()),
+            id_to_idx.get(e.dst_id.as_str()),
+        ) {
             if s != d && seen.insert((s, d)) {
                 pairs.push((s, d));
             }
@@ -789,7 +847,11 @@ fn layout(nodes: &mut [Node], edges: &[Edge], boundary_ids: Option<&HashSet<Stri
 
     // 1. Cycle breaking + 2. longest-path layering over the DAG edges.
     let back = find_back_edges(n, &adj);
-    let dag: Vec<(usize, usize)> = pairs.iter().copied().filter(|p| !back.contains(p)).collect();
+    let dag: Vec<(usize, usize)> = pairs
+        .iter()
+        .copied()
+        .filter(|p| !back.contains(p))
+        .collect();
     let mut layer = vec![0usize; n];
     for _ in 0..n {
         for &(s, d) in &dag {
@@ -885,9 +947,17 @@ fn layout(nodes: &mut [Node], edges: &[Edge], boundary_ids: Option<&HashSet<Stri
         let bids = boundary_ids.unwrap();
         let parts: Vec<(Vec<usize>, Vec<usize>)> = layers
             .iter()
-            .map(|row| row.iter().copied().partition(|&i| bids.contains(&nodes[i].id)))
+            .map(|row| {
+                row.iter()
+                    .copied()
+                    .partition(|&i| bids.contains(&nodes[i].id))
+            })
             .collect();
-        let b_max = parts.iter().map(|(b, _)| group_w(nodes, b)).max().unwrap_or(0);
+        let b_max = parts
+            .iter()
+            .map(|(b, _)| group_w(nodes, b))
+            .max()
+            .unwrap_or(0);
 
         // Place boundary members centred on a common axis; remember the box extent.
         let mut b_right = 0;
@@ -920,7 +990,11 @@ fn layout(nodes: &mut [Node], edges: &[Edge], boundary_ids: Option<&HashSet<Stri
         }
         b_max
     } else {
-        let max_w = layers.iter().map(|row| group_w(nodes, row)).max().unwrap_or(0);
+        let max_w = layers
+            .iter()
+            .map(|row| group_w(nodes, row))
+            .max()
+            .unwrap_or(0);
         for (r, row) in layers.iter().enumerate() {
             let lw = group_w(nodes, row);
             place_row(nodes, row, (max_w - lw) / 2, row_y[r], row_h[r]);
@@ -933,7 +1007,10 @@ fn layout(nodes: &mut [Node], edges: &[Edge], boundary_ids: Option<&HashSet<Stri
     // boundary box instead of inside it.
     let isolated: Vec<usize> = (0..n).filter(|&i| !connected[i]).collect();
     let (iso_boundary, iso_external): (Vec<usize>, Vec<usize>) = match boundary_ids {
-        Some(bids) => isolated.iter().copied().partition(|&i| bids.contains(&nodes[i].id)),
+        Some(bids) => isolated
+            .iter()
+            .copied()
+            .partition(|&i| bids.contains(&nodes[i].id)),
         None => (Vec::new(), isolated),
     };
     let mut y = acc;
@@ -980,7 +1057,12 @@ fn apply_delta_styling(
     let ids = |key: &str| -> HashSet<String> {
         props
             .get(key)
-            .map(|v| v.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect())
+            .map(|v| {
+                v.split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
             .unwrap_or_default()
     };
     let added_e = ids("delta.addedElements");
@@ -1057,7 +1139,10 @@ fn annotate_edge_ports(edges: &mut [Edge], model: &Model) {
     }
 }
 
-fn collect_all_edges_with_containers(model: &Model, rel_filter: Option<&HashSet<String>>) -> Vec<Edge> {
+fn collect_all_edges_with_containers(
+    model: &Model,
+    rel_filter: Option<&HashSet<String>>,
+) -> Vec<Edge> {
     let mut edges = collect_all_edges(model, rel_filter);
     if let Some(systems) = &model.software_systems {
         for ss in systems {
@@ -1077,7 +1162,11 @@ fn collect_all_edges_with_containers(model: &Model, rel_filter: Option<&HashSet<
     edges
 }
 
-fn collect_rels(rels: &Option<Vec<Relationship>>, edges: &mut Vec<Edge>, rel_filter: Option<&HashSet<String>>) {
+fn collect_rels(
+    rels: &Option<Vec<Relationship>>,
+    edges: &mut Vec<Edge>,
+    rel_filter: Option<&HashSet<String>>,
+) {
     if let Some(rels) = rels {
         for r in rels {
             if let Some(filter) = rel_filter {
@@ -1156,7 +1245,11 @@ struct BoundaryRect {
 
 fn boundary_rect(nodes: &[&Node], label: &str) -> BoundaryRect {
     let min_x = nodes.iter().map(|n| n.x).min().unwrap_or(0) - BOUNDARY_PAD;
-    let min_y = nodes.iter().map(|n| n.y - n.top_overhang()).min().unwrap_or(0)
+    let min_y = nodes
+        .iter()
+        .map(|n| n.y - n.top_overhang())
+        .min()
+        .unwrap_or(0)
         - BOUNDARY_PAD
         - BOUNDARY_LABEL_HEIGHT;
     let max_x = nodes.iter().map(|n| n.x + n.w).max().unwrap_or(0) + BOUNDARY_PAD;
@@ -1253,7 +1346,10 @@ fn render_svg(
         xml_escape(title)
     ));
 
-    svg.push_str(&format!("  <g transform=\"translate({dx},{})\">\n", dy + TITLE_H));
+    svg.push_str(&format!(
+        "  <g transform=\"translate({dx},{})\">\n",
+        dy + TITLE_H
+    ));
 
     // System boundary (if any)
     if let Some(b) = boundary {
@@ -1277,7 +1373,9 @@ fn render_svg(
     let mut pair_count: HashMap<(&str, &str), usize> = HashMap::new();
     for e in edges {
         if pos.contains_key(e.src_id.as_str()) && pos.contains_key(e.dst_id.as_str()) {
-            *pair_count.entry(canon_pair(&e.src_id, &e.dst_id)).or_insert(0) += 1;
+            *pair_count
+                .entry(canon_pair(&e.src_id, &e.dst_id))
+                .or_insert(0) += 1;
         }
     }
     let mut pair_used: HashMap<(&str, &str), usize> = HashMap::new();
@@ -1363,7 +1461,11 @@ fn render_svg(
 
         // Perpendicular computed from the canonical direction so that an A→B
         // edge and its B→A counterpart land on distinct parallel lines.
-        let (a, b) = if src.id.as_str() <= dst.id.as_str() { (src, dst) } else { (dst, src) };
+        let (a, b) = if src.id.as_str() <= dst.id.as_str() {
+            (src, dst)
+        } else {
+            (dst, src)
+        };
         let vx = (b.cx() - a.cx()) as f64;
         let vy = (b.cy() - a.cy()) as f64;
         let len = (vx * vx + vy * vy).sqrt().max(1.0);
@@ -1404,7 +1506,15 @@ fn render_svg(
                 let text_w = text_width(pname, 8.0) + 6.0;
                 let text_h = 11.0;
                 let (lx, ly) = place_port_label(
-                    gx, gy, dir_x, dir_y, node, text_w, text_h, &node_obstacles, &placed_labels,
+                    gx,
+                    gy,
+                    dir_x,
+                    dir_y,
+                    node,
+                    text_w,
+                    text_h,
+                    &node_obstacles,
+                    &placed_labels,
                 );
                 draw_port_label(&mut overlay, lx, ly, text_w, text_h, pname, stroke);
                 placed_labels.push((lx - text_w / 2.0, ly - text_h / 2.0, text_w, text_h));
@@ -1454,7 +1564,11 @@ fn render_svg(
 }
 
 fn canon_pair<'a>(a: &'a str, b: &'a str) -> (&'a str, &'a str) {
-    if a <= b { (a, b) } else { (b, a) }
+    if a <= b {
+        (a, b)
+    } else {
+        (b, a)
+    }
 }
 
 /// Combined label + technology text for an edge, if any.
@@ -1559,7 +1673,11 @@ fn find_label_center(
     let dx = x2 - x1;
     let dy = y2 - y1;
     let len = (dx * dx + dy * dy).sqrt();
-    let (ux, uy) = if len > 1e-6 { (dx / len, dy / len) } else { (0.0, 1.0) };
+    let (ux, uy) = if len > 1e-6 {
+        (dx / len, dy / len)
+    } else {
+        (0.0, 1.0)
+    };
     let (px, py) = (-uy, ux);
 
     let is_free = |cx: f64, cy: f64| {
@@ -1614,16 +1732,24 @@ fn place_port_label(
 ) -> (f64, f64) {
     let perp = (-dir_y, dir_x);
     let outward = (gx - node.cx() as f64, gy - node.cy() as f64);
-    let sign = if perp.0 * outward.0 + perp.1 * outward.1 >= 0.0 { 1.0 } else { -1.0 };
+    let sign = if perp.0 * outward.0 + perp.1 * outward.1 >= 0.0 {
+        1.0
+    } else {
+        -1.0
+    };
     let (ox, oy) = (perp.0 * sign, perp.1 * sign);
 
     let is_free = |cx: f64, cy: f64| {
         let rect = (cx - text_w / 2.0, cy - text_h / 2.0, text_w, text_h);
-        !obstacles.iter().any(|&o| rects_overlap(rect, o)) && !placed.iter().any(|&o| rects_overlap(rect, o))
+        !obstacles.iter().any(|&o| rects_overlap(rect, o))
+            && !placed.iter().any(|&o| rects_overlap(rect, o))
     };
 
     let base_offset = 14.0;
-    let mut fallback = (gx + ox * base_offset - dir_x * 6.0, gy + oy * base_offset - dir_y * 6.0);
+    let mut fallback = (
+        gx + ox * base_offset - dir_x * 6.0,
+        gy + oy * base_offset - dir_y * 6.0,
+    );
     for step in 0..5 {
         let off = base_offset + step as f64 * (text_h + 4.0);
         let cx = gx + ox * off - dir_x * 6.0;
@@ -1670,7 +1796,11 @@ struct TextRegion {
 impl TextRegion {
     /// The full box, used by simple shapes with no intrusions.
     fn full(node: &Node) -> TextRegion {
-        TextRegion { top: node.y, height: node.h, cx: node.cx() }
+        TextRegion {
+            top: node.y,
+            height: node.h,
+            cx: node.cx(),
+        }
     }
 }
 
@@ -1688,7 +1818,17 @@ fn n(v: f64) -> String {
 }
 
 #[allow(clippy::too_many_arguments)] // geometric primitive: position + size + paint
-fn el_rect(svg: &mut String, x: f64, y: f64, w: f64, h: f64, rx: f64, fill: &str, stroke: &str, dash: &str) {
+fn el_rect(
+    svg: &mut String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    rx: f64,
+    fill: &str,
+    stroke: &str,
+    dash: &str,
+) {
     svg.push_str(&format!(
         "    <rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{}\" ry=\"{}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"1.5\"{dash}/>\n",
         n(x), n(y), n(w), n(h), n(rx), n(rx)
@@ -1696,7 +1836,16 @@ fn el_rect(svg: &mut String, x: f64, y: f64, w: f64, h: f64, rx: f64, fill: &str
 }
 
 #[allow(clippy::too_many_arguments)] // geometric primitive: centre + radii + paint
-fn el_ellipse(svg: &mut String, cx: f64, cy: f64, rx: f64, ry: f64, fill: &str, stroke: &str, dash: &str) {
+fn el_ellipse(
+    svg: &mut String,
+    cx: f64,
+    cy: f64,
+    rx: f64,
+    ry: f64,
+    fill: &str,
+    stroke: &str,
+    dash: &str,
+) {
     svg.push_str(&format!(
         "    <ellipse cx=\"{}\" cy=\"{}\" rx=\"{}\" ry=\"{}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"1.5\"{dash}/>\n",
         n(cx), n(cy), n(rx), n(ry)
@@ -1741,16 +1890,29 @@ fn draw_shape(svg: &mut String, node: &Node, dash: &str) -> TextRegion {
             TextRegion::full(node)
         }
         NodeShape::Circle | NodeShape::Ellipse => {
-            el_ellipse(svg, x + w / 2.0, y + h / 2.0, w / 2.0, h / 2.0, fill, stroke, dash);
+            el_ellipse(
+                svg,
+                x + w / 2.0,
+                y + h / 2.0,
+                w / 2.0,
+                h / 2.0,
+                fill,
+                stroke,
+                dash,
+            );
             TextRegion::full(node)
         }
         NodeShape::Hexagon => {
             let points = format!(
                 "{:.1},{y:.1} {:.1},{y:.1} {:.1},{:.1} {:.1},{:.1} {:.1},{:.1} {x:.1},{:.1}",
-                x + w / 4.0, x + 3.0 * w / 4.0,
-                x + w, y + h / 2.0,
-                x + 3.0 * w / 4.0, y + h,
-                x + w / 4.0, y + h,
+                x + w / 4.0,
+                x + 3.0 * w / 4.0,
+                x + w,
+                y + h / 2.0,
+                x + 3.0 * w / 4.0,
+                y + h,
+                x + w / 4.0,
+                y + h,
                 y + h / 2.0,
             );
             el_polygon(svg, &points, fill, stroke, dash);
@@ -1760,8 +1922,10 @@ fn draw_shape(svg: &mut String, node: &Node, dash: &str) -> TextRegion {
             let points = format!(
                 "{:.1},{y:.1} {:.1},{:.1} {:.1},{:.1} {x:.1},{:.1}",
                 x + w / 2.0,
-                x + w, y + h / 2.0,
-                x + w / 2.0, y + h,
+                x + w,
+                y + h / 2.0,
+                x + w / 2.0,
+                y + h,
                 y + h / 2.0,
             );
             el_polygon(svg, &points, fill, stroke, dash);
@@ -1793,7 +1957,11 @@ fn draw_shape(svg: &mut String, node: &Node, dash: &str) -> TextRegion {
                 "M {left:.1},{y:.1} a {c:.1},{ry:.1} 0,0,1 0 {h:.1} a {c:.1},{ry:.1} 0,0,1 0 -{h:.1} l {body:.1},0 a {c:.1},{ry:.1} 0,0,1 0 {h:.1} l -{body:.1},0"
             );
             el_path(svg, &d, fill, stroke, dash);
-            TextRegion { top: node.y, height: node.h, cx: cx + c.round() as i32 }
+            TextRegion {
+                top: node.y,
+                height: node.h,
+                cx: cx + c.round() as i32,
+            }
         }
         NodeShape::Person => {
             // Head circle first so the body box overlaps its lower half — the
@@ -1812,53 +1980,186 @@ fn draw_shape(svg: &mut String, node: &Node, dash: &str) -> TextRegion {
             // Square head above the body box, mirroring the person glyph.
             let r = PERSON_HEAD_RADIUS as f64;
             let hy = node.y as f64 - PERSON_HEAD_OVERLAP as f64 - r;
-            el_rect(svg, x + w / 2.0 - r, hy, 2.0 * r, 2.0 * r, 4.0, fill, stroke, dash);
+            el_rect(
+                svg,
+                x + w / 2.0 - r,
+                hy,
+                2.0 * r,
+                2.0 * r,
+                4.0,
+                fill,
+                stroke,
+                dash,
+            );
             el_rect(svg, x, y, w, h, 8.0, fill, stroke, dash);
             TextRegion::full(node)
         }
         NodeShape::Folder => {
             let tab_h = h / 8.0;
             let tab_w = w / 3.0;
-            el_rect(svg, x + 10.0, y, tab_w, tab_h * 2.0, 8.0, fill, stroke, dash);
+            el_rect(
+                svg,
+                x + 10.0,
+                y,
+                tab_w,
+                tab_h * 2.0,
+                8.0,
+                fill,
+                stroke,
+                dash,
+            );
             el_rect(svg, x, y + tab_h, w, h - tab_h, 6.0, fill, stroke, dash);
-            TextRegion { top: (y + tab_h).round() as i32, height: (h - tab_h).round() as i32, cx }
+            TextRegion {
+                top: (y + tab_h).round() as i32,
+                height: (h - tab_h).round() as i32,
+                cx,
+            }
         }
         NodeShape::Component => {
             let block_w = w / 6.0;
             let block_h = h / 8.0;
-            el_rect(svg, x + block_w / 2.0, y, w - block_w / 2.0, h, 10.0, fill, stroke, dash);
-            el_rect(svg, x, y + block_h * 0.6, block_w, block_h, 4.0, fill, stroke, dash);
-            el_rect(svg, x, y + block_h * 2.0, block_w, block_h, 4.0, fill, stroke, dash);
-            TextRegion { top: node.y, height: node.h, cx: cx + (block_w / 4.0).round() as i32 }
+            el_rect(
+                svg,
+                x + block_w / 2.0,
+                y,
+                w - block_w / 2.0,
+                h,
+                10.0,
+                fill,
+                stroke,
+                dash,
+            );
+            el_rect(
+                svg,
+                x,
+                y + block_h * 0.6,
+                block_w,
+                block_h,
+                4.0,
+                fill,
+                stroke,
+                dash,
+            );
+            el_rect(
+                svg,
+                x,
+                y + block_h * 2.0,
+                block_w,
+                block_h,
+                4.0,
+                fill,
+                stroke,
+                dash,
+            );
+            TextRegion {
+                top: node.y,
+                height: node.h,
+                cx: cx + (block_w / 4.0).round() as i32,
+            }
         }
         NodeShape::WebBrowser | NodeShape::Window => {
             // Outer frame filled with the stroke colour, panel with the fill.
             let ctrl_h = (h * 0.22).clamp(16.0, 40.0);
             el_rect(svg, x, y, w, h, 10.0, stroke, stroke, dash);
-            el_rect(svg, x + 2.0, y + ctrl_h, w - 4.0, h - ctrl_h - 2.0, 8.0, fill, stroke, "");
+            el_rect(
+                svg,
+                x + 2.0,
+                y + ctrl_h,
+                w - 4.0,
+                h - ctrl_h - 2.0,
+                8.0,
+                fill,
+                stroke,
+                "",
+            );
             let bcy = y + ctrl_h / 2.0;
             for i in 0..3 {
-                el_ellipse(svg, x + 12.0 + i as f64 * 18.0, bcy, 5.0, 5.0, fill, "none", "");
+                el_ellipse(
+                    svg,
+                    x + 12.0 + i as f64 * 18.0,
+                    bcy,
+                    5.0,
+                    5.0,
+                    fill,
+                    "none",
+                    "",
+                );
             }
             if node.shape == NodeShape::WebBrowser {
-                el_rect(svg, x + 64.0, bcy - 6.0, (w - 74.0).max(10.0), 12.0, 6.0, fill, "none", "");
+                el_rect(
+                    svg,
+                    x + 64.0,
+                    bcy - 6.0,
+                    (w - 74.0).max(10.0),
+                    12.0,
+                    6.0,
+                    fill,
+                    "none",
+                    "",
+                );
             }
-            TextRegion { top: (y + ctrl_h).round() as i32, height: (h - ctrl_h).round() as i32, cx }
+            TextRegion {
+                top: (y + ctrl_h).round() as i32,
+                height: (h - ctrl_h).round() as i32,
+                cx,
+            }
         }
         NodeShape::MobileDevicePortrait => {
             el_rect(svg, x, y, w, h, 16.0, stroke, stroke, dash);
-            el_line(svg, cx as f64 - 15.0, y + 10.0, cx as f64 + 15.0, y + 10.0, fill);
-            el_rect(svg, x + 8.0, y + 20.0, w - 16.0, h - 40.0, 4.0, fill, stroke, "");
+            el_line(
+                svg,
+                cx as f64 - 15.0,
+                y + 10.0,
+                cx as f64 + 15.0,
+                y + 10.0,
+                fill,
+            );
+            el_rect(
+                svg,
+                x + 8.0,
+                y + 20.0,
+                w - 16.0,
+                h - 40.0,
+                4.0,
+                fill,
+                stroke,
+                "",
+            );
             el_ellipse(svg, cx as f64, y + h - 10.0, 5.0, 5.0, fill, "none", "");
-            TextRegion { top: (y + 20.0).round() as i32, height: (h - 40.0).round() as i32, cx }
+            TextRegion {
+                top: (y + 20.0).round() as i32,
+                height: (h - 40.0).round() as i32,
+                cx,
+            }
         }
         NodeShape::MobileDeviceLandscape => {
             el_rect(svg, x, y, w, h, 16.0, stroke, stroke, dash);
             let mcy = y + h / 2.0;
             el_ellipse(svg, x + 12.0, mcy, 5.0, 5.0, fill, "none", "");
-            el_line(svg, x + w - 12.0, mcy - 15.0, x + w - 12.0, mcy + 15.0, fill);
-            el_rect(svg, x + 24.0, y + 8.0, w - 48.0, h - 16.0, 4.0, fill, stroke, "");
-            TextRegion { top: (y + 8.0).round() as i32, height: (h - 16.0).round() as i32, cx }
+            el_line(
+                svg,
+                x + w - 12.0,
+                mcy - 15.0,
+                x + w - 12.0,
+                mcy + 15.0,
+                fill,
+            );
+            el_rect(
+                svg,
+                x + 24.0,
+                y + 8.0,
+                w - 48.0,
+                h - 16.0,
+                4.0,
+                fill,
+                stroke,
+                "",
+            );
+            TextRegion {
+                top: (y + 8.0).round() as i32,
+                height: (h - 16.0).round() as i32,
+                cx,
+            }
         }
     }
 }
@@ -2033,7 +2334,12 @@ fn resolve_node_style(
     }
 
     let stroke = stroke.unwrap_or_else(|| darken(&fill));
-    ResolvedNodeStyle { fill, stroke, text_color, shape }
+    ResolvedNodeStyle {
+        fill,
+        stroke,
+        text_color,
+        shape,
+    }
 }
 
 fn xml_escape(s: &str) -> String {
@@ -2129,11 +2435,16 @@ mod tests {
             destination_id: "2".to_string(),
             ..Default::default()
         }]);
-        workspace.model.software_systems.as_mut().unwrap().push(SoftwareSystem {
-            id: "99".to_string(),
-            name: "Unrelated".to_string(),
-            ..Default::default()
-        });
+        workspace
+            .model
+            .software_systems
+            .as_mut()
+            .unwrap()
+            .push(SoftwareSystem {
+                id: "99".to_string(),
+                name: "Unrelated".to_string(),
+                ..Default::default()
+            });
         workspace.views.system_context_views = Some(vec![SystemContextView {
             software_system_id: "2".to_string(),
             key: Some("Context".to_string()),
@@ -2143,7 +2454,10 @@ mod tests {
         let diagrams = SvgExporter.export_workspace(&workspace);
         let svg = &diagrams[0].content;
         assert!(svg.contains("Alice"));
-        assert!(!svg.contains("Unrelated"), "unrelated system must be scoped out");
+        assert!(
+            !svg.contains("Unrelated"),
+            "unrelated system must be scoped out"
+        );
     }
 
     #[test]
@@ -2177,7 +2491,10 @@ mod tests {
         assert!(svg.contains("API"));
         assert!(svg.contains("Rust"));
         assert!(svg.contains(COLOR_CONTAINER));
-        assert!(svg.contains("My System"), "boundary label should carry the system name");
+        assert!(
+            svg.contains("My System"),
+            "boundary label should carry the system name"
+        );
     }
 
     #[test]
@@ -2220,8 +2537,14 @@ mod tests {
             container_id: "3".to_string(),
             key: Some("Components".to_string()),
             element_views: Some(vec![
-                ElementView { id: "4".to_string(), ..Default::default() },
-                ElementView { id: "9".to_string(), ..Default::default() },
+                ElementView {
+                    id: "4".to_string(),
+                    ..Default::default()
+                },
+                ElementView {
+                    id: "9".to_string(),
+                    ..Default::default()
+                },
             ]),
             relationship_views: Some(vec![RelationshipView {
                 id: "r1".to_string(),
@@ -2234,10 +2557,19 @@ mod tests {
         assert_eq!(diagrams.len(), 1);
         let svg = &diagrams[0].content;
         assert!(svg.contains("Widget"), "component should render");
-        assert!(svg.contains("External"), "related external system should render");
-        assert!(svg.contains("API"), "boundary label should carry the container name");
+        assert!(
+            svg.contains("External"),
+            "related external system should render"
+        );
+        assert!(
+            svg.contains("API"),
+            "boundary label should carry the container name"
+        );
         // The component→external relationship should produce an arrow.
-        assert!(svg.contains("url(#arrow)"), "component relationship should render an edge");
+        assert!(
+            svg.contains("url(#arrow)"),
+            "component relationship should render an edge"
+        );
     }
 
     #[test]
@@ -2273,8 +2605,14 @@ mod tests {
         let exporter = SvgExporter;
         let diagrams = exporter.export_workspace(&workspace);
         let svg = &diagrams[0].content;
-        assert!(svg.contains("Uses"), "relationship label should appear in SVG");
-        assert!(svg.contains("url(#arrow)"), "arrowhead marker should be present");
+        assert!(
+            svg.contains("Uses"),
+            "relationship label should appear in SVG"
+        );
+        assert!(
+            svg.contains("url(#arrow)"),
+            "arrowhead marker should be present"
+        );
     }
 
     #[test]
@@ -2321,7 +2659,10 @@ mod tests {
             .and_then(|s| s.parse().ok())
             .unwrap();
         // Two layers of ~90px nodes plus gaps/margins/title — far below 600.
-        assert!(height < 600, "cycle must not inflate the canvas (height={height})");
+        assert!(
+            height < 600,
+            "cycle must not inflate the canvas (height={height})"
+        );
     }
 
     #[test]
@@ -2398,10 +2739,19 @@ mod tests {
         let diagrams = exporter.export_workspace(&workspace);
         let svg = &diagrams[0].content;
 
-        assert!(svg.contains("#FF0000"), "custom background colour should appear in SVG");
-        assert!(svg.contains("#000000"), "custom text colour should appear in SVG");
+        assert!(
+            svg.contains("#FF0000"),
+            "custom background colour should appear in SVG"
+        );
+        assert!(
+            svg.contains("#000000"),
+            "custom text colour should appear in SVG"
+        );
         // The default person blue should NOT appear since it was overridden.
-        assert!(!svg.contains(COLOR_PERSON), "default person colour should be replaced");
+        assert!(
+            !svg.contains(COLOR_PERSON),
+            "default person colour should be replaced"
+        );
     }
 
     #[test]
@@ -2431,7 +2781,10 @@ mod tests {
         let diagrams = exporter.export_workspace(&workspace);
         let svg = &diagrams[0].content;
 
-        assert!(svg.contains("#ABCDEF"), "custom stroke colour should appear in SVG");
+        assert!(
+            svg.contains("#ABCDEF"),
+            "custom stroke colour should appear in SVG"
+        );
     }
 
     #[test]
@@ -2453,12 +2806,24 @@ mod tests {
         let mut workspace = Workspace::default();
         workspace.name = "FilterTest".to_string();
         workspace.model.software_systems = Some(vec![
-            SoftwareSystem { id: "1".to_string(), name: "Alpha".to_string(), ..Default::default() },
-            SoftwareSystem { id: "2".to_string(), name: "Beta".to_string(), ..Default::default() },
+            SoftwareSystem {
+                id: "1".to_string(),
+                name: "Alpha".to_string(),
+                ..Default::default()
+            },
+            SoftwareSystem {
+                id: "2".to_string(),
+                name: "Beta".to_string(),
+                ..Default::default()
+            },
         ]);
         workspace.views.system_landscape_views = Some(vec![SystemLandscapeView {
             key: Some("Landscape".to_string()),
-            element_views: Some(vec![ElementView { id: "1".to_string(), x: None, y: None }]),
+            element_views: Some(vec![ElementView {
+                id: "1".to_string(),
+                x: None,
+                y: None,
+            }]),
             ..Default::default()
         }]);
 
@@ -2477,14 +2842,30 @@ mod tests {
         let mut workspace = Workspace::default();
         workspace.name = "PosTest".to_string();
         workspace.model.software_systems = Some(vec![
-            SoftwareSystem { id: "1".to_string(), name: "SysA".to_string(), ..Default::default() },
-            SoftwareSystem { id: "2".to_string(), name: "SysB".to_string(), ..Default::default() },
+            SoftwareSystem {
+                id: "1".to_string(),
+                name: "SysA".to_string(),
+                ..Default::default()
+            },
+            SoftwareSystem {
+                id: "2".to_string(),
+                name: "SysB".to_string(),
+                ..Default::default()
+            },
         ]);
         workspace.views.system_landscape_views = Some(vec![SystemLandscapeView {
             key: Some("Landscape".to_string()),
             element_views: Some(vec![
-                ElementView { id: "1".to_string(), x: Some(100), y: Some(100) },
-                ElementView { id: "2".to_string(), x: Some(400), y: Some(100) },
+                ElementView {
+                    id: "1".to_string(),
+                    x: Some(100),
+                    y: Some(100),
+                },
+                ElementView {
+                    id: "2".to_string(),
+                    x: Some(400),
+                    y: Some(100),
+                },
             ]),
             ..Default::default()
         }]);
@@ -2507,16 +2888,40 @@ mod tests {
         let mut workspace = Workspace::default();
         workspace.name = "MixedPosTest".to_string();
         workspace.model.software_systems = Some(vec![
-            SoftwareSystem { id: "1".to_string(), name: "SysA".to_string(), ..Default::default() },
-            SoftwareSystem { id: "2".to_string(), name: "SysB".to_string(), ..Default::default() },
-            SoftwareSystem { id: "3".to_string(), name: "SysC".to_string(), ..Default::default() },
+            SoftwareSystem {
+                id: "1".to_string(),
+                name: "SysA".to_string(),
+                ..Default::default()
+            },
+            SoftwareSystem {
+                id: "2".to_string(),
+                name: "SysB".to_string(),
+                ..Default::default()
+            },
+            SoftwareSystem {
+                id: "3".to_string(),
+                name: "SysC".to_string(),
+                ..Default::default()
+            },
         ]);
         workspace.views.system_landscape_views = Some(vec![SystemLandscapeView {
             key: Some("Landscape".to_string()),
             element_views: Some(vec![
-                ElementView { id: "1".to_string(), x: Some(500), y: Some(500) },
-                ElementView { id: "2".to_string(), x: None, y: None },
-                ElementView { id: "3".to_string(), x: None, y: None },
+                ElementView {
+                    id: "1".to_string(),
+                    x: Some(500),
+                    y: Some(500),
+                },
+                ElementView {
+                    id: "2".to_string(),
+                    x: None,
+                    y: None,
+                },
+                ElementView {
+                    id: "3".to_string(),
+                    x: None,
+                    y: None,
+                },
             ]),
             ..Default::default()
         }]);
@@ -2526,7 +2931,10 @@ mod tests {
         let svg = &diagrams[0].content;
 
         // The explicitly positioned box keeps its stored x.
-        assert!(svg.contains(r#"x="500""#), "positioned box keeps stored x=500");
+        assert!(
+            svg.contains(r#"x="500""#),
+            "positioned box keeps stored x=500"
+        );
 
         // SysB and SysC must not end up at the same coordinates as each other.
         let xs: Vec<&str> = svg
@@ -2550,9 +2958,11 @@ mod tests {
     fn person_head_circle_above_box() {
         let mut workspace = Workspace::default();
         workspace.name = "PersonTest".to_string();
-        workspace.model.people = Some(vec![
-            Person { id: "1".to_string(), name: "Bob".to_string(), ..Default::default() },
-        ]);
+        workspace.model.people = Some(vec![Person {
+            id: "1".to_string(),
+            name: "Bob".to_string(),
+            ..Default::default()
+        }]);
         workspace.views.system_landscape_views = Some(vec![SystemLandscapeView {
             key: Some("Landscape".to_string()),
             ..Default::default()
@@ -2562,7 +2972,10 @@ mod tests {
         let diagrams = exporter.export_workspace(&workspace);
         let svg = &diagrams[0].content;
 
-        assert!(svg.contains("<circle"), "person shape must include a circle");
+        assert!(
+            svg.contains("<circle"),
+            "person shape must include a circle"
+        );
         // Extract the head circle centre and the person box top edge and check
         // the head sits above the box.
         let cy: f64 = svg
@@ -2580,7 +2993,10 @@ mod tests {
             .and_then(|s| s.split('"').next())
             .and_then(|s| s.parse().ok())
             .expect("person rect y");
-        assert!(cy < y, "head circle centre (cy={cy}) must be above the box top (y={y})");
+        assert!(
+            cy < y,
+            "head circle centre (cy={cy}) must be above the box top (y={y})"
+        );
     }
 
     #[test]
@@ -2624,9 +3040,18 @@ mod tests {
 
         // Cylinder emits a <path> arc; Hexagon a <polygon>; Folder two rects
         // (a tab) — each distinct from the default plain box.
-        assert!(svg_for("Cylinder").contains("<path d=\"M "), "cylinder must draw a path");
-        assert!(svg_for("Hexagon").matches("<polygon").count() >= 2, "hexagon must draw a polygon");
-        assert!(svg_for("Cylinder") != svg_for("Box"), "cylinder differs from box");
+        assert!(
+            svg_for("Cylinder").contains("<path d=\"M "),
+            "cylinder must draw a path"
+        );
+        assert!(
+            svg_for("Hexagon").matches("<polygon").count() >= 2,
+            "hexagon must draw a polygon"
+        );
+        assert!(
+            svg_for("Cylinder") != svg_for("Box"),
+            "cylinder differs from box"
+        );
     }
 
     #[test]
@@ -2649,17 +3074,24 @@ mod tests {
             description: Some("Replies".to_string()),
             ..Default::default()
         };
-        workspace.model.people = Some(vec![
-            Person { id: "1".to_string(), name: "Alice".to_string(), relationships: Some(vec![rel1]), ..Default::default() },
-        ]);
-        workspace.model.software_systems = Some(vec![
-            SoftwareSystem { id: "2".to_string(), name: "System".to_string(), relationships: Some(vec![rel2]), ..Default::default() },
-        ]);
+        workspace.model.people = Some(vec![Person {
+            id: "1".to_string(),
+            name: "Alice".to_string(),
+            relationships: Some(vec![rel1]),
+            ..Default::default()
+        }]);
+        workspace.model.software_systems = Some(vec![SoftwareSystem {
+            id: "2".to_string(),
+            name: "System".to_string(),
+            relationships: Some(vec![rel2]),
+            ..Default::default()
+        }]);
         workspace.views.system_landscape_views = Some(vec![SystemLandscapeView {
             key: Some("Landscape".to_string()),
-            relationship_views: Some(vec![
-                RelationshipView { id: "r1".to_string(), ..Default::default() },
-            ]),
+            relationship_views: Some(vec![RelationshipView {
+                id: "r1".to_string(),
+                ..Default::default()
+            }]),
             ..Default::default()
         }]);
 
@@ -2667,8 +3099,14 @@ mod tests {
         let diagrams = exporter.export_workspace(&workspace);
         let svg = &diagrams[0].content;
 
-        assert!(svg.contains("Sends"), "included relationship label should appear");
-        assert!(!svg.contains("Replies"), "excluded relationship label must NOT appear");
+        assert!(
+            svg.contains("Sends"),
+            "included relationship label should appear"
+        );
+        assert!(
+            !svg.contains("Replies"),
+            "excluded relationship label must NOT appear"
+        );
     }
 
     // ── Label collision-avoidance tests ───────────────────────────────────────
@@ -2728,7 +3166,9 @@ mod tests {
     /// of node boxes and arrowheads.
     #[test]
     fn edge_and_port_labels_avoid_node_boxes() {
-        use structurizr_model::{Container, ContainerView, Person, Port, Relationship, SoftwareSystem, Workspace};
+        use structurizr_model::{
+            Container, ContainerView, Person, Port, Relationship, SoftwareSystem, Workspace,
+        };
 
         let mut workspace = Workspace::default();
         workspace.name = "BigBankLike".to_string();
@@ -2834,7 +3274,9 @@ mod tests {
                     id: "r-person-mobile".to_string(),
                     source_id: "person".to_string(),
                     destination_id: "mobile".to_string(),
-                    description: Some("Views account balances, and makes payments using".to_string()),
+                    description: Some(
+                        "Views account balances, and makes payments using".to_string(),
+                    ),
                     ..Default::default()
                 },
                 Relationship {
@@ -2862,7 +3304,10 @@ mod tests {
 
         let (node_rects, label_rects) = extract_rects(svg);
         assert!(!node_rects.is_empty(), "expected node boxes in the SVG");
-        assert!(!label_rects.is_empty(), "expected edge/port labels in the SVG");
+        assert!(
+            !label_rects.is_empty(),
+            "expected edge/port labels in the SVG"
+        );
 
         for (li, lr) in label_rects.iter().enumerate() {
             for (ni, nr) in node_rects.iter().enumerate() {
@@ -2880,9 +3325,22 @@ mod tests {
         // clear it (and the label's own half-extent) while roughly tracking
         // the line.
         let obstacle = (90.0, 40.0, 20.0, 20.0); // centred on (100, 50)
-        let (lx, ly) = find_label_center(0.0, 50.0, 200.0, 50.0, 40.0, 12.0, &[obstacle], &[], (0.0, 0.0, 0.0, 0.0));
+        let (lx, ly) = find_label_center(
+            0.0,
+            50.0,
+            200.0,
+            50.0,
+            40.0,
+            12.0,
+            &[obstacle],
+            &[],
+            (0.0, 0.0, 0.0, 0.0),
+        );
         let label_rect = (lx - 20.0, ly - 6.0, 40.0, 12.0);
-        assert!(!rects_overlap(label_rect, obstacle), "label must not sit on the obstacle: {label_rect:?}");
+        assert!(
+            !rects_overlap(label_rect, obstacle),
+            "label must not sit on the obstacle: {label_rect:?}"
+        );
     }
 
     #[test]
@@ -2890,6 +3348,9 @@ mod tests {
         let avoid = (190.0, 44.0, 20.0, 20.0); // around the destination point (200, 50)
         let (lx, ly) = find_label_center(0.0, 50.0, 200.0, 50.0, 30.0, 12.0, &[], &[], avoid);
         let label_rect = (lx - 15.0, ly - 6.0, 30.0, 12.0);
-        assert!(!rects_overlap(label_rect, avoid), "label must not cover the arrowhead: {label_rect:?}");
+        assert!(
+            !rects_overlap(label_rect, avoid),
+            "label must not cover the arrowhead: {label_rect:?}"
+        );
     }
 }

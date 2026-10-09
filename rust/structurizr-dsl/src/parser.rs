@@ -40,7 +40,10 @@ pub fn parse_str_detailed_at(source: &str, path: impl AsRef<Path>) -> Result<Par
     let base = path.parent().map(|p| p.to_path_buf());
     let (source, source_map) = match &base {
         Some(dir) => {
-            let mut map = SourceMap { files: vec![path.to_path_buf()], ..SourceMap::default() };
+            let mut map = SourceMap {
+                files: vec![path.to_path_buf()],
+                ..SourceMap::default()
+            };
             let spliced = preprocess_includes(&source, dir, 0, None, 0, &mut map)?;
             (spliced, Some(map))
         }
@@ -52,7 +55,11 @@ pub fn parse_str_detailed_at(source: &str, path: impl AsRef<Path>) -> Result<Par
     parser.source_map = source_map;
     let workspace = parser.parse_workspace_toplevel()?;
     let locations = parser.source_locations(Some(path));
-    Ok(Parsed { workspace, identifiers: parser.register, locations })
+    Ok(Parsed {
+        workspace,
+        identifiers: parser.register,
+        locations,
+    })
 }
 
 /// Maps each line of the post-`!include` spliced source back to
@@ -108,7 +115,11 @@ fn preprocess_includes(
 ) -> Result<String, ParseError> {
     const MAX_INCLUDE_DEPTH: usize = 16;
     if depth > MAX_INCLUDE_DEPTH {
-        return Err(ParseError::syntax(0, 0, "include depth exceeded (cycle?)".to_string()));
+        return Err(ParseError::syntax(
+            0,
+            0,
+            "include depth exceeded (cycle?)".to_string(),
+        ));
     }
     let mut out = String::with_capacity(source.len());
     for (idx, line) in source.lines().enumerate() {
@@ -120,12 +131,23 @@ fn preprocess_includes(
             let rel = rest.trim().trim_matches('"');
             let inc_path = dir.join(rel);
             let inc_src = std::fs::read_to_string(&inc_path).map_err(|e| {
-                ParseError::syntax(0, 0, format!("cannot read !include '{}': {}", inc_path.display(), e))
+                ParseError::syntax(
+                    0,
+                    0,
+                    format!("cannot read !include '{}': {}", inc_path.display(), e),
+                )
             })?;
             let inc_dir = inc_path.parent().unwrap_or(dir).to_path_buf();
             map.files.push(inc_path);
             let inc_idx = map.files.len() - 1;
-            out.push_str(&preprocess_includes(&inc_src, &inc_dir, depth + 1, Some(rel), inc_idx, map)?);
+            out.push_str(&preprocess_includes(
+                &inc_src,
+                &inc_dir,
+                depth + 1,
+                Some(rel),
+                inc_idx,
+                map,
+            )?);
             out.push('\n');
             map.lines.push((file_label.map(str::to_string), idx + 1));
             map.origins.push(file_idx);
@@ -147,7 +169,9 @@ pub fn parse_str(source: &str) -> Result<Workspace, ParseError> {
 /// Parse a DSL string into a Workspace, also returning the identifier register
 /// built up during parsing (DSL identifier → resolved element id/kind). Intended
 /// for tooling (e.g. an LSP) that needs to resolve identifiers back to elements.
-pub fn parse_str_with_identifiers(source: &str) -> Result<(Workspace, IdentifierRegister), ParseError> {
+pub fn parse_str_with_identifiers(
+    source: &str,
+) -> Result<(Workspace, IdentifierRegister), ParseError> {
     parse_str_detailed(source).map(|parsed| (parsed.workspace, parsed.identifiers))
 }
 
@@ -158,7 +182,11 @@ pub fn parse_str_detailed(source: &str) -> Result<Parsed, ParseError> {
     let mut parser = Parser::new(tokens);
     let workspace = parser.parse_workspace_toplevel()?;
     let locations = parser.source_locations(None);
-    Ok(Parsed { workspace, identifiers: parser.register, locations })
+    Ok(Parsed {
+        workspace,
+        identifiers: parser.register,
+        locations,
+    })
 }
 
 struct Parser {
@@ -216,45 +244,113 @@ struct PendingEndpoint {
 
 /// Attribute keywords accepted in any element body (person, component, …).
 const ELEMENT_BODY_KEYWORDS: [&str; 12] = [
-    "description", "technology", "url", "tags", "group", "properties", "perspective",
-    "perspectives", "port", "status", "introduced", "retired",
+    "description",
+    "technology",
+    "url",
+    "tags",
+    "group",
+    "properties",
+    "perspective",
+    "perspectives",
+    "port",
+    "status",
+    "introduced",
+    "retired",
 ];
 
 /// Keywords accepted in a `softwareSystem { ... }` body.
 const SOFTWARE_SYSTEM_BODY_KEYWORDS: [&str; 13] = [
-    "container", "group", "description", "technology", "url", "tags", "properties",
-    "perspective", "perspectives", "port", "status", "introduced", "retired",
+    "container",
+    "group",
+    "description",
+    "technology",
+    "url",
+    "tags",
+    "properties",
+    "perspective",
+    "perspectives",
+    "port",
+    "status",
+    "introduced",
+    "retired",
 ];
 
 /// Keywords accepted in a `container { ... }` body.
 const CONTAINER_BODY_KEYWORDS: [&str; 13] = [
-    "component", "group", "description", "technology", "url", "tags", "properties",
-    "perspective", "perspectives", "port", "status", "introduced", "retired",
+    "component",
+    "group",
+    "description",
+    "technology",
+    "url",
+    "tags",
+    "properties",
+    "perspective",
+    "perspectives",
+    "port",
+    "status",
+    "introduced",
+    "retired",
 ];
 
 /// Keywords accepted in a `deploymentNode { ... }` body.
 const DEPLOYMENT_NODE_BODY_KEYWORDS: [&str; 13] = [
-    "deploymentNode", "containerInstance", "softwareSystemInstance", "infrastructureNode",
-    "instanceOf", "instances", "group", "deploymentGroup", "description", "technology",
-    "url", "tags", "properties",
+    "deploymentNode",
+    "containerInstance",
+    "softwareSystemInstance",
+    "infrastructureNode",
+    "instanceOf",
+    "instances",
+    "group",
+    "deploymentGroup",
+    "description",
+    "technology",
+    "url",
+    "tags",
+    "properties",
 ];
 
 /// Keywords accepted directly inside `model { ... }`.
 const MODEL_KEYWORDS: [&str; 7] = [
-    "person", "softwareSystem", "group", "enterprise", "deploymentEnvironment", "element",
+    "person",
+    "softwareSystem",
+    "group",
+    "enterprise",
+    "deploymentEnvironment",
+    "element",
     "properties",
 ];
 
 /// Keywords accepted directly inside `workspace { ... }`.
 const WORKSPACE_KEYWORDS: [&str; 11] = [
-    "name", "description", "model", "views", "configuration", "documentation",
-    "docs", "specification", "milestones", "perspectives", "properties",
+    "name",
+    "description",
+    "model",
+    "views",
+    "configuration",
+    "documentation",
+    "docs",
+    "specification",
+    "milestones",
+    "perspectives",
+    "properties",
 ];
 
 /// Keywords accepted directly inside `views { ... }`.
 const VIEWS_KEYWORDS: [&str; 15] = [
-    "auto", "systemLandscape", "systemContext", "container", "component", "dynamic",
-    "deployment", "filtered", "image", "custom", "styles", "theme", "themes", "branding",
+    "auto",
+    "systemLandscape",
+    "systemContext",
+    "container",
+    "component",
+    "dynamic",
+    "deployment",
+    "filtered",
+    "image",
+    "custom",
+    "styles",
+    "theme",
+    "themes",
+    "branding",
     "properties",
 ];
 
@@ -381,12 +477,19 @@ impl Parser {
                 }
                 None => ParseError::UnexpectedEof,
             },
-            ParseError::Syntax { line, col, message, .. } => {
+            ParseError::Syntax {
+                line, col, message, ..
+            } => {
                 let (file, orig_line) = match &self.source_map {
                     Some(map) => map.resolve(line),
                     None => (None, line),
                 };
-                ParseError::Syntax { file: file.map(str::to_string), line: orig_line, col, message }
+                ParseError::Syntax {
+                    file: file.map(str::to_string),
+                    line: orig_line,
+                    col,
+                    message,
+                }
             }
             other => other,
         }
@@ -404,11 +507,15 @@ impl Parser {
             Ok(_) => {}
             Err(e) => errors.push(e),
         }
-        let mut errors: Vec<ParseError> =
-            errors.into_iter().map(|e| self.localize_error(e, unclosed)).collect();
+        let mut errors: Vec<ParseError> = errors
+            .into_iter()
+            .map(|e| self.localize_error(e, unclosed))
+            .collect();
         // Report in source order: entry file first, then each included file.
         errors.sort_by_key(|e| match e {
-            ParseError::Syntax { file, line, col, .. } => (file.clone(), *line, *col),
+            ParseError::Syntax {
+                file, line, col, ..
+            } => (file.clone(), *line, *col),
             _ => (None, usize::MAX, 0),
         });
         if errors.len() == 1 {
@@ -460,12 +567,16 @@ impl Parser {
             }
         }
         for (id, element_id, file, line_count) in &self.adr_files {
-            locations.push_decision(id.clone(), element_id.clone(), SourceLocation {
-                file: Some(file.clone()),
-                line: 1,
-                col: 1,
-                end_line: (*line_count).max(1),
-            });
+            locations.push_decision(
+                id.clone(),
+                element_id.clone(),
+                SourceLocation {
+                    file: Some(file.clone()),
+                    line: 1,
+                    col: 1,
+                    end_line: (*line_count).max(1),
+                },
+            );
         }
         locations
     }
@@ -486,9 +597,14 @@ impl Parser {
             };
             Some((Some(file.to_path_buf()), line, end_line))
         });
-        let (file, line, end_line) = resolved
-            .unwrap_or_else(|| (entry.map(Path::to_path_buf), spliced_start, spliced_end));
-        SourceLocation { file, line, col: self.tokens[start].pos.col, end_line }
+        let (file, line, end_line) =
+            resolved.unwrap_or_else(|| (entry.map(Path::to_path_buf), spliced_start, spliced_end));
+        SourceLocation {
+            file,
+            line,
+            col: self.tokens[start].pos.col,
+            end_line,
+        }
     }
 
     fn peek(&self) -> Option<&Token> {
@@ -685,7 +801,12 @@ impl Parser {
                 return ParseError::syntax(
                     line,
                     col,
-                    format!("unexpected {:?} in {}; expected one of: {}", other, context, allowed.join(", ")),
+                    format!(
+                        "unexpected {:?} in {}; expected one of: {}",
+                        other,
+                        context,
+                        allowed.join(", ")
+                    ),
                 )
             }
             None => return ParseError::UnexpectedEof,
@@ -756,7 +877,14 @@ impl Parser {
         for p in &pendings {
             if self.endpoint_resolves(&p.ident) {
                 let (id, port) = self.resolve_endpoint(&p.ident);
-                rewrite_rel_endpoint(model, &mut self.deferred_rels, &p.rel_id, p.source_side, &id, port);
+                rewrite_rel_endpoint(
+                    model,
+                    &mut self.deferred_rels,
+                    &p.rel_id,
+                    p.source_side,
+                    &id,
+                    port,
+                );
             } else if element_ids.contains(&p.ident) {
                 // Literal element id used directly; nothing to rewrite.
             } else if self.sketch {
@@ -768,7 +896,14 @@ impl Parser {
                 // up pointing at a nonexistent id.
                 self.vivify_placeholder(model, &p.ident);
                 if let Some(id) = self.register.resolve_id(&p.ident) {
-                    rewrite_rel_endpoint(model, &mut self.deferred_rels, &p.rel_id, p.source_side, &id, None);
+                    rewrite_rel_endpoint(
+                        model,
+                        &mut self.deferred_rels,
+                        &p.rel_id,
+                        p.source_side,
+                        &id,
+                        None,
+                    );
                 }
             } else {
                 let mut msg = format!("unknown element identifier '{}' in relationship", p.ident);
@@ -892,7 +1027,10 @@ impl Parser {
                     continue;
                 }
                 let destination_groups = groups_of(destination);
-                if !groups_of(source).iter().any(|g| destination_groups.contains(g)) {
+                if !groups_of(source)
+                    .iter()
+                    .any(|g| destination_groups.contains(g))
+                {
                     continue;
                 }
                 for rel in &source_rels {
@@ -1028,7 +1166,10 @@ impl Parser {
         let base = match &self.base_path {
             Some(p) => p.clone(),
             None => {
-                eprintln!("Warning: !adrs '{}' ignored (no base path — use parse_file)", rel_path);
+                eprintln!(
+                    "Warning: !adrs '{}' ignored (no base path — use parse_file)",
+                    rel_path
+                );
                 return vec![];
             }
         };
@@ -1044,7 +1185,11 @@ impl Parser {
                 .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "md"))
                 .collect(),
             Err(e) => {
-                eprintln!("Warning: Could not read ADR directory {}: {}", dir.display(), e);
+                eprintln!(
+                    "Warning: Could not read ADR directory {}: {}",
+                    dir.display(),
+                    e
+                );
                 return vec![];
             }
         };
@@ -1054,7 +1199,8 @@ impl Parser {
             if let Some(mut decision) = Self::parse_adr_file(&path) {
                 decision.element_id = element_id.clone();
                 let line_count = decision.content.lines().count();
-                self.adr_files.push((decision.id.clone(), element_id.clone(), path, line_count));
+                self.adr_files
+                    .push((decision.id.clone(), element_id.clone(), path, line_count));
                 decisions.push(decision);
             }
         }
@@ -1065,7 +1211,10 @@ impl Parser {
     fn parse_adr_file(path: &Path) -> Option<Decision> {
         let filename = path.file_name()?.to_str()?;
         // ID is parsed from the leading digits of the filename (e.g. "0001" → "1").
-        let leading_digits: String = filename.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let leading_digits: String = filename
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
         if leading_digits.is_empty() {
             return None;
         }
@@ -1078,15 +1227,19 @@ impl Parser {
         let lines: Vec<&str> = content.lines().collect();
 
         // Title: first line is expected to be "# N. Title" → extract "Title".
-        let title = lines.first()
+        let title = lines
+            .first()
             .and_then(|l| {
                 let stripped = l.trim_start_matches('#').trim();
-                stripped.find(". ").map(|i| stripped[i + 2..].trim().to_string())
+                stripped
+                    .find(". ")
+                    .map(|i| stripped[i + 2..].trim().to_string())
             })
             .unwrap_or_else(|| filename.to_string());
 
         // Date: first line matching "Date: YYYY-MM-DD".
-        let date = lines.iter()
+        let date = lines
+            .iter()
             .find(|l| l.starts_with("Date: "))
             .map(|l| l["Date: ".len()..].trim().to_string())
             .unwrap_or_default();
@@ -1103,7 +1256,11 @@ impl Parser {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
                     let word = trimmed.split_whitespace().next().unwrap_or("Proposed");
-                    status = if word == "Superceded" { "Superseded".to_string() } else { word.to_string() };
+                    status = if word == "Superceded" {
+                        "Superseded".to_string()
+                    } else {
+                        word.to_string()
+                    };
                     break;
                 }
             }
@@ -1161,7 +1318,9 @@ impl Parser {
 
         // Flush all accumulated ADR decisions into workspace.documentation.
         if !self.accumulated_decisions.is_empty() {
-            let doc = workspace.documentation.get_or_insert_with(Documentation::default);
+            let doc = workspace
+                .documentation
+                .get_or_insert_with(Documentation::default);
             let existing = doc.decisions.get_or_insert_with(Vec::new);
             existing.append(&mut self.accumulated_decisions);
         }
@@ -1214,7 +1373,8 @@ impl Parser {
             ..Default::default()
         };
         model.software_systems.get_or_insert_with(Vec::new).push(ss);
-        self.register.register(ident, id, ElementType::SoftwareSystem);
+        self.register
+            .register(ident, id, ElementType::SoftwareSystem);
     }
 
     fn handle_pre_workspace_directives(&mut self) {
@@ -1333,9 +1493,18 @@ impl Parser {
                             if self.peek_word("kind") {
                                 self.advance();
                                 let (line, col) = self.current_pos();
-                                let alias_name = self.consume_bare_word_or_string().unwrap_or_default().to_lowercase();
-                                let base = self.consume_bare_word_or_string().unwrap_or_default().to_lowercase();
-                                if !matches!(base.as_str(), "person" | "softwaresystem" | "container" | "component") {
+                                let alias_name = self
+                                    .consume_bare_word_or_string()
+                                    .unwrap_or_default()
+                                    .to_lowercase();
+                                let base = self
+                                    .consume_bare_word_or_string()
+                                    .unwrap_or_default()
+                                    .to_lowercase();
+                                if !matches!(
+                                    base.as_str(),
+                                    "person" | "softwaresystem" | "container" | "component"
+                                ) {
                                     return Err(ParseError::syntax(line, col, format!(
                                         "kind alias base must be person|softwareSystem|container|component, got: {}",
                                         base
@@ -1360,11 +1529,14 @@ impl Parser {
                                     self.expect_close_brace()?;
                                 }
                                 if !alias_name.is_empty() {
-                                    self.kind_aliases.insert(alias_name, KindAlias {
-                                        base,
-                                        tags: alias_tags,
-                                        technology: alias_tech,
-                                    });
+                                    self.kind_aliases.insert(
+                                        alias_name,
+                                        KindAlias {
+                                            base,
+                                            tags: alias_tags,
+                                            technology: alias_tech,
+                                        },
+                                    );
                                 }
                             } else {
                                 self.advance();
@@ -1382,15 +1554,26 @@ impl Parser {
                             // Name is a bare word or quoted string; date and description are
                             // quoted strings (or bare words for robustness).
                             let name = match self.peek() {
-                                Some(Token::Word(_)) | Some(Token::Quoted(_)) | Some(Token::TextBlock(_)) => {
+                                Some(Token::Word(_))
+                                | Some(Token::Quoted(_))
+                                | Some(Token::TextBlock(_)) => {
                                     self.consume_bare_word_or_string().unwrap_or_default()
                                 }
-                                _ => { self.advance(); continue; }
+                                _ => {
+                                    self.advance();
+                                    continue;
+                                }
                             };
-                            if name.is_empty() { continue; }
-                            let date        = self.consume_string_if_not_brace();
+                            if name.is_empty() {
+                                continue;
+                            }
+                            let date = self.consume_string_if_not_brace();
                             let description = self.consume_string_if_not_brace();
-                            milestones.push(Milestone { name, date, description });
+                            milestones.push(Milestone {
+                                name,
+                                date,
+                                description,
+                            });
                         }
                         self.expect_close_brace()?;
                         workspace.milestones = Some(milestones);
@@ -1413,11 +1596,16 @@ impl Parser {
                     "properties" => {
                         self.advance();
                         let props = self.parse_properties_block_body()?;
-                        workspace.properties.get_or_insert_with(HashMap::new).extend(props);
+                        workspace
+                            .properties
+                            .get_or_insert_with(HashMap::new)
+                            .extend(props);
                     }
                     _ => {
                         if !self.sketch {
-                            return Err(self.unknown_keyword_error("workspace", &WORKSPACE_KEYWORDS));
+                            return Err(
+                                self.unknown_keyword_error("workspace", &WORKSPACE_KEYWORDS)
+                            );
                         }
                         self.advance();
                         self.skip_optional_block_or_value();
@@ -1438,7 +1626,10 @@ impl Parser {
             self.skip_block();
         } else {
             // consume optional value tokens
-            while matches!(self.peek(), Some(Token::Word(_)) | Some(Token::Quoted(_)) | Some(Token::TextBlock(_))) {
+            while matches!(
+                self.peek(),
+                Some(Token::Word(_)) | Some(Token::Quoted(_)) | Some(Token::TextBlock(_))
+            ) {
                 self.advance();
             }
         }
@@ -1468,7 +1659,11 @@ impl Parser {
         self.finalize_model(model)
     }
 
-    fn parse_model_item(&mut self, model: &mut Model, _parent_env: Option<&str>) -> Result<(), ParseError> {
+    fn parse_model_item(
+        &mut self,
+        model: &mut Model,
+        _parent_env: Option<&str>,
+    ) -> Result<(), ParseError> {
         // Check for assignment: `id = element ...`
         let (identifier, _) = self.peek_assignment();
         let has_assign = identifier.is_some();
@@ -1491,13 +1686,17 @@ impl Parser {
                     }
                     "softwaresystem" => {
                         self.advance();
-                        let ss = self.parse_software_system(if has_assign { &identifier } else { "" })?;
+                        let ss =
+                            self.parse_software_system(if has_assign { &identifier } else { "" })?;
                         model.software_systems.get_or_insert_with(Vec::new).push(ss);
                     }
                     "deploymentenvironment" => {
                         self.advance();
                         let nodes = self.parse_deployment_environment()?;
-                        model.deployment_nodes.get_or_insert_with(Vec::new).extend(nodes);
+                        model
+                            .deployment_nodes
+                            .get_or_insert_with(Vec::new)
+                            .extend(nodes);
                     }
                     "enterprise" => {
                         self.advance();
@@ -1531,7 +1730,8 @@ impl Parser {
                     }
                     "element" => {
                         self.advance();
-                        let ce = self.parse_custom_element(if has_assign { &identifier } else { "" })?;
+                        let ce =
+                            self.parse_custom_element(if has_assign { &identifier } else { "" })?;
                         model.custom_elements.get_or_insert_with(Vec::new).push(ce);
                     }
                     "properties" => {
@@ -1540,20 +1740,38 @@ impl Parser {
                         if let Some(sep) = props.get("structurizr.groupSeparator") {
                             self.group_separator = Some(sep.clone());
                         }
-                        model.properties.get_or_insert_with(HashMap::new).extend(props);
+                        model
+                            .properties
+                            .get_or_insert_with(HashMap::new)
+                            .extend(props);
                     }
                     _ => {
                         if let Some((alias_name, alias)) = self.peek_kind_alias("person") {
                             self.advance();
-                            let mut p = self.parse_person(if has_assign { &identifier } else { "" })?;
-                            apply_alias_to_tags_props(&alias_name, &alias, &mut p.tags, &mut p.properties);
+                            let mut p =
+                                self.parse_person(if has_assign { &identifier } else { "" })?;
+                            apply_alias_to_tags_props(
+                                &alias_name,
+                                &alias,
+                                &mut p.tags,
+                                &mut p.properties,
+                            );
                             model.people.get_or_insert_with(Vec::new).push(p);
                             return Ok(());
                         }
                         if let Some((alias_name, alias)) = self.peek_kind_alias("softwaresystem") {
                             self.advance();
-                            let mut ss = self.parse_software_system(if has_assign { &identifier } else { "" })?;
-                            apply_alias_to_tags_props(&alias_name, &alias, &mut ss.tags, &mut ss.properties);
+                            let mut ss = self.parse_software_system(if has_assign {
+                                &identifier
+                            } else {
+                                ""
+                            })?;
+                            apply_alias_to_tags_props(
+                                &alias_name,
+                                &alias,
+                                &mut ss.tags,
+                                &mut ss.properties,
+                            );
                             model.software_systems.get_or_insert_with(Vec::new).push(ss);
                             return Ok(());
                         }
@@ -1573,7 +1791,8 @@ impl Parser {
                         } else if self.peek_at_arrow_after_word() {
                             // Named relationship: `name = a -> b ...`
                             let rel_id = self.parse_relationship_in_model(model)?;
-                            self.register.register(&identifier, rel_id, ElementType::Relationship);
+                            self.register
+                                .register(&identifier, rel_id, ElementType::Relationship);
                         } else if !self.sketch {
                             return Err(self.unknown_model_keyword_error(&w));
                         } else {
@@ -1608,10 +1827,10 @@ impl Parser {
 
     /// Look ahead to determine if current position has `word = keyword` pattern.
     fn peek_assignment(&self) -> (Option<String>, Option<String>) {
-        if let (Some(Token::Word(id)), Some(Token::Equals)) =
-            (self.tokens.get(self.pos).map(|s| &s.token),
-             self.tokens.get(self.pos + 1).map(|s| &s.token))
-        {
+        if let (Some(Token::Word(id)), Some(Token::Equals)) = (
+            self.tokens.get(self.pos).map(|s| &s.token),
+            self.tokens.get(self.pos + 1).map(|s| &s.token),
+        ) {
             (Some(id.clone()), None)
         } else {
             (None, None)
@@ -1619,17 +1838,23 @@ impl Parser {
     }
 
     fn peek_at_arrow_after_word(&self) -> bool {
-        matches!(self.tokens.get(self.pos + 1).map(|s| &s.token), Some(Token::Arrow))
+        matches!(
+            self.tokens.get(self.pos + 1).map(|s| &s.token),
+            Some(Token::Arrow)
+        )
     }
 
     fn parse_person(&mut self, identifier: &str) -> Result<Person, ParseError> {
         let id = self.next_id();
-        let name = self.consume_string().unwrap_or_else(|| "Person".to_string());
+        let name = self
+            .consume_string()
+            .unwrap_or_else(|| "Person".to_string());
         let description = self.consume_string_if_not_brace();
         let tags = self.consume_string_if_not_brace_or_kw();
 
         if !identifier.is_empty() {
-            self.register.register(identifier, id.clone(), ElementType::Person);
+            self.register
+                .register(identifier, id.clone(), ElementType::Person);
         }
 
         let mut person = Person {
@@ -1654,17 +1879,27 @@ impl Parser {
             if !rels.is_empty() {
                 person.relationships = Some(rels);
             }
-            if extras.status.is_some()    { person.status    = extras.status; }
-            if extras.introduced.is_some(){ person.introduced = extras.introduced; }
-            if extras.retired.is_some()   { person.retired   = extras.retired; }
+            if extras.status.is_some() {
+                person.status = extras.status;
+            }
+            if extras.introduced.is_some() {
+                person.introduced = extras.introduced;
+            }
+            if extras.retired.is_some() {
+                person.retired = extras.retired;
+            }
             if !extras.perspectives.is_empty() {
                 person.perspectives = Some(extras.perspectives);
             }
             if !extras.ports.is_empty() {
                 person.ports = Some(extras.ports.into_iter().map(|(_, p)| p).collect());
             }
-            if extras.description.is_some() { person.description = extras.description; }
-            if extras.url.is_some()         { person.url         = extras.url; }
+            if extras.description.is_some() {
+                person.description = extras.description;
+            }
+            if extras.url.is_some() {
+                person.url = extras.url;
+            }
             if !extras.tags_extra.is_empty() {
                 let extra = extras.tags_extra.join(",");
                 person.tags = Some(match person.tags.take() {
@@ -1673,9 +1908,14 @@ impl Parser {
                 });
             }
             if !extras.properties.is_empty() {
-                person.properties.get_or_insert_with(HashMap::new).extend(extras.properties);
+                person
+                    .properties
+                    .get_or_insert_with(HashMap::new)
+                    .extend(extras.properties);
             }
-            if extras.group.is_some() { person.group = extras.group; }
+            if extras.group.is_some() {
+                person.group = extras.group;
+            }
             self.expect_close_brace()?;
         }
         if person.group.is_none() {
@@ -1687,7 +1927,9 @@ impl Parser {
 
     fn parse_software_system(&mut self, identifier: &str) -> Result<SoftwareSystem, ParseError> {
         let id = self.next_id();
-        let name = self.consume_string().unwrap_or_else(|| "SoftwareSystem".to_string());
+        let name = self
+            .consume_string()
+            .unwrap_or_else(|| "SoftwareSystem".to_string());
         let description = self.consume_string_if_not_brace();
         let tags = self.consume_string_if_not_brace_or_kw();
 
@@ -1720,119 +1962,124 @@ impl Parser {
             while !self.peek_close_brace() && self.peek().is_some() {
                 let start = self.pos;
                 let result = (|| -> Result<(), ParseError> {
-                let (ident, _) = self.peek_assignment();
-                let has_ident = ident.is_some();
-                let ident = ident.unwrap_or_default();
+                    let (ident, _) = self.peek_assignment();
+                    let has_ident = ident.is_some();
+                    let ident = ident.unwrap_or_default();
 
-                if has_ident {
-                    self.advance(); // id
-                    self.advance(); // =
-                }
+                    if has_ident {
+                        self.advance(); // id
+                        self.advance(); // =
+                    }
 
-                if self.peek_word("container") {
-                    self.advance();
-                    let c = self.parse_container(
-                        if has_ident { &ident } else { "" },
-                        identifier,
-                    )?;
-                    containers.push(c);
-                } else if let Some((alias_name, alias)) = self.peek_kind_alias("container") {
-                    self.advance();
-                    let mut c = self.parse_container(
-                        if has_ident { &ident } else { "" },
-                        identifier,
-                    )?;
-                    apply_alias_to_tags_props(&alias_name, &alias, &mut c.tags, &mut c.properties);
-                    if c.technology.is_none() {
-                        c.technology = alias.technology.clone();
-                    }
-                    containers.push(c);
-                } else if self.peek_word("group") {
-                    self.advance();
-                    if let Some(leaf) = self.parse_ss_group(
-                        if has_ident { &ident } else { "" },
-                        identifier,
-                        "",
-                        &mut containers,
-                        &mut rels,
-                    )? {
-                        ss_extras.group = Some(leaf);
-                    }
-                } else if self.peek_at_arrow_after_word() {
-                    let rel_start = self.pos;
-                    let src_pos = self.current_pos();
-                    let src  = self.consume_string().unwrap_or_default();
-                    self.advance(); // ->
-                    let dst_pos = self.current_pos();
-                    let dst  = self.consume_string().unwrap_or_default();
-                    let desc = self.consume_string_if_not_brace();
-                    let tech = self.consume_string_if_not_brace();
-                    let rel_id = self.next_id_from(rel_start);
-                    let uncertain = self.consume_uncertainty_marker();
-                    // `this` refers to the enclosing element (upstream DSL).
-                    let (src_id, src_port) = if src.eq_ignore_ascii_case("this") {
-                        (id.clone(), None)
-                    } else {
-                        self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos)
-                    };
-                    let (dst_id, dst_port) = if dst.eq_ignore_ascii_case("this") {
-                        (id.clone(), None)
-                    } else {
-                        self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos)
-                    };
-                    let mut rel = Relationship {
-                        id: rel_id,
-                        source_id: src_id,
-                        destination_id: dst_id,
-                        source_port_id: src_port,
-                        destination_port_id: dst_port,
-                        description: desc,
-                        technology: tech,
-                        tags: Some("Relationship".to_string()),
-                        ..Default::default()
-                    };
-                    if self.peek_open_brace() {
-                        self.parse_relationship_body(&mut rel)?;
-                    }
-                    if uncertain {
-                        rel.tags = Some(match rel.tags.take() {
-                            Some(t) => format!("{},Uncertain", t),
-                            None => "Uncertain".to_string(),
-                        });
-                    }
-                    rels.push(rel);
-                } else if !has_ident && matches!(self.peek(), Some(Token::Arrow)) {
-                    let rel = self.parse_implicit_relationship(&id)?;
-                    rels.push(rel);
-                } else if !has_ident && {
-                    let paths = vec![identifier.to_string()];
-                    self.try_parse_common_element_keyword(&mut ss_extras, &id, &paths)?
-                } {
-                    // element attribute for the software system itself consumed
-                } else if matches!(self.peek(), Some(Token::Directive(d)) if d.eq_ignore_ascii_case("adrs") || d.eq_ignore_ascii_case("decisions")) {
-                    self.advance();
-                    let rel_path = self.consume_string().unwrap_or_default();
-                    if self.peek_open_brace() { self.advance(); self.skip_block(); }
-                    let decisions = self.import_adrs(&rel_path, Some(id.clone()));
-                    self.accumulated_decisions.extend(decisions);
-                } else if matches!(self.peek(), Some(Token::Directive(_))) {
-                    self.advance();
-                    self.skip_directive_args();
-                } else if !self.sketch {
-                    return Err(self.unknown_keyword_error(
-                        "softwareSystem body",
-                        &SOFTWARE_SYSTEM_BODY_KEYWORDS,
-                    ));
-                } else {
-                    self.advance();
-                    if self.peek_open_brace() {
+                    if self.peek_word("container") {
                         self.advance();
-                        self.skip_block();
+                        let c =
+                            self.parse_container(if has_ident { &ident } else { "" }, identifier)?;
+                        containers.push(c);
+                    } else if let Some((alias_name, alias)) = self.peek_kind_alias("container") {
+                        self.advance();
+                        let mut c =
+                            self.parse_container(if has_ident { &ident } else { "" }, identifier)?;
+                        apply_alias_to_tags_props(
+                            &alias_name,
+                            &alias,
+                            &mut c.tags,
+                            &mut c.properties,
+                        );
+                        if c.technology.is_none() {
+                            c.technology = alias.technology.clone();
+                        }
+                        containers.push(c);
+                    } else if self.peek_word("group") {
+                        self.advance();
+                        if let Some(leaf) = self.parse_ss_group(
+                            if has_ident { &ident } else { "" },
+                            identifier,
+                            "",
+                            &mut containers,
+                            &mut rels,
+                        )? {
+                            ss_extras.group = Some(leaf);
+                        }
+                    } else if self.peek_at_arrow_after_word() {
+                        let rel_start = self.pos;
+                        let src_pos = self.current_pos();
+                        let src = self.consume_string().unwrap_or_default();
+                        self.advance(); // ->
+                        let dst_pos = self.current_pos();
+                        let dst = self.consume_string().unwrap_or_default();
+                        let desc = self.consume_string_if_not_brace();
+                        let tech = self.consume_string_if_not_brace();
+                        let rel_id = self.next_id_from(rel_start);
+                        let uncertain = self.consume_uncertainty_marker();
+                        // `this` refers to the enclosing element (upstream DSL).
+                        let (src_id, src_port) = if src.eq_ignore_ascii_case("this") {
+                            (id.clone(), None)
+                        } else {
+                            self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos)
+                        };
+                        let (dst_id, dst_port) = if dst.eq_ignore_ascii_case("this") {
+                            (id.clone(), None)
+                        } else {
+                            self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos)
+                        };
+                        let mut rel = Relationship {
+                            id: rel_id,
+                            source_id: src_id,
+                            destination_id: dst_id,
+                            source_port_id: src_port,
+                            destination_port_id: dst_port,
+                            description: desc,
+                            technology: tech,
+                            tags: Some("Relationship".to_string()),
+                            ..Default::default()
+                        };
+                        if self.peek_open_brace() {
+                            self.parse_relationship_body(&mut rel)?;
+                        }
+                        if uncertain {
+                            rel.tags = Some(match rel.tags.take() {
+                                Some(t) => format!("{},Uncertain", t),
+                                None => "Uncertain".to_string(),
+                            });
+                        }
+                        rels.push(rel);
+                    } else if !has_ident && matches!(self.peek(), Some(Token::Arrow)) {
+                        let rel = self.parse_implicit_relationship(&id)?;
+                        rels.push(rel);
+                    } else if !has_ident && {
+                        let paths = vec![identifier.to_string()];
+                        self.try_parse_common_element_keyword(&mut ss_extras, &id, &paths)?
+                    } {
+                        // element attribute for the software system itself consumed
+                    } else if matches!(self.peek(), Some(Token::Directive(d)) if d.eq_ignore_ascii_case("adrs") || d.eq_ignore_ascii_case("decisions"))
+                    {
+                        self.advance();
+                        let rel_path = self.consume_string().unwrap_or_default();
+                        if self.peek_open_brace() {
+                            self.advance();
+                            self.skip_block();
+                        }
+                        let decisions = self.import_adrs(&rel_path, Some(id.clone()));
+                        self.accumulated_decisions.extend(decisions);
+                    } else if matches!(self.peek(), Some(Token::Directive(_))) {
+                        self.advance();
+                        self.skip_directive_args();
+                    } else if !self.sketch {
+                        return Err(self.unknown_keyword_error(
+                            "softwareSystem body",
+                            &SOFTWARE_SYSTEM_BODY_KEYWORDS,
+                        ));
                     } else {
-                        let _ = self.consume_string();
+                        self.advance();
+                        if self.peek_open_brace() {
+                            self.advance();
+                            self.skip_block();
+                        } else {
+                            let _ = self.consume_string();
+                        }
                     }
-                }
-                Ok(())
+                    Ok(())
                 })();
                 if let Err(e) = result {
                     self.recover_statement(e, start)?;
@@ -1845,17 +2092,27 @@ impl Parser {
             if !rels.is_empty() {
                 ss.relationships = Some(rels);
             }
-            if ss_extras.status.is_some()     { ss.status     = ss_extras.status; }
-            if ss_extras.introduced.is_some() { ss.introduced = ss_extras.introduced; }
-            if ss_extras.retired.is_some()    { ss.retired    = ss_extras.retired; }
+            if ss_extras.status.is_some() {
+                ss.status = ss_extras.status;
+            }
+            if ss_extras.introduced.is_some() {
+                ss.introduced = ss_extras.introduced;
+            }
+            if ss_extras.retired.is_some() {
+                ss.retired = ss_extras.retired;
+            }
             if !ss_extras.perspectives.is_empty() {
                 ss.perspectives = Some(ss_extras.perspectives);
             }
             if !ss_extras.ports.is_empty() {
                 ss.ports = Some(ss_extras.ports.into_iter().map(|(_, p)| p).collect());
             }
-            if ss_extras.description.is_some() { ss.description = ss_extras.description; }
-            if ss_extras.url.is_some()         { ss.url         = ss_extras.url; }
+            if ss_extras.description.is_some() {
+                ss.description = ss_extras.description;
+            }
+            if ss_extras.url.is_some() {
+                ss.url = ss_extras.url;
+            }
             if !ss_extras.tags_extra.is_empty() {
                 let extra = ss_extras.tags_extra.join(",");
                 ss.tags = Some(match ss.tags.take() {
@@ -1864,9 +2121,13 @@ impl Parser {
                 });
             }
             if !ss_extras.properties.is_empty() {
-                ss.properties.get_or_insert_with(HashMap::new).extend(ss_extras.properties);
+                ss.properties
+                    .get_or_insert_with(HashMap::new)
+                    .extend(ss_extras.properties);
             }
-            if ss_extras.group.is_some() { ss.group = ss_extras.group; }
+            if ss_extras.group.is_some() {
+                ss.group = ss_extras.group;
+            }
         }
         if ss.group.is_none() {
             ss.group = self.current_model_group();
@@ -1904,9 +2165,11 @@ impl Parser {
         };
         if !group_ident.is_empty() {
             let synthetic_id = format!("group:{}", group_hier);
-            self.register.register(group_ident, synthetic_id.clone(), ElementType::Group);
+            self.register
+                .register(group_ident, synthetic_id.clone(), ElementType::Group);
             if !group_hier.is_empty() && group_hier != group_ident {
-                self.register.register(&group_hier, synthetic_id, ElementType::Group);
+                self.register
+                    .register(&group_hier, synthetic_id, ElementType::Group);
             }
         }
 
@@ -1915,7 +2178,10 @@ impl Parser {
         }
         self.advance();
 
-        let sep = self.group_separator.clone().unwrap_or_else(|| "/".to_string());
+        let sep = self
+            .group_separator
+            .clone()
+            .unwrap_or_else(|| "/".to_string());
         let display_path = if display_prefix.is_empty() {
             gname.clone()
         } else {
@@ -1940,12 +2206,14 @@ impl Parser {
 
             if self.peek_word("container") {
                 self.advance();
-                let mut c = self.parse_container(if has_gi { &gident } else { "" }, &effective_parent)?;
+                let mut c =
+                    self.parse_container(if has_gi { &gident } else { "" }, &effective_parent)?;
                 c.group = Some(display_path.clone());
                 containers.push(c);
             } else if let Some((alias_name, alias)) = self.peek_kind_alias("container") {
                 self.advance();
-                let mut c = self.parse_container(if has_gi { &gident } else { "" }, &effective_parent)?;
+                let mut c =
+                    self.parse_container(if has_gi { &gident } else { "" }, &effective_parent)?;
                 apply_alias_to_tags_props(&alias_name, &alias, &mut c.tags, &mut c.properties);
                 if c.technology.is_none() {
                     c.technology = alias.technology.clone();
@@ -1964,16 +2232,18 @@ impl Parser {
             } else if self.peek_at_arrow_after_word() {
                 let rel_start = self.pos;
                 let src_pos = self.current_pos();
-                let src  = self.consume_string().unwrap_or_default();
+                let src = self.consume_string().unwrap_or_default();
                 self.advance(); // ->
                 let dst_pos = self.current_pos();
-                let dst  = self.consume_string().unwrap_or_default();
+                let dst = self.consume_string().unwrap_or_default();
                 let desc = self.consume_string_if_not_brace();
                 let tech = self.consume_string_if_not_brace();
                 let rel_id = self.next_id_from(rel_start);
                 let uncertain = self.consume_uncertainty_marker();
-                let (src_id, src_port) = self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos);
-                let (dst_id, dst_port) = self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos);
+                let (src_id, src_port) =
+                    self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos);
+                let (dst_id, dst_port) =
+                    self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos);
                 let mut rel = Relationship {
                     id: rel_id,
                     source_id: src_id,
@@ -2032,7 +2302,8 @@ impl Parser {
 
         if !group_ident.is_empty() {
             let synthetic_id = format!("group:{}", group_ident);
-            self.register.register(group_ident, synthetic_id, ElementType::Group);
+            self.register
+                .register(group_ident, synthetic_id, ElementType::Group);
         }
 
         if !self.peek_open_brace() {
@@ -2040,7 +2311,10 @@ impl Parser {
         }
         self.advance();
 
-        let sep = self.group_separator.clone().unwrap_or_else(|| "/".to_string());
+        let sep = self
+            .group_separator
+            .clone()
+            .unwrap_or_else(|| "/".to_string());
         let display_path = if display_prefix.is_empty() {
             gname.clone()
         } else {
@@ -2081,16 +2355,18 @@ impl Parser {
             } else if self.peek_at_arrow_after_word() {
                 let rel_start = self.pos;
                 let src_pos = self.current_pos();
-                let src  = self.consume_string().unwrap_or_default();
+                let src = self.consume_string().unwrap_or_default();
                 self.advance(); // ->
                 let dst_pos = self.current_pos();
-                let dst  = self.consume_string().unwrap_or_default();
+                let dst = self.consume_string().unwrap_or_default();
                 let desc = self.consume_string_if_not_brace();
                 let tech = self.consume_string_if_not_brace();
                 let rel_id = self.next_id_from(rel_start);
                 let uncertain = self.consume_uncertainty_marker();
-                let (src_id, src_port) = self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos);
-                let (dst_id, dst_port) = self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos);
+                let (src_id, src_port) =
+                    self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos);
+                let (dst_id, dst_port) =
+                    self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos);
                 let mut rel = Relationship {
                     id: rel_id,
                     source_id: src_id,
@@ -2135,9 +2411,15 @@ impl Parser {
         Ok(None)
     }
 
-    fn parse_container(&mut self, identifier: &str, parent_identifier: &str) -> Result<Container, ParseError> {
+    fn parse_container(
+        &mut self,
+        identifier: &str,
+        parent_identifier: &str,
+    ) -> Result<Container, ParseError> {
         let id = self.next_id();
-        let name = self.consume_string().unwrap_or_else(|| "Container".to_string());
+        let name = self
+            .consume_string()
+            .unwrap_or_else(|| "Container".to_string());
         let description = self.consume_string_if_not_brace();
         let technology = self.consume_string_if_not_brace();
         let tags = self.consume_string_if_not_brace_or_kw();
@@ -2180,116 +2462,127 @@ impl Parser {
             while !self.peek_close_brace() && self.peek().is_some() {
                 let start = self.pos;
                 let result = (|| -> Result<(), ParseError> {
-                let (ident, _) = self.peek_assignment();
-                let has_ident = ident.is_some();
-                let ident = ident.unwrap_or_default();
+                    let (ident, _) = self.peek_assignment();
+                    let has_ident = ident.is_some();
+                    let ident = ident.unwrap_or_default();
 
-                if has_ident {
-                    self.advance();
-                    self.advance();
-                }
-
-                if self.peek_word("component") {
-                    self.advance();
-                    let c = self.parse_component(if has_ident { &ident } else { "" })?;
-                    components.push(c);
-                } else if let Some((alias_name, alias)) = self.peek_kind_alias("component") {
-                    self.advance();
-                    let mut c = self.parse_component(if has_ident { &ident } else { "" })?;
-                    apply_alias_to_tags_props(&alias_name, &alias, &mut c.tags, &mut c.properties);
-                    if c.technology.is_none() {
-                        c.technology = alias.technology.clone();
-                    }
-                    components.push(c);
-                } else if self.peek_word("group") {
-                    self.advance();
-                    if let Some(leaf) = self.parse_container_group(
-                        if has_ident { &ident } else { "" },
-                        "",
-                        &mut components,
-                        &mut rels,
-                    )? {
-                        cont_extras.group = Some(leaf);
-                    }
-                } else if self.peek_at_arrow_after_word() {
-                    let rel_start = self.pos;
-                    let src_pos = self.current_pos();
-                    let src  = self.consume_string().unwrap_or_default();
-                    self.advance(); // ->
-                    let dst_pos = self.current_pos();
-                    let dst  = self.consume_string().unwrap_or_default();
-                    let desc = self.consume_string_if_not_brace();
-                    let tech = self.consume_string_if_not_brace();
-                    let rel_id = self.next_id_from(rel_start);
-                    let uncertain = self.consume_uncertainty_marker();
-                    // `this` refers to the enclosing element (upstream DSL).
-                    let (src_id, src_port) = if src.eq_ignore_ascii_case("this") {
-                        (id.clone(), None)
-                    } else {
-                        self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos)
-                    };
-                    let (dst_id, dst_port) = if dst.eq_ignore_ascii_case("this") {
-                        (id.clone(), None)
-                    } else {
-                        self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos)
-                    };
-                    let mut rel = Relationship {
-                        id: rel_id,
-                        source_id: src_id,
-                        destination_id: dst_id,
-                        source_port_id: src_port,
-                        destination_port_id: dst_port,
-                        description: desc,
-                        technology: tech,
-                        tags: Some("Relationship".to_string()),
-                        ..Default::default()
-                    };
-                    if self.peek_open_brace() {
-                        self.parse_relationship_body(&mut rel)?;
-                    }
-                    if uncertain {
-                        rel.tags = Some(match rel.tags.take() {
-                            Some(t) => format!("{},Uncertain", t),
-                            None => "Uncertain".to_string(),
-                        });
-                    }
-                    rels.push(rel);
-                } else if !has_ident && matches!(self.peek(), Some(Token::Arrow)) {
-                    let rel = self.parse_implicit_relationship(&id)?;
-                    rels.push(rel);
-                } else if !has_ident && {
-                    let mut paths = vec![identifier.to_string()];
-                    if self.register.mode == IdentifierMode::Hierarchical
-                        && !parent_identifier.is_empty()
-                        && !identifier.is_empty()
-                    {
-                        paths.push(format!("{}.{}", parent_identifier, identifier));
-                    }
-                    self.try_parse_common_element_keyword(&mut cont_extras, &id, &paths)?
-                } {
-                    // element attribute for the container itself consumed
-                } else if matches!(self.peek(), Some(Token::Directive(d)) if d.eq_ignore_ascii_case("adrs") || d.eq_ignore_ascii_case("decisions")) {
-                    self.advance();
-                    let rel_path = self.consume_string().unwrap_or_default();
-                    if self.peek_open_brace() { self.advance(); self.skip_block(); }
-                    let decisions = self.import_adrs(&rel_path, Some(id.clone()));
-                    self.accumulated_decisions.extend(decisions);
-                } else if matches!(self.peek(), Some(Token::Directive(_))) {
-                    self.advance();
-                    self.skip_directive_args();
-                } else if !self.sketch {
-                    return Err(self.unknown_keyword_error("container body", &CONTAINER_BODY_KEYWORDS));
-                } else {
-                    // Consume only one value to avoid eating the next element's identifier.
-                    self.advance();
-                    if self.peek_open_brace() {
+                    if has_ident {
                         self.advance();
-                        self.skip_block();
-                    } else {
-                        let _ = self.consume_string();
+                        self.advance();
                     }
-                }
-                Ok(())
+
+                    if self.peek_word("component") {
+                        self.advance();
+                        let c = self.parse_component(if has_ident { &ident } else { "" })?;
+                        components.push(c);
+                    } else if let Some((alias_name, alias)) = self.peek_kind_alias("component") {
+                        self.advance();
+                        let mut c = self.parse_component(if has_ident { &ident } else { "" })?;
+                        apply_alias_to_tags_props(
+                            &alias_name,
+                            &alias,
+                            &mut c.tags,
+                            &mut c.properties,
+                        );
+                        if c.technology.is_none() {
+                            c.technology = alias.technology.clone();
+                        }
+                        components.push(c);
+                    } else if self.peek_word("group") {
+                        self.advance();
+                        if let Some(leaf) = self.parse_container_group(
+                            if has_ident { &ident } else { "" },
+                            "",
+                            &mut components,
+                            &mut rels,
+                        )? {
+                            cont_extras.group = Some(leaf);
+                        }
+                    } else if self.peek_at_arrow_after_word() {
+                        let rel_start = self.pos;
+                        let src_pos = self.current_pos();
+                        let src = self.consume_string().unwrap_or_default();
+                        self.advance(); // ->
+                        let dst_pos = self.current_pos();
+                        let dst = self.consume_string().unwrap_or_default();
+                        let desc = self.consume_string_if_not_brace();
+                        let tech = self.consume_string_if_not_brace();
+                        let rel_id = self.next_id_from(rel_start);
+                        let uncertain = self.consume_uncertainty_marker();
+                        // `this` refers to the enclosing element (upstream DSL).
+                        let (src_id, src_port) = if src.eq_ignore_ascii_case("this") {
+                            (id.clone(), None)
+                        } else {
+                            self.resolve_endpoint_tracked(&src, &rel_id, true, src_pos)
+                        };
+                        let (dst_id, dst_port) = if dst.eq_ignore_ascii_case("this") {
+                            (id.clone(), None)
+                        } else {
+                            self.resolve_endpoint_tracked(&dst, &rel_id, false, dst_pos)
+                        };
+                        let mut rel = Relationship {
+                            id: rel_id,
+                            source_id: src_id,
+                            destination_id: dst_id,
+                            source_port_id: src_port,
+                            destination_port_id: dst_port,
+                            description: desc,
+                            technology: tech,
+                            tags: Some("Relationship".to_string()),
+                            ..Default::default()
+                        };
+                        if self.peek_open_brace() {
+                            self.parse_relationship_body(&mut rel)?;
+                        }
+                        if uncertain {
+                            rel.tags = Some(match rel.tags.take() {
+                                Some(t) => format!("{},Uncertain", t),
+                                None => "Uncertain".to_string(),
+                            });
+                        }
+                        rels.push(rel);
+                    } else if !has_ident && matches!(self.peek(), Some(Token::Arrow)) {
+                        let rel = self.parse_implicit_relationship(&id)?;
+                        rels.push(rel);
+                    } else if !has_ident && {
+                        let mut paths = vec![identifier.to_string()];
+                        if self.register.mode == IdentifierMode::Hierarchical
+                            && !parent_identifier.is_empty()
+                            && !identifier.is_empty()
+                        {
+                            paths.push(format!("{}.{}", parent_identifier, identifier));
+                        }
+                        self.try_parse_common_element_keyword(&mut cont_extras, &id, &paths)?
+                    } {
+                        // element attribute for the container itself consumed
+                    } else if matches!(self.peek(), Some(Token::Directive(d)) if d.eq_ignore_ascii_case("adrs") || d.eq_ignore_ascii_case("decisions"))
+                    {
+                        self.advance();
+                        let rel_path = self.consume_string().unwrap_or_default();
+                        if self.peek_open_brace() {
+                            self.advance();
+                            self.skip_block();
+                        }
+                        let decisions = self.import_adrs(&rel_path, Some(id.clone()));
+                        self.accumulated_decisions.extend(decisions);
+                    } else if matches!(self.peek(), Some(Token::Directive(_))) {
+                        self.advance();
+                        self.skip_directive_args();
+                    } else if !self.sketch {
+                        return Err(
+                            self.unknown_keyword_error("container body", &CONTAINER_BODY_KEYWORDS)
+                        );
+                    } else {
+                        // Consume only one value to avoid eating the next element's identifier.
+                        self.advance();
+                        if self.peek_open_brace() {
+                            self.advance();
+                            self.skip_block();
+                        } else {
+                            let _ = self.consume_string();
+                        }
+                    }
+                    Ok(())
                 })();
                 if let Err(e) = result {
                     self.recover_statement(e, start)?;
@@ -2302,18 +2595,30 @@ impl Parser {
             if !rels.is_empty() {
                 container.relationships = Some(rels);
             }
-            if cont_extras.status.is_some()     { container.status     = cont_extras.status; }
-            if cont_extras.introduced.is_some() { container.introduced = cont_extras.introduced; }
-            if cont_extras.retired.is_some()    { container.retired    = cont_extras.retired; }
+            if cont_extras.status.is_some() {
+                container.status = cont_extras.status;
+            }
+            if cont_extras.introduced.is_some() {
+                container.introduced = cont_extras.introduced;
+            }
+            if cont_extras.retired.is_some() {
+                container.retired = cont_extras.retired;
+            }
             if !cont_extras.perspectives.is_empty() {
                 container.perspectives = Some(cont_extras.perspectives);
             }
             if !cont_extras.ports.is_empty() {
                 container.ports = Some(cont_extras.ports.into_iter().map(|(_, p)| p).collect());
             }
-            if cont_extras.description.is_some() { container.description = cont_extras.description; }
-            if cont_extras.technology.is_some()  { container.technology  = cont_extras.technology; }
-            if cont_extras.url.is_some()         { container.url         = cont_extras.url; }
+            if cont_extras.description.is_some() {
+                container.description = cont_extras.description;
+            }
+            if cont_extras.technology.is_some() {
+                container.technology = cont_extras.technology;
+            }
+            if cont_extras.url.is_some() {
+                container.url = cont_extras.url;
+            }
             if !cont_extras.tags_extra.is_empty() {
                 let extra = cont_extras.tags_extra.join(",");
                 container.tags = Some(match container.tags.take() {
@@ -2322,9 +2627,14 @@ impl Parser {
                 });
             }
             if !cont_extras.properties.is_empty() {
-                container.properties.get_or_insert_with(HashMap::new).extend(cont_extras.properties);
+                container
+                    .properties
+                    .get_or_insert_with(HashMap::new)
+                    .extend(cont_extras.properties);
             }
-            if cont_extras.group.is_some() { container.group = cont_extras.group; }
+            if cont_extras.group.is_some() {
+                container.group = cont_extras.group;
+            }
         }
 
         Ok(container)
@@ -2332,7 +2642,9 @@ impl Parser {
 
     fn parse_component(&mut self, identifier: &str) -> Result<Component, ParseError> {
         let id = self.next_id();
-        let name = self.consume_string().unwrap_or_else(|| "Component".to_string());
+        let name = self
+            .consume_string()
+            .unwrap_or_else(|| "Component".to_string());
         let description = self.consume_string_if_not_brace();
         let technology = self.consume_string_if_not_brace();
         let tags = self.consume_string_if_not_brace_or_kw();
@@ -2365,18 +2677,30 @@ impl Parser {
             if !rels.is_empty() {
                 component.relationships = Some(rels);
             }
-            if extras.status.is_some()     { component.status     = extras.status; }
-            if extras.introduced.is_some() { component.introduced = extras.introduced; }
-            if extras.retired.is_some()    { component.retired    = extras.retired; }
+            if extras.status.is_some() {
+                component.status = extras.status;
+            }
+            if extras.introduced.is_some() {
+                component.introduced = extras.introduced;
+            }
+            if extras.retired.is_some() {
+                component.retired = extras.retired;
+            }
             if !extras.perspectives.is_empty() {
                 component.perspectives = Some(extras.perspectives);
             }
             if !extras.ports.is_empty() {
                 component.ports = Some(extras.ports.into_iter().map(|(_, p)| p).collect());
             }
-            if extras.description.is_some() { component.description = extras.description; }
-            if extras.technology.is_some()  { component.technology  = extras.technology; }
-            if extras.url.is_some()         { component.url         = extras.url; }
+            if extras.description.is_some() {
+                component.description = extras.description;
+            }
+            if extras.technology.is_some() {
+                component.technology = extras.technology;
+            }
+            if extras.url.is_some() {
+                component.url = extras.url;
+            }
             if !extras.tags_extra.is_empty() {
                 let extra = extras.tags_extra.join(",");
                 component.tags = Some(match component.tags.take() {
@@ -2385,9 +2709,14 @@ impl Parser {
                 });
             }
             if !extras.properties.is_empty() {
-                component.properties.get_or_insert_with(HashMap::new).extend(extras.properties);
+                component
+                    .properties
+                    .get_or_insert_with(HashMap::new)
+                    .extend(extras.properties);
             }
-            if extras.group.is_some() { component.group = extras.group; }
+            if extras.group.is_some() {
+                component.group = extras.group;
+            }
             self.expect_close_brace()?;
         }
 
@@ -2397,13 +2726,16 @@ impl Parser {
     /// Parse an upstream custom element: `x = element "Name" ["metadata" ["description" ["tags"]]]`.
     fn parse_custom_element(&mut self, identifier: &str) -> Result<CustomElement, ParseError> {
         let id = self.next_id();
-        let name = self.consume_string().unwrap_or_else(|| "Element".to_string());
+        let name = self
+            .consume_string()
+            .unwrap_or_else(|| "Element".to_string());
         let metadata = self.consume_string_if_not_brace();
         let description = self.consume_string_if_not_brace();
         let tags = self.consume_string_if_not_brace_or_kw();
 
         if !identifier.is_empty() {
-            self.register.register(identifier, id.clone(), ElementType::CustomElement);
+            self.register
+                .register(identifier, id.clone(), ElementType::CustomElement);
         }
 
         let mut element = CustomElement {
@@ -2429,17 +2761,27 @@ impl Parser {
             if !rels.is_empty() {
                 element.relationships = Some(rels);
             }
-            if extras.status.is_some()     { element.status     = extras.status; }
-            if extras.introduced.is_some() { element.introduced = extras.introduced; }
-            if extras.retired.is_some()    { element.retired    = extras.retired; }
+            if extras.status.is_some() {
+                element.status = extras.status;
+            }
+            if extras.introduced.is_some() {
+                element.introduced = extras.introduced;
+            }
+            if extras.retired.is_some() {
+                element.retired = extras.retired;
+            }
             if !extras.perspectives.is_empty() {
                 element.perspectives = Some(extras.perspectives);
             }
             if !extras.ports.is_empty() {
                 element.ports = Some(extras.ports.into_iter().map(|(_, p)| p).collect());
             }
-            if extras.description.is_some() { element.description = extras.description; }
-            if extras.url.is_some()         { element.url         = extras.url; }
+            if extras.description.is_some() {
+                element.description = extras.description;
+            }
+            if extras.url.is_some() {
+                element.url = extras.url;
+            }
             if !extras.tags_extra.is_empty() {
                 let extra = extras.tags_extra.join(",");
                 element.tags = Some(match element.tags.take() {
@@ -2448,9 +2790,14 @@ impl Parser {
                 });
             }
             if !extras.properties.is_empty() {
-                element.properties.get_or_insert_with(HashMap::new).extend(extras.properties);
+                element
+                    .properties
+                    .get_or_insert_with(HashMap::new)
+                    .extend(extras.properties);
             }
-            if extras.group.is_some() { element.group = extras.group; }
+            if extras.group.is_some() {
+                element.group = extras.group;
+            }
             self.expect_close_brace()?;
         }
         if element.group.is_none() {
@@ -2461,7 +2808,9 @@ impl Parser {
     }
 
     fn parse_deployment_environment(&mut self) -> Result<Vec<DeploymentNode>, ParseError> {
-        let env_name = self.consume_string().unwrap_or_else(|| "Default".to_string());
+        let env_name = self
+            .consume_string()
+            .unwrap_or_else(|| "Default".to_string());
         let mut nodes = Vec::new();
         // Collect relationships defined at environment level (e.g. node -> node)
         let mut env_rels: Vec<Relationship> = Vec::new();
@@ -2498,16 +2847,15 @@ impl Parser {
                     }
                 } else if self.peek_word("deploymentnode") {
                     self.advance();
-                    let node = self.parse_deployment_node(
-                        if has_ident { &ident } else { "" },
-                        &env_name,
-                    )?;
+                    let node =
+                        self.parse_deployment_node(if has_ident { &ident } else { "" }, &env_name)?;
                     nodes.push(node);
                 } else if self.peek_word("deploymentgroup") {
                     self.advance();
                     let name = self.consume_string().unwrap_or_default();
                     if has_ident && !name.is_empty() {
-                        self.deployment_group_names.insert(ident.to_lowercase(), name);
+                        self.deployment_group_names
+                            .insert(ident.to_lowercase(), name);
                     }
                 } else if !has_ident && self.peek_at_arrow_after_word() {
                     // Relationship between deployment nodes at environment level.
@@ -2560,7 +2908,10 @@ impl Parser {
             let unmatched = Self::attach_deployment_rels(&mut nodes, &env_rels);
             if !unmatched.is_empty() {
                 if let Some(first) = nodes.first_mut() {
-                    first.relationships.get_or_insert_with(Vec::new).extend(unmatched);
+                    first
+                        .relationships
+                        .get_or_insert_with(Vec::new)
+                        .extend(unmatched);
                 }
             }
         }
@@ -2594,14 +2945,18 @@ impl Parser {
                 }
                 if let Some(infra_nodes) = node.infrastructure_nodes.as_mut() {
                     if let Some(inf) = infra_nodes.iter_mut().find(|inf| inf.id == r.source_id) {
-                        inf.relationships.get_or_insert_with(Vec::new).push(r.clone());
+                        inf.relationships
+                            .get_or_insert_with(Vec::new)
+                            .push(r.clone());
                         matched = true;
                         break;
                     }
                 }
                 if let Some(cis) = node.container_instances.as_mut() {
                     if let Some(ci) = cis.iter_mut().find(|ci| ci.id == r.source_id) {
-                        ci.relationships.get_or_insert_with(Vec::new).push(r.clone());
+                        ci.relationships
+                            .get_or_insert_with(Vec::new)
+                            .push(r.clone());
                         matched = true;
                         break;
                     }
@@ -2623,7 +2978,11 @@ impl Parser {
         unmatched
     }
 
-    fn parse_deployment_node(&mut self, identifier: &str, env: &str) -> Result<DeploymentNode, ParseError> {
+    fn parse_deployment_node(
+        &mut self,
+        identifier: &str,
+        env: &str,
+    ) -> Result<DeploymentNode, ParseError> {
         let id = self.next_id();
         let name = self.consume_string().unwrap_or_else(|| "Node".to_string());
         let description = self.consume_string_if_not_brace();
@@ -2705,28 +3064,29 @@ impl Parser {
                     }
                 } else if self.peek_word("deploymentnode") {
                     self.advance();
-                    let child = self.parse_deployment_node(
-                        if has_ident { &ident } else { "" },
-                        env,
-                    )?;
+                    let child =
+                        self.parse_deployment_node(if has_ident { &ident } else { "" }, env)?;
                     children.push(child);
                 } else if self.peek_word("containerinstance") {
                     self.advance();
-                    let mut ci = self.parse_container_instance(if has_ident { &ident } else { "" }, env)?;
+                    let mut ci =
+                        self.parse_container_instance(if has_ident { &ident } else { "" }, env)?;
                     if ci.deployment_groups.is_none() && !inherited_groups.is_empty() {
                         ci.deployment_groups = Some(inherited_groups.clone());
                     }
                     container_instances.push(ci);
                 } else if self.peek_word("softwaresysteminstance") {
                     self.advance();
-                    let mut ssi = self.parse_software_system_instance(if has_ident { &ident } else { "" }, env)?;
+                    let mut ssi = self
+                        .parse_software_system_instance(if has_ident { &ident } else { "" }, env)?;
                     if ssi.deployment_groups.is_none() && !inherited_groups.is_empty() {
                         ssi.deployment_groups = Some(inherited_groups.clone());
                     }
                     software_system_instances.push(ssi);
                 } else if self.peek_word("infrastructurenode") {
                     self.advance();
-                    let inf = self.parse_infrastructure_node(if has_ident { &ident } else { "" }, env)?;
+                    let inf =
+                        self.parse_infrastructure_node(if has_ident { &ident } else { "" }, env)?;
                     infrastructure_nodes.push(inf);
                 } else if self.peek_word("instanceof") {
                     // `instanceOf <ref>`: shorthand for containerInstance /
@@ -2750,7 +3110,11 @@ impl Parser {
                         Some((eid, ElementType::Container)) => {
                             let iid = self.next_id_from(instance_start);
                             if has_ident {
-                                self.register.register(&ident, iid.clone(), ElementType::ContainerInstance);
+                                self.register.register(
+                                    &ident,
+                                    iid.clone(),
+                                    ElementType::ContainerInstance,
+                                );
                             }
                             container_instances.push(ContainerInstance {
                                 id: iid,
@@ -2764,7 +3128,11 @@ impl Parser {
                         Some((eid, ElementType::SoftwareSystem)) => {
                             let iid = self.next_id_from(instance_start);
                             if has_ident {
-                                self.register.register(&ident, iid.clone(), ElementType::SoftwareSystemInstance);
+                                self.register.register(
+                                    &ident,
+                                    iid.clone(),
+                                    ElementType::SoftwareSystemInstance,
+                                );
                             }
                             software_system_instances.push(SoftwareSystemInstance {
                                 id: iid,
@@ -2849,9 +3217,15 @@ impl Parser {
                 }
             }
             self.expect_close_brace()?;
-            if node_extras.description.is_some() { node.description = node_extras.description; }
-            if node_extras.technology.is_some()  { node.technology  = node_extras.technology; }
-            if node_extras.url.is_some()         { node.url         = node_extras.url; }
+            if node_extras.description.is_some() {
+                node.description = node_extras.description;
+            }
+            if node_extras.technology.is_some() {
+                node.technology = node_extras.technology;
+            }
+            if node_extras.url.is_some() {
+                node.url = node_extras.url;
+            }
             if !node_extras.tags_extra.is_empty() {
                 let extra = node_extras.tags_extra.join(",");
                 node.tags = Some(match node.tags.take() {
@@ -2860,7 +3234,9 @@ impl Parser {
                 });
             }
             if !node_extras.properties.is_empty() {
-                node.properties.get_or_insert_with(HashMap::new).extend(node_extras.properties);
+                node.properties
+                    .get_or_insert_with(HashMap::new)
+                    .extend(node_extras.properties);
             }
 
             if !children.is_empty() {
@@ -2895,16 +3271,27 @@ impl Parser {
                 None => break,
             }
         }
-        if groups.is_empty() { None } else { Some(groups) }
+        if groups.is_empty() {
+            None
+        } else {
+            Some(groups)
+        }
     }
 
-    fn parse_container_instance(&mut self, identifier: &str, env: &str) -> Result<ContainerInstance, ParseError> {
+    fn parse_container_instance(
+        &mut self,
+        identifier: &str,
+        env: &str,
+    ) -> Result<ContainerInstance, ParseError> {
         let id = self.next_id();
         let container_ref = self.consume_string().unwrap_or_default();
         let deployment_groups = self.consume_deployment_groups();
         let tags = self.consume_string_if_not_brace_or_kw();
 
-        let container_id = self.register.resolve_id(&container_ref).unwrap_or(container_ref);
+        let container_id = self
+            .register
+            .resolve_id(&container_ref)
+            .unwrap_or(container_ref);
 
         if !identifier.is_empty() {
             self.register
@@ -2928,7 +3315,11 @@ impl Parser {
         Ok(ci)
     }
 
-    fn parse_software_system_instance(&mut self, identifier: &str, env: &str) -> Result<SoftwareSystemInstance, ParseError> {
+    fn parse_software_system_instance(
+        &mut self,
+        identifier: &str,
+        env: &str,
+    ) -> Result<SoftwareSystemInstance, ParseError> {
         let id = self.next_id();
         let ss_ref = self.consume_string().unwrap_or_default();
         let deployment_groups = self.consume_deployment_groups();
@@ -2958,7 +3349,11 @@ impl Parser {
         Ok(ssi)
     }
 
-    fn parse_infrastructure_node(&mut self, identifier: &str, env: &str) -> Result<InfrastructureNode, ParseError> {
+    fn parse_infrastructure_node(
+        &mut self,
+        identifier: &str,
+        env: &str,
+    ) -> Result<InfrastructureNode, ParseError> {
         let id = self.next_id();
         let name = self.consume_string().unwrap_or_default();
         let description = self.consume_string_if_not_brace();
@@ -2995,16 +3390,16 @@ impl Parser {
         source_id: &str,
         ident_paths: &[String],
     ) -> Result<(Vec<Relationship>, ElementExtras), ParseError> {
-        let mut rels   = Vec::new();
+        let mut rels = Vec::new();
         let mut extras = ElementExtras::default();
         while !self.peek_close_brace() && self.peek().is_some() {
             if self.peek_at_arrow_after_word() {
                 let rel_start = self.pos;
                 let src_pos = self.current_pos();
-                let src  = self.consume_string().unwrap_or_default();
+                let src = self.consume_string().unwrap_or_default();
                 self.advance(); // ->
                 let dst_pos = self.current_pos();
-                let dst  = self.consume_string().unwrap_or_default();
+                let dst = self.consume_string().unwrap_or_default();
                 let desc = self.consume_string_if_not_brace();
                 let tech = self.consume_string_if_not_brace();
                 let rel_id = self.next_id_from(rel_start);
@@ -3046,10 +3441,14 @@ impl Parser {
                 rels.push(rel);
             } else if self.try_parse_common_element_keyword(&mut extras, source_id, ident_paths)? {
                 // element attribute consumed
-            } else if matches!(self.peek(), Some(Token::Directive(d)) if d.eq_ignore_ascii_case("adrs") || d.eq_ignore_ascii_case("decisions")) {
+            } else if matches!(self.peek(), Some(Token::Directive(d)) if d.eq_ignore_ascii_case("adrs") || d.eq_ignore_ascii_case("decisions"))
+            {
                 self.advance();
                 let rel_path = self.consume_string().unwrap_or_default();
-                if self.peek_open_brace() { self.advance(); self.skip_block(); }
+                if self.peek_open_brace() {
+                    self.advance();
+                    self.skip_block();
+                }
                 let decisions = self.import_adrs(&rel_path, Some(source_id.to_string()));
                 self.accumulated_decisions.extend(decisions);
             } else if matches!(self.peek(), Some(Token::Directive(_))) {
@@ -3068,10 +3467,10 @@ impl Parser {
     fn parse_relationship_in_model(&mut self, model: &mut Model) -> Result<String, ParseError> {
         let rel_start = self.pos;
         let src_pos = self.current_pos();
-        let src  = self.consume_string().unwrap_or_default();
+        let src = self.consume_string().unwrap_or_default();
         self.advance(); // ->
         let dst_pos = self.current_pos();
-        let dst  = self.consume_string().unwrap_or_default();
+        let dst = self.consume_string().unwrap_or_default();
         let desc = self.consume_string_if_not_brace();
         let tech = self.consume_string_if_not_brace_or_kw();
         let tags = self.consume_string_if_not_brace_or_kw();
@@ -3156,7 +3555,12 @@ impl Parser {
         Ok(rel)
     }
 
-    fn attach_relationship_to_element(&self, model: &mut Model, source_id: &str, rel: Relationship) {
+    fn attach_relationship_to_element(
+        &self,
+        model: &mut Model,
+        source_id: &str,
+        rel: Relationship,
+    ) {
         // Try people
         if let Some(people) = &mut model.people {
             for p in people.iter_mut() {
@@ -3209,165 +3613,182 @@ impl Parser {
         while !self.peek_close_brace() && self.peek().is_some() {
             let start = self.pos;
             let result = (|| -> Result<(), ParseError> {
-            match self.peek() {
-                Some(Token::Word(w)) => {
-                    let w = w.to_lowercase();
-                    match w.as_str() {
-                        "auto" => {
-                            self.advance();
-                            let spec = self.parse_auto_view_spec()?;
-                            views.auto_views.get_or_insert_with(Vec::new).push(spec);
-                        }
-                        "systemlandscape" => {
-                            let view_anchor = self.pos;
-                            self.advance();
-                            let v = self.parse_system_landscape_view(model)?;
-                            if let Some(key) = &v.key {
-                                self.view_anchors.push((key.clone(), view_anchor));
+                match self.peek() {
+                    Some(Token::Word(w)) => {
+                        let w = w.to_lowercase();
+                        match w.as_str() {
+                            "auto" => {
+                                self.advance();
+                                let spec = self.parse_auto_view_spec()?;
+                                views.auto_views.get_or_insert_with(Vec::new).push(spec);
                             }
-                            views.system_landscape_views.get_or_insert_with(Vec::new).push(v);
-                        }
-                        "systemcontext" => {
-                            let view_anchor = self.pos;
-                            self.advance();
-                            let v = self.parse_system_context_view(model)?;
-                            if let Some(key) = &v.key {
-                                self.view_anchors.push((key.clone(), view_anchor));
+                            "systemlandscape" => {
+                                let view_anchor = self.pos;
+                                self.advance();
+                                let v = self.parse_system_landscape_view(model)?;
+                                if let Some(key) = &v.key {
+                                    self.view_anchors.push((key.clone(), view_anchor));
+                                }
+                                views
+                                    .system_landscape_views
+                                    .get_or_insert_with(Vec::new)
+                                    .push(v);
                             }
-                            views.system_context_views.get_or_insert_with(Vec::new).push(v);
-                        }
-                        "container" => {
-                            let view_anchor = self.pos;
-                            self.advance();
-                            let v = self.parse_container_view(model)?;
-                            if let Some(key) = &v.key {
-                                self.view_anchors.push((key.clone(), view_anchor));
+                            "systemcontext" => {
+                                let view_anchor = self.pos;
+                                self.advance();
+                                let v = self.parse_system_context_view(model)?;
+                                if let Some(key) = &v.key {
+                                    self.view_anchors.push((key.clone(), view_anchor));
+                                }
+                                views
+                                    .system_context_views
+                                    .get_or_insert_with(Vec::new)
+                                    .push(v);
                             }
-                            views.container_views.get_or_insert_with(Vec::new).push(v);
-                        }
-                        "component" => {
-                            let view_anchor = self.pos;
-                            self.advance();
-                            let v = self.parse_component_view(model)?;
-                            if let Some(key) = &v.key {
-                                self.view_anchors.push((key.clone(), view_anchor));
+                            "container" => {
+                                let view_anchor = self.pos;
+                                self.advance();
+                                let v = self.parse_container_view(model)?;
+                                if let Some(key) = &v.key {
+                                    self.view_anchors.push((key.clone(), view_anchor));
+                                }
+                                views.container_views.get_or_insert_with(Vec::new).push(v);
                             }
-                            views.component_views.get_or_insert_with(Vec::new).push(v);
-                        }
-                        "dynamic" => {
-                            let view_anchor = self.pos;
-                            self.advance();
-                            let v = self.parse_dynamic_view(model)?;
-                            if let Some(key) = &v.key {
-                                self.view_anchors.push((key.clone(), view_anchor));
+                            "component" => {
+                                let view_anchor = self.pos;
+                                self.advance();
+                                let v = self.parse_component_view(model)?;
+                                if let Some(key) = &v.key {
+                                    self.view_anchors.push((key.clone(), view_anchor));
+                                }
+                                views.component_views.get_or_insert_with(Vec::new).push(v);
                             }
-                            views.dynamic_views.get_or_insert_with(Vec::new).push(v);
-                        }
-                        "deployment" => {
-                            let view_anchor = self.pos;
-                            self.advance();
-                            let v = self.parse_deployment_view(model)?;
-                            if let Some(key) = &v.key {
-                                self.view_anchors.push((key.clone(), view_anchor));
+                            "dynamic" => {
+                                let view_anchor = self.pos;
+                                self.advance();
+                                let v = self.parse_dynamic_view(model)?;
+                                if let Some(key) = &v.key {
+                                    self.view_anchors.push((key.clone(), view_anchor));
+                                }
+                                views.dynamic_views.get_or_insert_with(Vec::new).push(v);
                             }
-                            views.deployment_views.get_or_insert_with(Vec::new).push(v);
-                        }
-                        "filtered" => {
-                            let view_anchor = self.pos;
-                            self.advance();
-                            let v = self.parse_filtered_view()?;
-                            if let Some(key) = &v.key {
-                                self.view_anchors.push((key.clone(), view_anchor));
+                            "deployment" => {
+                                let view_anchor = self.pos;
+                                self.advance();
+                                let v = self.parse_deployment_view(model)?;
+                                if let Some(key) = &v.key {
+                                    self.view_anchors.push((key.clone(), view_anchor));
+                                }
+                                views.deployment_views.get_or_insert_with(Vec::new).push(v);
                             }
-                            views.filtered_views.get_or_insert_with(Vec::new).push(v);
-                        }
-                        "styles" => {
-                            self.advance();
-                            self.expect_open_brace()?;
-                            let styles = self.parse_styles()?;
-                            views.configuration
-                                .get_or_insert_with(ViewConfiguration::default)
-                                .styles = Some(styles);
-                        }
-                        "theme" | "themes" => {
-                            self.advance();
-                            let mut themes = Vec::new();
-                            while matches!(self.peek(), Some(Token::Word(_)) | Some(Token::Quoted(_))) {
-                                if let Some(t) = self.consume_string() {
-                                    if t.eq_ignore_ascii_case("default") {
-                                        themes.push("https://static.structurizr.com/themes/default/theme.json".to_string());
-                                    } else {
-                                        themes.push(t);
+                            "filtered" => {
+                                let view_anchor = self.pos;
+                                self.advance();
+                                let v = self.parse_filtered_view()?;
+                                if let Some(key) = &v.key {
+                                    self.view_anchors.push((key.clone(), view_anchor));
+                                }
+                                views.filtered_views.get_or_insert_with(Vec::new).push(v);
+                            }
+                            "styles" => {
+                                self.advance();
+                                self.expect_open_brace()?;
+                                let styles = self.parse_styles()?;
+                                views
+                                    .configuration
+                                    .get_or_insert_with(ViewConfiguration::default)
+                                    .styles = Some(styles);
+                            }
+                            "theme" | "themes" => {
+                                self.advance();
+                                let mut themes = Vec::new();
+                                while matches!(
+                                    self.peek(),
+                                    Some(Token::Word(_)) | Some(Token::Quoted(_))
+                                ) {
+                                    if let Some(t) = self.consume_string() {
+                                        if t.eq_ignore_ascii_case("default") {
+                                            themes.push("https://static.structurizr.com/themes/default/theme.json".to_string());
+                                        } else {
+                                            themes.push(t);
+                                        }
                                     }
                                 }
+                                views
+                                    .configuration
+                                    .get_or_insert_with(ViewConfiguration::default)
+                                    .themes = Some(themes);
                             }
-                            views.configuration
-                                .get_or_insert_with(ViewConfiguration::default)
-                                .themes = Some(themes);
-                        }
-                        "branding" => {
-                            self.advance();
-                            self.expect_open_brace()?;
-                            self.skip_block();
-                        }
-                        "properties" => {
-                            self.advance();
-                            self.expect_open_brace()?;
-                            self.skip_block();
-                        }
-                        // Upstream view types we accept but do not render yet:
-                        // consume positional args and an optional block.
-                        "image" | "custom" => {
-                            self.advance();
-                            while matches!(
-                                self.peek(),
-                                Some(Token::Word(_)) | Some(Token::Quoted(_)) | Some(Token::TextBlock(_))
-                            ) {
+                            "branding" => {
                                 self.advance();
-                            }
-                            if self.peek_open_brace() {
-                                self.advance();
+                                self.expect_open_brace()?;
                                 self.skip_block();
                             }
-                        }
-                        _ => {
-                            if !self.sketch {
-                                return Err(self.unknown_keyword_error("views", &VIEWS_KEYWORDS));
-                            }
-                            self.advance();
-                            while matches!(
-                                self.peek(),
-                                Some(Token::Word(_)) | Some(Token::Quoted(_)) | Some(Token::TextBlock(_))
-                            ) {
+                            "properties" => {
                                 self.advance();
-                            }
-                            if self.peek_open_brace() {
-                                self.advance();
+                                self.expect_open_brace()?;
                                 self.skip_block();
+                            }
+                            // Upstream view types we accept but do not render yet:
+                            // consume positional args and an optional block.
+                            "image" | "custom" => {
+                                self.advance();
+                                while matches!(
+                                    self.peek(),
+                                    Some(Token::Word(_))
+                                        | Some(Token::Quoted(_))
+                                        | Some(Token::TextBlock(_))
+                                ) {
+                                    self.advance();
+                                }
+                                if self.peek_open_brace() {
+                                    self.advance();
+                                    self.skip_block();
+                                }
+                            }
+                            _ => {
+                                if !self.sketch {
+                                    return Err(
+                                        self.unknown_keyword_error("views", &VIEWS_KEYWORDS)
+                                    );
+                                }
+                                self.advance();
+                                while matches!(
+                                    self.peek(),
+                                    Some(Token::Word(_))
+                                        | Some(Token::Quoted(_))
+                                        | Some(Token::TextBlock(_))
+                                ) {
+                                    self.advance();
+                                }
+                                if self.peek_open_brace() {
+                                    self.advance();
+                                    self.skip_block();
+                                }
                             }
                         }
                     }
-                }
-                Some(Token::Directive(d)) => {
-                    let d = d.clone();
-                    self.advance();
-                    match d.to_lowercase().as_str() {
-                        "const" | "constant" | "var" => {
-                            let name = self.consume_string().unwrap_or_default();
-                            let value = self.consume_string().unwrap_or_default();
-                            self.constants.insert(name, value);
-                        }
-                        _ => {
-                            self.skip_directive_args();
+                    Some(Token::Directive(d)) => {
+                        let d = d.clone();
+                        self.advance();
+                        match d.to_lowercase().as_str() {
+                            "const" | "constant" | "var" => {
+                                let name = self.consume_string().unwrap_or_default();
+                                let value = self.consume_string().unwrap_or_default();
+                                self.constants.insert(name, value);
+                            }
+                            _ => {
+                                self.skip_directive_args();
+                            }
                         }
                     }
+                    Some(Token::CloseBrace) => {}
+                    _ => {
+                        self.advance();
+                    }
                 }
-                Some(Token::CloseBrace) => {}
-                _ => {
-                    self.advance();
-                }
-            }
-            Ok(())
+                Ok(())
             })();
             if let Err(e) = result {
                 self.recover_statement(e, start)?;
@@ -3387,11 +3808,20 @@ impl Parser {
         let mut spec = AutoViewSpec::default();
 
         let generator = match self.peek() {
-            Some(Token::Word(w)) if matches!(
-                w.to_lowercase().as_str(),
-                "focus" | "perspective" | "layer" | "slice" | "paths" | "rollup"
-                    | "asof" | "delta" | "lint"
-            ) => {
+            Some(Token::Word(w))
+                if matches!(
+                    w.to_lowercase().as_str(),
+                    "focus"
+                        | "perspective"
+                        | "layer"
+                        | "slice"
+                        | "paths"
+                        | "rollup"
+                        | "asof"
+                        | "delta"
+                        | "lint"
+                ) =>
+            {
                 let g = w.to_lowercase();
                 self.advance();
                 g
@@ -3404,7 +3834,9 @@ impl Parser {
             "focus" => {
                 // Resolve DSL identifiers to element ids while the register is
                 // alive; unknown refs pass through for name-based matching.
-                spec.target = self.consume_bare_word_or_string().map(|t| self.resolve_identifier(&t));
+                spec.target = self
+                    .consume_bare_word_or_string()
+                    .map(|t| self.resolve_identifier(&t));
                 if self.peek_open_brace() {
                     self.advance();
                     while !self.peek_close_brace() && self.peek().is_some() {
@@ -3416,23 +3848,41 @@ impl Parser {
                                 spec.depth = Some(u32::MAX);
                             } else {
                                 spec.depth = Some(v.parse().map_err(|_| {
-                                    ParseError::syntax(line, col, format!("depth must be a number or *, got: {}", v))
+                                    ParseError::syntax(
+                                        line,
+                                        col,
+                                        format!("depth must be a number or *, got: {}", v),
+                                    )
                                 })?);
                             }
                         } else if self.peek_word("direction") {
                             self.advance();
                             let (line, col) = self.current_pos();
-                            let v = self.consume_bare_word_or_string().unwrap_or_default().to_lowercase();
+                            let v = self
+                                .consume_bare_word_or_string()
+                                .unwrap_or_default()
+                                .to_lowercase();
                             if !matches!(v.as_str(), "in" | "out" | "both") {
-                                return Err(ParseError::syntax(line, col, format!("direction must be in|out|both, got: {}", v)));
+                                return Err(ParseError::syntax(
+                                    line,
+                                    col,
+                                    format!("direction must be in|out|both, got: {}", v),
+                                ));
                             }
                             spec.direction = Some(v);
                         } else if self.peek_word("splitby") {
                             self.advance();
                             let (line, col) = self.current_pos();
-                            let v = self.consume_bare_word_or_string().unwrap_or_default().to_lowercase();
+                            let v = self
+                                .consume_bare_word_or_string()
+                                .unwrap_or_default()
+                                .to_lowercase();
                             if !matches!(v.as_str(), "kind" | "tag" | "layer") {
-                                return Err(ParseError::syntax(line, col, format!("splitBy must be kind|tag|layer, got: {}", v)));
+                                return Err(ParseError::syntax(
+                                    line,
+                                    col,
+                                    format!("splitBy must be kind|tag|layer, got: {}", v),
+                                ));
                             }
                             spec.split_by = Some(v);
                         } else if self.peek_word("asof") {
@@ -3450,8 +3900,12 @@ impl Parser {
                 spec.target = self.consume_bare_word_or_string_same_line();
             }
             "paths" => {
-                spec.target = self.consume_bare_word_or_string().map(|t| self.resolve_identifier(&t));
-                spec.target2 = self.consume_bare_word_or_string().map(|t| self.resolve_identifier(&t));
+                spec.target = self
+                    .consume_bare_word_or_string()
+                    .map(|t| self.resolve_identifier(&t));
+                spec.target2 = self
+                    .consume_bare_word_or_string()
+                    .map(|t| self.resolve_identifier(&t));
             }
             "delta" => {
                 // delta arguments are milestone names, never element refs
@@ -3472,7 +3926,11 @@ impl Parser {
     /// swallow the next view keyword).
     fn consume_bare_word_or_string_same_line(&mut self) -> Option<String> {
         let last_line = self.last_consumed_line();
-        let next_line = self.tokens.get(self.pos).map(|s| s.pos.line).unwrap_or(usize::MAX);
+        let next_line = self
+            .tokens
+            .get(self.pos)
+            .map(|s| s.pos.line)
+            .unwrap_or(usize::MAX);
         if next_line != last_line {
             return None;
         }
@@ -3520,7 +3978,10 @@ impl Parser {
         out
     }
 
-    fn parse_system_landscape_view(&mut self, model: &Model) -> Result<SystemLandscapeView, ParseError> {
+    fn parse_system_landscape_view(
+        &mut self,
+        model: &Model,
+    ) -> Result<SystemLandscapeView, ParseError> {
         let key = self.consume_string_if_not_brace_or_kw();
         let title = self.consume_string_if_not_brace_or_kw();
         let mut include_all = false;
@@ -3540,7 +4001,10 @@ impl Parser {
         Ok(view)
     }
 
-    fn parse_system_context_view(&mut self, model: &Model) -> Result<SystemContextView, ParseError> {
+    fn parse_system_context_view(
+        &mut self,
+        model: &Model,
+    ) -> Result<SystemContextView, ParseError> {
         let ss_ref = self.consume_string().unwrap_or_default();
         let ss_id = self.resolve_identifier(&ss_ref);
         let key = self.consume_string_if_not_brace_or_kw();
@@ -3559,8 +4023,12 @@ impl Parser {
         if include_all {
             self.populate_system_context_view(model, &mut view);
         } else if !explicit_includes.is_empty() {
-            self.populate_view_with_explicit_includes(model, &explicit_includes,
-                &mut view.element_views, &mut view.relationship_views);
+            self.populate_view_with_explicit_includes(
+                model,
+                &explicit_includes,
+                &mut view.element_views,
+                &mut view.relationship_views,
+            );
         }
 
         Ok(view)
@@ -3585,8 +4053,12 @@ impl Parser {
         if include_all {
             self.populate_container_view(model, &mut view);
         } else if !explicit_includes.is_empty() {
-            self.populate_view_with_explicit_includes(model, &explicit_includes,
-                &mut view.element_views, &mut view.relationship_views);
+            self.populate_view_with_explicit_includes(
+                model,
+                &explicit_includes,
+                &mut view.element_views,
+                &mut view.relationship_views,
+            );
         }
 
         Ok(view)
@@ -3610,8 +4082,12 @@ impl Parser {
         if include_all {
             self.populate_component_view(model, &mut view);
         } else if !explicit_includes.is_empty() {
-            self.populate_view_with_explicit_includes(model, &explicit_includes,
-                &mut view.element_views, &mut view.relationship_views);
+            self.populate_view_with_explicit_includes(
+                model,
+                &explicit_includes,
+                &mut view.element_views,
+                &mut view.relationship_views,
+            );
         }
         Ok(view)
     }
@@ -3627,16 +4103,23 @@ impl Parser {
         let title = self.consume_string_if_not_brace_or_kw();
         let description = self.consume_string_if_not_brace_or_kw();
 
-        let (element_views, relationship_views, auto_layout) =
-            self.parse_dynamic_view_block(model);
+        let (element_views, relationship_views, auto_layout) = self.parse_dynamic_view_block(model);
 
         Ok(DynamicView {
             element_id: elem_id,
             key,
             title,
             description,
-            element_views: if element_views.is_empty() { None } else { Some(element_views) },
-            relationship_views: if relationship_views.is_empty() { None } else { Some(relationship_views) },
+            element_views: if element_views.is_empty() {
+                None
+            } else {
+                Some(element_views)
+            },
+            relationship_views: if relationship_views.is_empty() {
+                None
+            } else {
+                Some(relationship_views)
+            },
             automatic_layout: auto_layout,
             ..Default::default()
         })
@@ -3646,7 +4129,11 @@ impl Parser {
     fn parse_dynamic_view_block(
         &mut self,
         model: &Model,
-    ) -> (Vec<ElementView>, Vec<RelationshipView>, Option<AutomaticLayout>) {
+    ) -> (
+        Vec<ElementView>,
+        Vec<RelationshipView>,
+        Option<AutomaticLayout>,
+    ) {
         let mut element_set: HashSet<String> = HashSet::new();
         let mut rel_views: Vec<RelationshipView> = Vec::new();
         let mut auto_layout = None;
@@ -3674,11 +4161,18 @@ impl Parser {
                     self.advance();
                     parallel_depth += 1;
                 }
-                Some(Token::Word(w)) if w.eq_ignore_ascii_case("autolayout") || w.eq_ignore_ascii_case("autoLayout") => {
+                Some(Token::Word(w))
+                    if w.eq_ignore_ascii_case("autolayout")
+                        || w.eq_ignore_ascii_case("autoLayout") =>
+                {
                     self.advance();
                     auto_layout = Some(self.parse_autolayout_arguments());
                 }
-                Some(Token::Word(w)) if w.eq_ignore_ascii_case("description") || w.eq_ignore_ascii_case("title") || w.eq_ignore_ascii_case("properties") => {
+                Some(Token::Word(w))
+                    if w.eq_ignore_ascii_case("description")
+                        || w.eq_ignore_ascii_case("title")
+                        || w.eq_ignore_ascii_case("properties") =>
+                {
                     self.advance();
                     if self.peek_open_brace() {
                         self.advance();
@@ -3736,7 +4230,10 @@ impl Parser {
 
         let element_views = element_set
             .into_iter()
-            .map(|id| ElementView { id, ..Default::default() })
+            .map(|id| ElementView {
+                id,
+                ..Default::default()
+            })
             .collect();
 
         (element_views, rel_views, auto_layout)
@@ -3746,23 +4243,34 @@ impl Parser {
     /// return its ID, if found.
     fn find_relationship_id(model: &Model, src_id: &str, dst_id: &str) -> Option<String> {
         fn check_rels(rels: &Option<Vec<Relationship>>, src: &str, dst: &str) -> Option<String> {
-            rels.as_ref()?.iter().find(|r| r.source_id == src && r.destination_id == dst).map(|r| r.id.clone())
+            rels.as_ref()?
+                .iter()
+                .find(|r| r.source_id == src && r.destination_id == dst)
+                .map(|r| r.id.clone())
         }
 
         if let Some(people) = &model.people {
             for p in people {
-                if let Some(id) = check_rels(&p.relationships, src_id, dst_id) { return Some(id); }
+                if let Some(id) = check_rels(&p.relationships, src_id, dst_id) {
+                    return Some(id);
+                }
             }
         }
         if let Some(systems) = &model.software_systems {
             for ss in systems {
-                if let Some(id) = check_rels(&ss.relationships, src_id, dst_id) { return Some(id); }
+                if let Some(id) = check_rels(&ss.relationships, src_id, dst_id) {
+                    return Some(id);
+                }
                 if let Some(containers) = &ss.containers {
                     for c in containers {
-                        if let Some(id) = check_rels(&c.relationships, src_id, dst_id) { return Some(id); }
+                        if let Some(id) = check_rels(&c.relationships, src_id, dst_id) {
+                            return Some(id);
+                        }
                         if let Some(components) = &c.components {
                             for comp in components {
-                                if let Some(id) = check_rels(&comp.relationships, src_id, dst_id) { return Some(id); }
+                                if let Some(id) = check_rels(&comp.relationships, src_id, dst_id) {
+                                    return Some(id);
+                                }
                             }
                         }
                     }
@@ -3800,7 +4308,9 @@ impl Parser {
 
     fn parse_filtered_view(&mut self) -> Result<FilteredView, ParseError> {
         let base_key = self.consume_string().unwrap_or_default();
-        let mode = self.consume_string().unwrap_or_else(|| "Include".to_string());
+        let mode = self
+            .consume_string()
+            .unwrap_or_else(|| "Include".to_string());
         let key = self.consume_string_if_not_brace_or_kw();
         let title = self.consume_string_if_not_brace_or_kw();
 
@@ -3872,14 +4382,18 @@ impl Parser {
             Some(Token::Word(w))
                 if w.eq_ignore_ascii_case("true") || w.eq_ignore_ascii_case("false") =>
             {
-                self.consume_string().map(|s| s.eq_ignore_ascii_case("true"))
+                self.consume_string()
+                    .map(|s| s.eq_ignore_ascii_case("true"))
             }
             _ => None,
         }
     }
 
     /// Parse a view block (inside `{ }`), return automatic layout if present.
-    fn parse_optional_view_block(&mut self, include_all: &mut bool) -> Result<Option<AutomaticLayout>, ParseError> {
+    fn parse_optional_view_block(
+        &mut self,
+        include_all: &mut bool,
+    ) -> Result<Option<AutomaticLayout>, ParseError> {
         let mut ignored = Vec::new();
         self.parse_view_block_inner(include_all, &mut ignored)
     }
@@ -3921,7 +4435,10 @@ impl Parser {
                         break;
                     }
                 }
-                Some(Token::Word(w)) if w.eq_ignore_ascii_case("autolayout") || w.eq_ignore_ascii_case("autoLayout") => {
+                Some(Token::Word(w))
+                    if w.eq_ignore_ascii_case("autolayout")
+                        || w.eq_ignore_ascii_case("autoLayout") =>
+                {
                     self.advance();
                     auto_layout = Some(self.parse_autolayout_arguments());
                 }
@@ -3933,7 +4450,7 @@ impl Parser {
                         // Leading `->` means neighborhood syntax: `->ident->`
                         if matches!(self.peek(), Some(Token::Arrow)) {
                             self.advance(); // consume leading `->`
-                            // Collect the identifier (may be dotted like `ss.container`)
+                                            // Collect the identifier (may be dotted like `ss.container`)
                             if let Some(ident) = self.consume_string() {
                                 // Trailing `->` is optional but expected
                                 if matches!(self.peek(), Some(Token::Arrow)) {
@@ -3943,12 +4460,17 @@ impl Parser {
                                 // can distinguish it from a plain element include.
                                 explicit_includes.push(format!("->{}", ident));
                             }
-                        } else if matches!(self.peek(), Some(Token::Word(_)) | Some(Token::Quoted(_))) {
+                        } else if matches!(
+                            self.peek(),
+                            Some(Token::Word(_)) | Some(Token::Quoted(_))
+                        ) {
                             let is_kw = matches!(
                                 self.peek(),
                                 Some(Token::Word(w)) if is_view_block_keyword(w)
                             );
-                            if is_kw { break; }
+                            if is_kw {
+                                break;
+                            }
                             if let Some(token) = self.consume_string() {
                                 if token == "*" {
                                     *include_all = true;
@@ -4010,7 +4532,11 @@ impl Parser {
     /// Collect element IDs for a system context view.
     /// Includes the target software system itself plus any person/system that
     /// has a direct relationship to or from it.
-    fn collect_system_context_view_ids(&self, model: &Model, software_system_id: &str) -> HashSet<String> {
+    fn collect_system_context_view_ids(
+        &self,
+        model: &Model,
+        software_system_id: &str,
+    ) -> HashSet<String> {
         let mut ids = HashSet::new();
         ids.insert(software_system_id.to_string());
 
@@ -4053,7 +4579,11 @@ impl Parser {
     /// - Components are never included (they live in the component view).
     /// - The target software system itself is NOT included (it renders as the
     ///   boundary via `softwareSystemId`).
-    fn collect_container_view_ids(&self, model: &Model, software_system_id: &str) -> HashSet<String> {
+    fn collect_container_view_ids(
+        &self,
+        model: &Model,
+        software_system_id: &str,
+    ) -> HashSet<String> {
         // Build the set of all IDs that are INTERNAL to the target SS.
         let mut internal_ids: HashSet<String> = HashSet::new();
         internal_ids.insert(software_system_id.to_string());
@@ -4095,10 +4625,12 @@ impl Parser {
                 if !component_ids.contains(rel_dest) {
                     external_ids.insert(rel_dest.to_string());
                 }
-            } else if internal_ids.contains(rel_dest) && !internal_ids.contains(rel_source)
-                && !component_ids.contains(rel_source) {
-                    external_ids.insert(rel_source.to_string());
-                }
+            } else if internal_ids.contains(rel_dest)
+                && !internal_ids.contains(rel_source)
+                && !component_ids.contains(rel_source)
+            {
+                external_ids.insert(rel_source.to_string());
+            }
         }
 
         fn scan_rels(
@@ -4109,25 +4641,51 @@ impl Parser {
         ) {
             if let Some(rels) = relationships {
                 for rel in rels {
-                    maybe_add(&rel.source_id, &rel.destination_id, internal_ids, component_ids, external_ids);
+                    maybe_add(
+                        &rel.source_id,
+                        &rel.destination_id,
+                        internal_ids,
+                        component_ids,
+                        external_ids,
+                    );
                 }
             }
         }
 
         if let Some(people) = &model.people {
             for p in people {
-                scan_rels(&p.relationships, &internal_ids, &component_ids, &mut external_ids);
+                scan_rels(
+                    &p.relationships,
+                    &internal_ids,
+                    &component_ids,
+                    &mut external_ids,
+                );
             }
         }
         if let Some(systems) = &model.software_systems {
             for ss in systems {
-                scan_rels(&ss.relationships, &internal_ids, &component_ids, &mut external_ids);
+                scan_rels(
+                    &ss.relationships,
+                    &internal_ids,
+                    &component_ids,
+                    &mut external_ids,
+                );
                 if let Some(containers) = &ss.containers {
                     for c in containers {
-                        scan_rels(&c.relationships, &internal_ids, &component_ids, &mut external_ids);
+                        scan_rels(
+                            &c.relationships,
+                            &internal_ids,
+                            &component_ids,
+                            &mut external_ids,
+                        );
                         if let Some(components) = &c.components {
                             for comp in components {
-                                scan_rels(&comp.relationships, &internal_ids, &component_ids, &mut external_ids);
+                                scan_rels(
+                                    &comp.relationships,
+                                    &internal_ids,
+                                    &component_ids,
+                                    &mut external_ids,
+                                );
                             }
                         }
                     }
@@ -4203,7 +4761,12 @@ impl Parser {
                         related_elements(&c.relationships, &internal_ids, container_id, &mut ids);
                         if let Some(components) = &c.components {
                             for comp in components {
-                                related_elements(&comp.relationships, &internal_ids, container_id, &mut ids);
+                                related_elements(
+                                    &comp.relationships,
+                                    &internal_ids,
+                                    container_id,
+                                    &mut ids,
+                                );
                             }
                         }
                     }
@@ -4229,7 +4792,11 @@ impl Parser {
         ids
     }
 
-    fn collect_deployment_node_ids_recursive(&self, node: &DeploymentNode, ids: &mut HashSet<String>) {
+    fn collect_deployment_node_ids_recursive(
+        &self,
+        node: &DeploymentNode,
+        ids: &mut HashSet<String>,
+    ) {
         ids.insert(node.id.clone());
         if let Some(children) = &node.children {
             for child in children {
@@ -4265,7 +4832,11 @@ impl Parser {
     ///    container view surfaces relationships defined at component level
     ///    (e.g. a component's `-> otherContainer`) collapsed to the container
     ///    level, mirroring upstream Structurizr's implied relationships.
-    fn collect_relationship_view_ids(&self, model: &Model, ids: &HashSet<String>) -> Vec<RelationshipView> {
+    fn collect_relationship_view_ids(
+        &self,
+        model: &Model,
+        ids: &HashSet<String>,
+    ) -> Vec<RelationshipView> {
         let parents = self.build_parent_map(model);
         let lift = |id: &str| -> Option<String> {
             let mut cur = id.to_string();
@@ -4455,7 +5026,9 @@ impl Parser {
                     // Expand: include all children of this group + their neighborhoods
                     let children = self.register.children_of(ident);
                     for child_id in &children {
-                        if child_id.starts_with("group:") { continue; }
+                        if child_id.starts_with("group:") {
+                            continue;
+                        }
                         ids.insert(child_id.clone());
                         self.collect_neighborhood_ids(model, child_id, &mut ids);
                     }
@@ -4474,7 +5047,10 @@ impl Parser {
 
         *element_views = Some(
             ids.iter()
-                .map(|id| ElementView { id: id.clone(), ..Default::default() })
+                .map(|id| ElementView {
+                    id: id.clone(),
+                    ..Default::default()
+                })
                 .collect(),
         );
         *relationship_views = Some(self.collect_relationship_view_ids(model, &ids));
@@ -4516,7 +5092,6 @@ impl Parser {
         }
     }
 
-
     fn parse_styles(&mut self) -> Result<Styles, ParseError> {
         let mut elements = Vec::new();
         let mut relationships = Vec::new();
@@ -4552,8 +5127,16 @@ impl Parser {
         self.expect_close_brace()?;
 
         Ok(Styles {
-            elements: if elements.is_empty() { None } else { Some(elements) },
-            relationships: if relationships.is_empty() { None } else { Some(relationships) },
+            elements: if elements.is_empty() {
+                None
+            } else {
+                Some(elements)
+            },
+            relationships: if relationships.is_empty() {
+                None
+            } else {
+                Some(relationships)
+            },
         })
     }
 
@@ -4646,7 +5229,10 @@ impl Parser {
             // followed by `=` or `->`.
             Some(Token::Word(w)) => {
                 let lower = w.to_lowercase();
-                let identifier_like = w.chars().next().is_some_and(|c| c.is_alphanumeric() || c == '_');
+                let identifier_like = w
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_');
                 let starts_statement = is_reserved_body_word(&lower)
                     || self.kind_aliases.contains_key(&lower)
                     || w.parse::<f64>().is_ok()
@@ -4706,12 +5292,16 @@ impl Parser {
         let (line, col) = self.current_pos();
         let word = self.consume_bare_word_or_string().unwrap_or_default();
         match word.to_lowercase().as_str() {
-            "idea"        => Ok(Status::Idea),
-            "draft"       => Ok(Status::Draft),
-            "specified"   => Ok(Status::Specified),
+            "idea" => Ok(Status::Idea),
+            "draft" => Ok(Status::Draft),
+            "specified" => Ok(Status::Specified),
             "implemented" => Ok(Status::Implemented),
-            "deprecated"  => Ok(Status::Deprecated),
-            other => Err(ParseError::syntax(line, col, format!("unknown status value: {}", other))),
+            "deprecated" => Ok(Status::Deprecated),
+            other => Err(ParseError::syntax(
+                line,
+                col,
+                format!("unknown status value: {}", other),
+            )),
         }
     }
 
@@ -4720,10 +5310,14 @@ impl Parser {
         let (line, col) = self.current_pos();
         let word = self.consume_bare_word_or_string().unwrap_or_default();
         match word.to_lowercase().as_str() {
-            "in"    => Ok(PortDirection::In),
-            "out"   => Ok(PortDirection::Out),
+            "in" => Ok(PortDirection::In),
+            "out" => Ok(PortDirection::Out),
             "inout" => Ok(PortDirection::InOut),
-            other => Err(ParseError::syntax(line, col, format!("unknown port direction: {}", other))),
+            other => Err(ParseError::syntax(
+                line,
+                col,
+                format!("unknown port direction: {}", other),
+            )),
         }
     }
 
@@ -4732,8 +5326,14 @@ impl Parser {
     fn parse_port(&mut self) -> Result<(String, Port), ParseError> {
         let ident = self.consume_bare_word_or_string().unwrap_or_default();
         let id = self.next_id();
-        let name = self.consume_string_if_not_brace().unwrap_or_else(|| ident.clone());
-        let mut port = Port { id, name, ..Default::default() };
+        let name = self
+            .consume_string_if_not_brace()
+            .unwrap_or_else(|| ident.clone());
+        let mut port = Port {
+            id,
+            name,
+            ..Default::default()
+        };
 
         if self.peek_open_brace() {
             self.advance();
@@ -4761,11 +5361,16 @@ impl Parser {
                             "tags" => {
                                 self.advance();
                                 let mut new_tags: Vec<String> = Vec::new();
-                                while matches!(self.peek(), Some(Token::Quoted(_)) | Some(Token::TextBlock(_))) {
+                                while matches!(
+                                    self.peek(),
+                                    Some(Token::Quoted(_)) | Some(Token::TextBlock(_))
+                                ) {
                                     if let Some(t) = self.consume_string() {
                                         for part in t.split(',') {
                                             let p = part.trim().to_string();
-                                            if !p.is_empty() { new_tags.push(p); }
+                                            if !p.is_empty() {
+                                                new_tags.push(p);
+                                            }
                                         }
                                     }
                                 }
@@ -4780,7 +5385,9 @@ impl Parser {
                             "properties" => {
                                 self.advance();
                                 let props = self.parse_properties_block_body()?;
-                                port.properties.get_or_insert_with(HashMap::new).extend(props);
+                                port.properties
+                                    .get_or_insert_with(HashMap::new)
+                                    .extend(props);
                             }
                             "perspective" => {
                                 self.advance();
@@ -4813,14 +5420,18 @@ impl Parser {
         let (line, col) = self.current_pos();
         let word = self.consume_bare_word_or_string().unwrap_or_default();
         match word.to_lowercase().as_str() {
-            "sync"        => Ok(RelationshipKind::Sync),
-            "async"       => Ok(RelationshipKind::Async),
-            "publish"     => Ok(RelationshipKind::Publish),
-            "subscribe"   => Ok(RelationshipKind::Subscribe),
-            "dataflow"    => Ok(RelationshipKind::Dataflow),
-            "dependency"  => Ok(RelationshipKind::Dependency),
-            "deploy"      => Ok(RelationshipKind::Deploy),
-            other => Err(ParseError::syntax(line, col, format!("unknown relationship kind: {}", other))),
+            "sync" => Ok(RelationshipKind::Sync),
+            "async" => Ok(RelationshipKind::Async),
+            "publish" => Ok(RelationshipKind::Publish),
+            "subscribe" => Ok(RelationshipKind::Subscribe),
+            "dataflow" => Ok(RelationshipKind::Dataflow),
+            "dependency" => Ok(RelationshipKind::Dependency),
+            "deploy" => Ok(RelationshipKind::Deploy),
+            other => Err(ParseError::syntax(
+                line,
+                col,
+                format!("unknown relationship kind: {}", other),
+            )),
         }
     }
 
@@ -4838,7 +5449,11 @@ impl Parser {
     /// `"name"` that starts the *next* perspective entry (different line = stop).
     fn consume_string_if_same_line(&mut self) -> Option<String> {
         let last_line = self.last_consumed_line();
-        let next_line = self.tokens.get(self.pos).map(|s| s.pos.line).unwrap_or(usize::MAX);
+        let next_line = self
+            .tokens
+            .get(self.pos)
+            .map(|s| s.pos.line)
+            .unwrap_or(usize::MAX);
         if next_line != last_line {
             return None;
         }
@@ -4854,10 +5469,14 @@ impl Parser {
     /// line as the name — this prevents consuming the next entry's name as the
     /// current entry's description when names are quoted strings inside a block.
     fn parse_one_perspective(&mut self) -> Perspective {
-        let name        = self.consume_bare_word_or_string().unwrap_or_default();
+        let name = self.consume_bare_word_or_string().unwrap_or_default();
         let description = self.consume_string_if_same_line();
-        let value       = self.consume_string_if_same_line();
-        Perspective { name, description, value }
+        let value = self.consume_string_if_same_line();
+        Perspective {
+            name,
+            description,
+            value,
+        }
     }
 
     /// Parse a `properties { key value ... }` block and return the map.
@@ -4865,7 +5484,7 @@ impl Parser {
         let mut props = HashMap::new();
         self.expect_open_brace()?;
         while !self.peek_close_brace() && self.peek().is_some() {
-            let key   = self.consume_bare_word_or_string().unwrap_or_default();
+            let key = self.consume_bare_word_or_string().unwrap_or_default();
             let value = self.consume_string().unwrap_or_default();
             if !key.is_empty() {
                 props.insert(key, value);
@@ -4920,18 +5539,23 @@ impl Parser {
                             self.advance();
                             let mut new_tags: Vec<String> = Vec::new();
                             // Accept multiple quoted/textblock strings, each optionally comma-separated.
-                            while matches!(self.peek(), Some(Token::Quoted(_)) | Some(Token::TextBlock(_))) {
+                            while matches!(
+                                self.peek(),
+                                Some(Token::Quoted(_)) | Some(Token::TextBlock(_))
+                            ) {
                                 if let Some(t) = self.consume_string() {
                                     for part in t.split(',') {
                                         let p = part.trim().to_string();
-                                        if !p.is_empty() { new_tags.push(p); }
+                                        if !p.is_empty() {
+                                            new_tags.push(p);
+                                        }
                                     }
                                 }
                             }
                             if !new_tags.is_empty() {
                                 let extra = new_tags.join(",");
-                                let base  = rel.tags.as_deref().unwrap_or("Relationship");
-                                rel.tags  = Some(format!("{},{}", base, extra));
+                                let base = rel.tags.as_deref().unwrap_or("Relationship");
+                                rel.tags = Some(format!("{},{}", base, extra));
                             }
                         }
                         "properties" => {
@@ -5022,11 +5646,16 @@ impl Parser {
                     }
                     "tags" | "tag" => {
                         self.advance();
-                        while matches!(self.peek(), Some(Token::Quoted(_)) | Some(Token::TextBlock(_))) {
+                        while matches!(
+                            self.peek(),
+                            Some(Token::Quoted(_)) | Some(Token::TextBlock(_))
+                        ) {
                             if let Some(t) = self.consume_string() {
                                 for part in t.split(',') {
                                     let p = part.trim().to_string();
-                                    if !p.is_empty() { extras.tags_extra.push(p); }
+                                    if !p.is_empty() {
+                                        extras.tags_extra.push(p);
+                                    }
                                 }
                             }
                         }
@@ -5225,13 +5854,42 @@ fn apply_alias_to_tags_props(
 fn is_reserved_body_word(lower: &str) -> bool {
     matches!(
         lower,
-        "person" | "softwaresystem" | "container" | "component" | "group" | "enterprise"
-            | "deploymentenvironment" | "deploymentnode" | "containerinstance"
-            | "softwaresysteminstance" | "infrastructurenode" | "deploymentgroup" | "element"
-            | "description" | "technology" | "url" | "tags" | "tag" | "properties"
-            | "perspective" | "perspectives" | "port" | "status" | "introduced" | "retired"
-            | "instances" | "instanceof" | "this" | "model" | "views" | "workspace"
-            | "configuration" | "milestones" | "specification" | "auto" | "?"
+        "person"
+            | "softwaresystem"
+            | "container"
+            | "component"
+            | "group"
+            | "enterprise"
+            | "deploymentenvironment"
+            | "deploymentnode"
+            | "containerinstance"
+            | "softwaresysteminstance"
+            | "infrastructurenode"
+            | "deploymentgroup"
+            | "element"
+            | "description"
+            | "technology"
+            | "url"
+            | "tags"
+            | "tag"
+            | "properties"
+            | "perspective"
+            | "perspectives"
+            | "port"
+            | "status"
+            | "introduced"
+            | "retired"
+            | "instances"
+            | "instanceof"
+            | "this"
+            | "model"
+            | "views"
+            | "workspace"
+            | "configuration"
+            | "milestones"
+            | "specification"
+            | "auto"
+            | "?"
     )
 }
 
@@ -5248,13 +5906,7 @@ fn is_top_level_keyword(w: &str) -> bool {
 fn is_view_block_keyword(w: &str) -> bool {
     matches!(
         w.to_lowercase().as_str(),
-        "autolayout"
-            | "exclude"
-            | "animation"
-            | "title"
-            | "description"
-            | "properties"
-            | "include"
+        "autolayout" | "exclude" | "animation" | "title" | "description" | "properties" | "include"
     )
 }
 
@@ -5274,26 +5926,26 @@ fn autolayout_rank_direction(w: &str) -> Option<&'static str> {
 /// Canonicalize a shape name to the PascalCase expected by structurizr-diagram.js.
 fn canonicalize_shape(shape: &str) -> String {
     match shape.to_lowercase().as_str() {
-        "box"                   => "Box",
-        "bucket"                => "Bucket",
-        "circle"                => "Circle",
-        "component"             => "Component",
-        "cylinder"              => "Cylinder",
-        "diamond"               => "Diamond",
-        "ellipse"               => "Ellipse",
-        "folder"                => "Folder",
-        "hexagon"               => "Hexagon",
+        "box" => "Box",
+        "bucket" => "Bucket",
+        "circle" => "Circle",
+        "component" => "Component",
+        "cylinder" => "Cylinder",
+        "diamond" => "Diamond",
+        "ellipse" => "Ellipse",
+        "folder" => "Folder",
+        "hexagon" => "Hexagon",
         "mobiledevicelandscape" => "MobileDeviceLandscape",
-        "mobiledeviceportrait"  => "MobileDevicePortrait",
-        "person"                => "Person",
-        "pipe"                  => "Pipe",
-        "robot"                 => "Robot",
-        "roundedbox"            => "RoundedBox",
-        "shell"                 => "Shell",
-        "terminal"              => "Terminal",
-        "webbrowser"            => "WebBrowser",
-        "window"                => "Window",
-        _                       => return shape.to_string(),
+        "mobiledeviceportrait" => "MobileDevicePortrait",
+        "person" => "Person",
+        "pipe" => "Pipe",
+        "robot" => "Robot",
+        "roundedbox" => "RoundedBox",
+        "shell" => "Shell",
+        "terminal" => "Terminal",
+        "webbrowser" => "WebBrowser",
+        "window" => "Window",
+        _ => return shape.to_string(),
     }
     .to_string()
 }
@@ -5371,7 +6023,11 @@ workspace "Test" "A test workspace" {
         assert_eq!(ws.name, "Test");
         let people = ws.model.people.as_ref().expect("should have people");
         assert_eq!(people[0].name, "User");
-        let systems = ws.model.software_systems.as_ref().expect("should have systems");
+        let systems = ws
+            .model
+            .software_systems
+            .as_ref()
+            .expect("should have systems");
         assert_eq!(systems[0].name, "System");
     }
 
@@ -5417,7 +6073,10 @@ workspace {
             .element_views
             .as_ref()
             .expect("context view should contain elements");
-        assert!(!context_elements.is_empty(), "system context view should have elements from include *");
+        assert!(
+            !context_elements.is_empty(),
+            "system context view should have elements from include *"
+        );
 
         let container_view = ws
             .views
@@ -5462,13 +6121,25 @@ workspace {
 "#;
 
         let ws = parse_str(dsl).expect("should parse");
-        let systems = ws.model.software_systems.expect("should have software systems");
+        let systems = ws
+            .model
+            .software_systems
+            .expect("should have software systems");
         let ss = systems.first().expect("should have first software system");
         let containers = ss.containers.as_ref().expect("should have containers");
-        let a = containers.iter().find(|c| c.name == "A").expect("should have A");
-        let b = containers.iter().find(|c| c.name == "B").expect("should have B");
+        let a = containers
+            .iter()
+            .find(|c| c.name == "A")
+            .expect("should have A");
+        let b = containers
+            .iter()
+            .find(|c| c.name == "B")
+            .expect("should have B");
 
-        let rels = a.relationships.as_ref().expect("A should have outgoing relationship");
+        let rels = a
+            .relationships
+            .as_ref()
+            .expect("A should have outgoing relationship");
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].source_id, a.id);
         assert_eq!(rels[0].destination_id, b.id);

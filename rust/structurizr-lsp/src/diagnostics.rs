@@ -2,29 +2,37 @@
 
 use std::collections::HashMap;
 
+use ls_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use structurizr_dsl::lexer::Pos;
 use structurizr_dsl::ParseError;
 use structurizr_model::validation;
 use structurizr_model::Workspace;
-use ls_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 
 use crate::convert::line_range;
 
 /// One diagnostic per parse error: the parser recovers at statement
 /// boundaries, so a single parse can carry several.
 pub fn syntax_errors(text: &str, err: &ParseError) -> Vec<Diagnostic> {
-    err.errors().into_iter().map(|e| syntax_error(text, e)).collect()
+    err.errors()
+        .into_iter()
+        .map(|e| syntax_error(text, e))
+        .collect()
 }
 
 pub fn syntax_error(text: &str, err: &ParseError) -> Diagnostic {
     let range = match err {
-        ParseError::Syntax { file, line, col, .. } => {
+        ParseError::Syntax {
+            file, line, col, ..
+        } => {
             // An error inside an `!include`d file carries that file's line
             // number; mark the `!include` in this document instead.
             let pos = file
                 .as_deref()
                 .and_then(|file| include_line(text, file))
-                .unwrap_or(Pos { line: *line, col: *col });
+                .unwrap_or(Pos {
+                    line: *line,
+                    col: *col,
+                });
             line_range(text, pos)
         }
         _ => Range::new(Position::new(0, 0), Position::new(0, 1)),
@@ -94,9 +102,7 @@ pub fn validation_diagnostics(
                 range,
                 severity: Some(DiagnosticSeverity::WARNING),
                 source: Some("structurizr-model".to_string()),
-                code: Some(ls_types::NumberOrString::String(
-                    err.code().to_string(),
-                )),
+                code: Some(ls_types::NumberOrString::String(err.code().to_string())),
                 message,
                 ..Diagnostic::default()
             }

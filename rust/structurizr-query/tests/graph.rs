@@ -57,13 +57,19 @@ fn every_model_element_becomes_a_node() {
     let g = g();
     for expected in ["User", "Shop", "API", "Database", "Schema", "Server"] {
         let n = node(&g, expected);
-        assert!(n.id.starts_with("e:"), "{expected} should be an element node");
+        assert!(
+            n.id.starts_with("e:"),
+            "{expected} should be an element node"
+        );
     }
     assert_eq!(node(&g, "API").kind, "container");
     assert_eq!(node(&g, "API").technology.as_deref(), Some("Rust"));
     assert_eq!(node(&g, "Schema").kind, "component");
     assert_eq!(node(&g, "Server").kind, "deploymentNode");
-    assert_eq!(node(&g, "Server").environment.as_deref(), Some("Production"));
+    assert_eq!(
+        node(&g, "Server").environment.as_deref(),
+        Some("Production")
+    );
 }
 
 #[test]
@@ -122,8 +128,14 @@ fn links_never_dangle() {
     let g = g();
     let ids: std::collections::HashSet<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
     for l in &g.links {
-        assert!(ids.contains(l.source_id.as_str()), "dangling source in {l:?}");
-        assert!(ids.contains(l.target_id.as_str()), "dangling target in {l:?}");
+        assert!(
+            ids.contains(l.source_id.as_str()),
+            "dangling source in {l:?}"
+        );
+        assert!(
+            ids.contains(l.target_id.as_str()),
+            "dangling target in {l:?}"
+        );
     }
 }
 

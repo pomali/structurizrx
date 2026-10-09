@@ -23,8 +23,8 @@ pub mod locate;
 pub mod markdown;
 pub mod resolver;
 pub mod server;
-pub mod static_site;
 pub mod state;
+pub mod static_site;
 pub mod watcher;
 
 use std::path::PathBuf;
@@ -49,10 +49,7 @@ pub async fn serve(opts: ServeOptions) -> Result<()> {
 
     // Initial workspace load
     let workspaces = resolver::resolve(&path)?;
-    println!(
-        "Found {} workspace(s):",
-        workspaces.len()
-    );
+    println!("Found {} workspace(s):", workspaces.len());
     for w in &workspaces {
         println!("  • {} ({})", w.display_name, w.source_path.display());
     }

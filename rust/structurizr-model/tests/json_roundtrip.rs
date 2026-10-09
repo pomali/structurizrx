@@ -1,8 +1,8 @@
-use structurizr_model::{
-    Container, Milestone, Model, Perspective, Port, PortDirection, Relationship,
-    RelationshipKind, SoftwareSystem, Status, Workspace,
-};
 use std::path::PathBuf;
+use structurizr_model::{
+    Container, Milestone, Model, Perspective, Port, PortDirection, Relationship, RelationshipKind,
+    SoftwareSystem, Status, Workspace,
+};
 
 fn json_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -13,14 +13,16 @@ fn json_path(name: &str) -> PathBuf {
 #[test]
 fn deserialize_big_bank_json() {
     let path = json_path("structurizr-36141-workspace.json");
-    let content = std::fs::read_to_string(&path)
-        .expect("should read JSON file");
-    let ws: Workspace = serde_json::from_str(&content)
-        .expect("should deserialize workspace");
+    let content = std::fs::read_to_string(&path).expect("should read JSON file");
+    let ws: Workspace = serde_json::from_str(&content).expect("should deserialize workspace");
     assert_eq!(ws.name, "Big Bank plc - Internet Banking System");
     let people = ws.model.people.as_ref().expect("should have people");
     assert!(!people.is_empty());
-    let systems = ws.model.software_systems.as_ref().expect("should have software systems");
+    let systems = ws
+        .model
+        .software_systems
+        .as_ref()
+        .expect("should have software systems");
     assert!(!systems.is_empty());
 }
 
@@ -121,14 +123,20 @@ fn roundtrip_new_fields() {
     let ws2: Workspace = serde_json::from_str(&json).expect("should deserialize");
 
     // Milestones survive
-    let ms = ws2.milestones.as_ref().expect("milestones should be present");
+    let ms = ws2
+        .milestones
+        .as_ref()
+        .expect("milestones should be present");
     assert_eq!(ms.len(), 2);
     assert_eq!(ms[0].name, "v1.0");
     assert_eq!(ms[0].date.as_deref(), Some("2026-01-01"));
     assert_eq!(ms[1].name, "v2.0");
 
     // Workspace perspective registry survives
-    let wsp = ws2.perspectives.as_ref().expect("perspectives should be present");
+    let wsp = ws2
+        .perspectives
+        .as_ref()
+        .expect("perspectives should be present");
     assert_eq!(wsp[0].name, "Security");
 
     let sys = &ws2.model.software_systems.as_ref().unwrap()[0];

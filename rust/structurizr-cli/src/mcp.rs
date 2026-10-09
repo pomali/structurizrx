@@ -44,7 +44,11 @@ impl Dispatcher {
     /// none.
     pub fn handle(&mut self, message: &str) -> Vec<String> {
         let Ok(value) = serde_json::from_str::<Value>(message) else {
-            return vec![error_response(Value::Null, PARSE_ERROR, "invalid JSON-RPC message")];
+            return vec![error_response(
+                Value::Null,
+                PARSE_ERROR,
+                "invalid JSON-RPC message",
+            )];
         };
         let method = value.get("method").and_then(Value::as_str).unwrap_or("");
         let params = value.get("params").cloned().unwrap_or(Value::Null);
@@ -69,7 +73,11 @@ impl Dispatcher {
             "tools/list" => json!({ "tools": tool_definitions() }),
             "tools/call" => return self.tools_call(id, params),
             _ => {
-                return error_response(id, METHOD_NOT_FOUND, &format!("unsupported method: {method}"))
+                return error_response(
+                    id,
+                    METHOD_NOT_FOUND,
+                    &format!("unsupported method: {method}"),
+                )
             }
         };
         json!({ "jsonrpc": "2.0", "id": id, "result": result }).to_string()
@@ -83,7 +91,10 @@ impl Dispatcher {
         let Some(name) = params.get("name").and_then(Value::as_str) else {
             return error_response(id, INVALID_PARAMS, "tools/call requires a string `name`");
         };
-        let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+        let args = params
+            .get("arguments")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
 
         let result = match name {
             "validate" => call(&args, tools::validate),
@@ -171,7 +182,10 @@ enum ToolError {
     Execution(String),
 }
 
-fn call(args: &Value, f: impl FnOnce(&Value) -> Result<Value, ToolError>) -> Result<Value, ToolError> {
+fn call(
+    args: &Value,
+    f: impl FnOnce(&Value) -> Result<Value, ToolError>,
+) -> Result<Value, ToolError> {
     f(args)
 }
 
@@ -192,7 +206,9 @@ fn arg_bool(args: &Value, key: &str, default: bool) -> bool {
 
 fn arg_str_array(args: &Value, key: &str) -> Result<Vec<String>, ToolError> {
     let Some(array) = args.get(key).and_then(Value::as_array) else {
-        return Err(ToolError::Invalid(format!("missing or invalid required argument `{key}`")));
+        return Err(ToolError::Invalid(format!(
+            "missing or invalid required argument `{key}`"
+        )));
     };
     array
         .iter()
@@ -208,15 +224,21 @@ fn arg_str_array(args: &Value, key: &str) -> Result<Vec<String>, ToolError> {
 /// via serde, else `structurizr_dsl::parse_file`. Duplicated here rather
 /// than shared, per this crate's module boundaries.
 fn load_workspace(path: &Path) -> Result<Workspace, ToolError> {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
     if ext == "json" {
         let content = std::fs::read_to_string(path)
             .map_err(|e| ToolError::Execution(format!("failed to read {}: {e}", path.display())))?;
-        serde_json::from_str(&content)
-            .map_err(|e| ToolError::Execution(format!("failed to parse JSON from {}: {e}", path.display())))
+        serde_json::from_str(&content).map_err(|e| {
+            ToolError::Execution(format!("failed to parse JSON from {}: {e}", path.display()))
+        })
     } else {
-        parse_file(path)
-            .map_err(|e| ToolError::Execution(format!("failed to parse DSL from {}: {e}", path.display())))
+        parse_file(path).map_err(|e| {
+            ToolError::Execution(format!("failed to parse DSL from {}: {e}", path.display()))
+        })
     }
 }
 
@@ -457,15 +479,20 @@ mod tools {
         let (mut workspace, locations) = if is_json {
             (load_workspace(&file)?, None)
         } else {
-            let parsed = structurizr_dsl::parse_file_detailed(&file)
-                .map_err(|e| ToolError::Execution(format!("failed to parse DSL from {}: {e}", file.display())))?;
+            let parsed = structurizr_dsl::parse_file_detailed(&file).map_err(|e| {
+                ToolError::Execution(format!("failed to parse DSL from {}: {e}", file.display()))
+            })?;
             (parsed.workspace, Some(parsed.locations))
         };
         let generated: std::collections::HashSet<String> =
-            structurizr_query::generate_views(&mut workspace).unwrap_or_default().into_iter().collect();
+            structurizr_query::generate_views(&mut workspace)
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
         let catalog = structurizr_query::Catalog::new(&workspace);
 
-        let located = structurizr_web::locate::locate(&catalog, locations.as_ref(), &generated, &references);
+        let located =
+            structurizr_web::locate::locate(&catalog, locations.as_ref(), &generated, &references);
         Ok(json_result(structurizr_web::locate::to_json(&located)))
     }
 
@@ -523,16 +550,18 @@ mod tools {
             let from_rev = from.unwrap_or("HEAD");
             let before_source = structurizr_web::git::read(&file, from_rev)
                 .map_err(|e| ToolError::Execution(format!("{e:#}")))?;
-            let before = parse_str(&before_source)
-                .map_err(|e| ToolError::Execution(format!("failed to parse revision {from_rev}: {e}")))?;
+            let before = parse_str(&before_source).map_err(|e| {
+                ToolError::Execution(format!("failed to parse revision {from_rev}: {e}"))
+            })?;
 
             let after = match to {
                 None | Some("working") => load_workspace(&file)?,
                 Some(to_rev) => {
                     let after_source = structurizr_web::git::read(&file, to_rev)
                         .map_err(|e| ToolError::Execution(format!("{e:#}")))?;
-                    parse_str(&after_source)
-                        .map_err(|e| ToolError::Execution(format!("failed to parse revision {to_rev}: {e}")))?
+                    parse_str(&after_source).map_err(|e| {
+                        ToolError::Execution(format!("failed to parse revision {to_rev}: {e}"))
+                    })?
                 }
             };
             (before, after)
@@ -557,7 +586,9 @@ mod tools {
             }
         }
         if diagrams.is_empty() {
-            return Err(ToolError::Execution("workspace has no views to render".to_string()));
+            return Err(ToolError::Execution(
+                "workspace has no views to render".to_string(),
+            ));
         }
 
         let content = match format {
@@ -577,7 +608,11 @@ mod tools {
                 .iter()
                 .map(|d| json!({ "type": "text", "text": format!("{}:\n{}", d.key, d.content) }))
                 .collect(),
-            other => return Err(ToolError::Invalid(format!("unknown format '{other}'; expected svg or png"))),
+            other => {
+                return Err(ToolError::Invalid(format!(
+                    "unknown format '{other}'; expected svg or png"
+                )))
+            }
         };
 
         Ok(json!({ "content": content, "isError": false }))
@@ -612,7 +647,8 @@ mod tools {
 
     pub fn format(args: &Value) -> Result<Value, ToolError> {
         let file = PathBuf::from(arg_str(args, "file")?);
-        let (text, losses) = crate::edit::format(&file).map_err(|e| ToolError::Execution(format!("{e:#}")))?;
+        let (text, losses) =
+            crate::edit::format(&file).map_err(|e| ToolError::Execution(format!("{e:#}")))?;
         let mut result = text_result(text);
         if !losses.is_empty() {
             result["structuredContent"] = json!({ "losses": losses });
@@ -635,12 +671,17 @@ enum LoadError {
 }
 
 fn load_workspace_detailed(path: &Path) -> Result<Workspace, LoadError> {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
     if ext == "json" {
         let content = std::fs::read_to_string(path)
             .map_err(|e| LoadError::Other(format!("failed to read {}: {e}", path.display())))?;
-        serde_json::from_str(&content)
-            .map_err(|e| LoadError::Other(format!("failed to parse JSON from {}: {e}", path.display())))
+        serde_json::from_str(&content).map_err(|e| {
+            LoadError::Other(format!("failed to parse JSON from {}: {e}", path.display()))
+        })
     } else {
         parse_file(path).map_err(LoadError::Parse)
     }
@@ -677,7 +718,12 @@ mod tests {
     #[test]
     fn initialize_returns_server_info() {
         let mut dispatcher = Dispatcher::new();
-        let response = request(&mut dispatcher, 1, "initialize", json!({ "protocolVersion": "2024-11-05", "capabilities": {} }));
+        let response = request(
+            &mut dispatcher,
+            1,
+            "initialize",
+            json!({ "protocolVersion": "2024-11-05", "capabilities": {} }),
+        );
         assert_eq!(response["result"]["protocolVersion"], PROTOCOL_VERSION);
         assert_eq!(response["result"]["serverInfo"]["name"], "structurizrx");
         assert_eq!(response["result"]["capabilities"]["tools"], json!({}));
@@ -687,7 +733,8 @@ mod tests {
     fn initialized_notification_is_ignored() {
         let mut dispatcher = Dispatcher::new();
         let out = dispatcher.handle(
-            &json!({ "jsonrpc": "2.0", "method": "notifications/initialized", "params": {} }).to_string(),
+            &json!({ "jsonrpc": "2.0", "method": "notifications/initialized", "params": {} })
+                .to_string(),
         );
         assert!(out.is_empty());
     }
@@ -701,12 +748,15 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "validate", "digest", "query", "locate", "lint", "diff", "render", "docs",
-                "add", "remove", "rename", "format",
+                "validate", "digest", "query", "locate", "lint", "diff", "render", "docs", "add",
+                "remove", "rename", "format",
             ]
         );
         for tool in tools {
-            assert!(tool["description"].as_str().is_some_and(|d| !d.is_empty()), "{tool}");
+            assert!(
+                tool["description"].as_str().is_some_and(|d| !d.is_empty()),
+                "{tool}"
+            );
             assert_eq!(tool["inputSchema"]["type"], "object", "{tool}");
             assert!(tool["inputSchema"]["properties"].is_object(), "{tool}");
         }
@@ -721,14 +771,24 @@ mod tests {
     }
 
     fn call_tool(dispatcher: &mut Dispatcher, name: &str, arguments: Value) -> Value {
-        request(dispatcher, 3, "tools/call", json!({ "name": name, "arguments": arguments }))["result"].clone()
+        request(
+            dispatcher,
+            3,
+            "tools/call",
+            json!({ "name": name, "arguments": arguments }),
+        )["result"]
+            .clone()
     }
 
     #[test]
     fn validate_reports_a_parse_error_with_a_line_number() {
         let path = write_dsl("validate", "workspace {\n  model {\n");
         let mut dispatcher = Dispatcher::new();
-        let result = call_tool(&mut dispatcher, "validate", json!({ "file": path.to_str().unwrap() }));
+        let result = call_tool(
+            &mut dispatcher,
+            "validate",
+            json!({ "file": path.to_str().unwrap() }),
+        );
         assert_eq!(result["isError"], false);
         let structured = &result["structuredContent"];
         assert_eq!(structured["valid"], false);
@@ -742,7 +802,11 @@ mod tests {
     fn digest_of_shop_example_contains_the_system() {
         let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../site/examples/shop.dsl");
         let mut dispatcher = Dispatcher::new();
-        let result = call_tool(&mut dispatcher, "digest", json!({ "file": file.to_str().unwrap() }));
+        let result = call_tool(
+            &mut dispatcher,
+            "digest",
+            json!({ "file": file.to_str().unwrap() }),
+        );
         assert_eq!(result["isError"], false);
         let text = result["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("system Shop"), "{text}");
@@ -760,7 +824,9 @@ mod tests {
         assert_eq!(result["isError"], false);
         let elements = result["structuredContent"]["elements"].as_array().unwrap();
         assert!(
-            elements.iter().any(|e| e["path"].as_str() == Some("Shop/API")),
+            elements
+                .iter()
+                .any(|e| e["path"].as_str() == Some("Shop/API")),
             "{elements:?}"
         );
     }
@@ -775,7 +841,12 @@ mod tests {
     #[test]
     fn unknown_tool_is_an_error_result_not_a_protocol_error() {
         let mut dispatcher = Dispatcher::new();
-        let response = request(&mut dispatcher, 5, "tools/call", json!({ "name": "nope", "arguments": {} }));
+        let response = request(
+            &mut dispatcher,
+            5,
+            "tools/call",
+            json!({ "name": "nope", "arguments": {} }),
+        );
         assert!(response.get("error").is_none(), "{response}");
         assert_eq!(response["result"]["isError"], true);
     }

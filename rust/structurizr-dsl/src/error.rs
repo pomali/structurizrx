@@ -34,7 +34,11 @@ fn file_suffix(file: &Option<String>) -> String {
 }
 
 fn join_lines(errors: &[ParseError]) -> String {
-    errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n  ")
+    errors
+        .iter()
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>()
+        .join("\n  ")
 }
 
 /// One parse error as structured data, for `validate --json` and editors.
@@ -69,7 +73,14 @@ impl ParseError {
     /// Attach the `!include`d file an error was found in.
     pub fn in_file(self, file: Option<String>) -> Self {
         match self {
-            ParseError::Syntax { line, col, message, .. } => ParseError::Syntax { file, line, col, message },
+            ParseError::Syntax {
+                line, col, message, ..
+            } => ParseError::Syntax {
+                file,
+                line,
+                col,
+                message,
+            },
             other => other,
         }
     }
@@ -116,7 +127,12 @@ impl ParseError {
         self.errors()
             .into_iter()
             .map(|e| match e {
-                ParseError::Syntax { file, line, col, message } => Diagnostic {
+                ParseError::Syntax {
+                    file,
+                    line,
+                    col,
+                    message,
+                } => Diagnostic {
                     code: e.code(),
                     file: file.clone(),
                     line: *line,
@@ -138,7 +154,10 @@ impl ParseError {
     /// directory, for tooling that wants an absolute path.
     pub fn resolve_file(diagnostic: &Diagnostic, entry: &std::path::Path) -> PathBuf {
         match &diagnostic.file {
-            Some(f) => entry.parent().map(|d| d.join(f)).unwrap_or_else(|| PathBuf::from(f)),
+            Some(f) => entry
+                .parent()
+                .map(|d| d.join(f))
+                .unwrap_or_else(|| PathBuf::from(f)),
             None => entry.to_path_buf(),
         }
     }

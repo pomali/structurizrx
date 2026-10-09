@@ -8,31 +8,34 @@
 //! for id in &sel.elements { println!("{id}"); }
 //! ```
 
-pub mod lexer;
-mod parser;
-mod eval;
-pub mod digest;
 pub mod cluster;
-pub mod index;
-pub mod graph;
-pub mod generate;
-pub mod lint;
-pub mod review;
 pub mod diff;
+pub mod digest;
+mod eval;
+pub mod generate;
+pub mod graph;
+pub mod index;
+pub mod lexer;
+pub mod lint;
+mod parser;
 pub mod reference;
+pub mod review;
 
 use std::collections::BTreeSet;
 use structurizr_model::Workspace;
 
-pub use digest::{all_relationships, digest, element_names, element_paths, relationship_summaries, RelationshipSummary};
 pub use cluster::{cluster, ClusterAnalysis, ClusterOptions, Level};
-pub use index::{build_index, ElementEntry, Index, RelationshipEntry, ViewEntry};
-pub use graph::{graph, Graph, GraphLink, GraphNode};
-pub use generate::generate_views;
-pub use lint::{lint, LintFinding};
-pub use review::{review, Review, ReviewElement, ReviewFinding};
-pub use reference::{parse_reference, parse_viewer_link, Catalog, Reference, Target, ViewerLink};
 pub use diff::{diff, Change, Diff, DiffSummary, ElementChange, FieldChange, RelationshipChange};
+pub use digest::{
+    all_relationships, digest, element_names, element_paths, relationship_summaries,
+    RelationshipSummary,
+};
+pub use generate::generate_views;
+pub use graph::{graph, Graph, GraphLink, GraphNode};
+pub use index::{build_index, ElementEntry, Index, RelationshipEntry, ViewEntry};
+pub use lint::{lint, LintFinding};
+pub use reference::{parse_reference, parse_viewer_link, Catalog, Reference, Target, ViewerLink};
+pub use review::{review, Review, ReviewElement, ReviewFinding};
 
 /// A set of matched elements and relationships in deterministic (BTreeSet) order.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -80,9 +83,17 @@ pub enum Expr {
     /// Neighborhood: BFS from `target` to `depth` hops (both directions).
     Neighborhood { target: String, depth: u32 },
     /// Element field comparison (path, op, value).
-    ElementComparison { path: Vec<String>, op: CompOp, value: String },
+    ElementComparison {
+        path: Vec<String>,
+        op: CompOp,
+        value: String,
+    },
     /// Relationship field comparison (path, op, value).
-    RelationshipComparison { path: Vec<String>, op: CompOp, value: String },
+    RelationshipComparison {
+        path: Vec<String>,
+        op: CompOp,
+        value: String,
+    },
     /// Logical AND — intersects both element and relationship sets.
     And(Box<Expr>, Box<Expr>),
     /// Logical OR — unions both element and relationship sets.

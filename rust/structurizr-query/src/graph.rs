@@ -8,9 +8,7 @@
 //! nothing here changes the workspace.
 
 use serde::Serialize;
-use structurizr_model::{
-    Component, Container, DeploymentNode, Status, Workspace,
-};
+use structurizr_model::{Component, Container, DeploymentNode, Status, Workspace};
 
 /// Prefix marking a node built from a model element.
 const P_ELEMENT: &str = "e:";
@@ -195,8 +193,11 @@ pub fn graph(ws: &Workspace) -> Graph {
     }
 
     {
-        let names: std::collections::HashMap<String, String> =
-            g.nodes.iter().map(|n| (n.id.clone(), n.name.clone())).collect();
+        let names: std::collections::HashMap<String, String> = g
+            .nodes
+            .iter()
+            .map(|n| (n.id.clone(), n.name.clone()))
+            .collect();
         for (idx, of_id, number) in &pending_instances {
             if let Some(name) = names.get(of_id) {
                 g.nodes[*idx].name = format!("{name} [{number}]");
@@ -211,7 +212,8 @@ pub fn graph(ws: &Workspace) -> Graph {
     // relationship to an element the workspace never declared), so the client
     // never has to resolve a dangling id.
     let ids: std::collections::HashSet<String> = g.nodes.iter().map(|n| n.id.clone()).collect();
-    g.links.retain(|l| ids.contains(&l.source_id) && ids.contains(&l.target_id));
+    g.links
+        .retain(|l| ids.contains(&l.source_id) && ids.contains(&l.target_id));
 
     g
 }
@@ -306,7 +308,11 @@ fn push_deployment_node(
 
     for ci in dn.container_instances.as_deref().unwrap_or(&[]) {
         let inst_id = elem(&ci.id);
-        pending_instances.push((g.nodes.len(), elem(&ci.container_id), ci.instance_id.unwrap_or(1)));
+        pending_instances.push((
+            g.nodes.len(),
+            elem(&ci.container_id),
+            ci.instance_id.unwrap_or(1),
+        ));
         g.nodes.push(GraphNode {
             id: inst_id.clone(),
             ref_id: ci.id.clone(),
@@ -406,11 +412,11 @@ fn push_views(g: &mut Graph, ws: &Workspace) {
     let views = &ws.views;
 
     let add = |key: &Option<String>,
-                   title: &Option<String>,
-                   description: &Option<String>,
-                   elements: &Option<Vec<structurizr_model::ElementView>>,
-                   view_kind: &'static str,
-                   g: &mut Graph| {
+               title: &Option<String>,
+               description: &Option<String>,
+               elements: &Option<Vec<structurizr_model::ElementView>>,
+               view_kind: &'static str,
+               g: &mut Graph| {
         let Some(key) = key else { return };
         let id = format!("{P_VIEW}{key}");
         g.nodes.push(GraphNode {
@@ -443,25 +449,74 @@ fn push_views(g: &mut Graph, ws: &Workspace) {
     };
 
     for v in views.system_landscape_views.as_deref().unwrap_or(&[]) {
-        add(&v.key, &v.title, &v.description, &v.element_views, "system landscape", g);
+        add(
+            &v.key,
+            &v.title,
+            &v.description,
+            &v.element_views,
+            "system landscape",
+            g,
+        );
     }
     for v in views.system_context_views.as_deref().unwrap_or(&[]) {
-        add(&v.key, &v.title, &v.description, &v.element_views, "system context", g);
+        add(
+            &v.key,
+            &v.title,
+            &v.description,
+            &v.element_views,
+            "system context",
+            g,
+        );
     }
     for v in views.container_views.as_deref().unwrap_or(&[]) {
-        add(&v.key, &v.title, &v.description, &v.element_views, "container", g);
+        add(
+            &v.key,
+            &v.title,
+            &v.description,
+            &v.element_views,
+            "container",
+            g,
+        );
     }
     for v in views.component_views.as_deref().unwrap_or(&[]) {
-        add(&v.key, &v.title, &v.description, &v.element_views, "component", g);
+        add(
+            &v.key,
+            &v.title,
+            &v.description,
+            &v.element_views,
+            "component",
+            g,
+        );
     }
     for v in views.dynamic_views.as_deref().unwrap_or(&[]) {
-        add(&v.key, &v.title, &v.description, &v.element_views, "dynamic", g);
+        add(
+            &v.key,
+            &v.title,
+            &v.description,
+            &v.element_views,
+            "dynamic",
+            g,
+        );
     }
     for v in views.deployment_views.as_deref().unwrap_or(&[]) {
-        add(&v.key, &v.title, &v.description, &v.element_views, "deployment", g);
+        add(
+            &v.key,
+            &v.title,
+            &v.description,
+            &v.element_views,
+            "deployment",
+            g,
+        );
     }
     for v in views.custom_views.as_deref().unwrap_or(&[]) {
-        add(&v.key, &v.title, &v.description, &v.element_views, "custom", g);
+        add(
+            &v.key,
+            &v.title,
+            &v.description,
+            &v.element_views,
+            "custom",
+            g,
+        );
     }
 }
 

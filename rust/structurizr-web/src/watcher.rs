@@ -18,7 +18,10 @@ use crate::state::{AppState, BroadcastMsg};
 pub fn start(path: PathBuf, state: AppState) -> Result<()> {
     let (tx, rx) = mpsc::channel();
 
-    let mut watcher = RecommendedWatcher::new(tx, Config::default().with_poll_interval(Duration::from_secs(1)))?;
+    let mut watcher = RecommendedWatcher::new(
+        tx,
+        Config::default().with_poll_interval(Duration::from_secs(1)),
+    )?;
     watcher.watch(&path, RecursiveMode::Recursive)?;
 
     // Run in a dedicated OS thread so we don't block the tokio runtime.
@@ -52,4 +55,3 @@ pub fn start(path: PathBuf, state: AppState) -> Result<()> {
 
     Ok(())
 }
-

@@ -61,23 +61,100 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, String> {
         if i + 1 < bytes.len() {
             let two = &bytes[i..i + 2];
             match two {
-                b"->" => { out.push(Spanned { token: Token::Arrow, offset: start }); i += 2; continue; }
-                b"&&" => { out.push(Spanned { token: Token::And,   offset: start }); i += 2; continue; }
-                b"||" => { out.push(Spanned { token: Token::Or,    offset: start }); i += 2; continue; }
-                b"==" => { out.push(Spanned { token: Token::Eq,    offset: start }); i += 2; continue; }
-                b"!=" => { out.push(Spanned { token: Token::Ne,    offset: start }); i += 2; continue; }
+                b"->" => {
+                    out.push(Spanned {
+                        token: Token::Arrow,
+                        offset: start,
+                    });
+                    i += 2;
+                    continue;
+                }
+                b"&&" => {
+                    out.push(Spanned {
+                        token: Token::And,
+                        offset: start,
+                    });
+                    i += 2;
+                    continue;
+                }
+                b"||" => {
+                    out.push(Spanned {
+                        token: Token::Or,
+                        offset: start,
+                    });
+                    i += 2;
+                    continue;
+                }
+                b"==" => {
+                    out.push(Spanned {
+                        token: Token::Eq,
+                        offset: start,
+                    });
+                    i += 2;
+                    continue;
+                }
+                b"!=" => {
+                    out.push(Spanned {
+                        token: Token::Ne,
+                        offset: start,
+                    });
+                    i += 2;
+                    continue;
+                }
                 _ => {}
             }
         }
 
         // Single-character tokens.
         match bytes[i] {
-            b'*' => { out.push(Spanned { token: Token::Star,   offset: start }); i += 1; continue; }
-            b'(' => { out.push(Spanned { token: Token::LParen, offset: start }); i += 1; continue; }
-            b')' => { out.push(Spanned { token: Token::RParen, offset: start }); i += 1; continue; }
-            b'!' => { out.push(Spanned { token: Token::Not,    offset: start }); i += 1; continue; }
-            b'.' => { out.push(Spanned { token: Token::Dot,    offset: start }); i += 1; continue; }
-            b'^' => { out.push(Spanned { token: Token::Caret,  offset: start }); i += 1; continue; }
+            b'*' => {
+                out.push(Spanned {
+                    token: Token::Star,
+                    offset: start,
+                });
+                i += 1;
+                continue;
+            }
+            b'(' => {
+                out.push(Spanned {
+                    token: Token::LParen,
+                    offset: start,
+                });
+                i += 1;
+                continue;
+            }
+            b')' => {
+                out.push(Spanned {
+                    token: Token::RParen,
+                    offset: start,
+                });
+                i += 1;
+                continue;
+            }
+            b'!' => {
+                out.push(Spanned {
+                    token: Token::Not,
+                    offset: start,
+                });
+                i += 1;
+                continue;
+            }
+            b'.' => {
+                out.push(Spanned {
+                    token: Token::Dot,
+                    offset: start,
+                });
+                i += 1;
+                continue;
+            }
+            b'^' => {
+                out.push(Spanned {
+                    token: Token::Caret,
+                    offset: start,
+                });
+                i += 1;
+                continue;
+            }
             _ => {}
         }
 
@@ -89,11 +166,14 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, String> {
                 if bytes[i] == b'\\' && i + 1 < bytes.len() {
                     i += 1;
                     match bytes[i] {
-                        b'"'  => s.push('"'),
+                        b'"' => s.push('"'),
                         b'\\' => s.push('\\'),
-                        b'n'  => s.push('\n'),
-                        b't'  => s.push('\t'),
-                        other if other.is_ascii() => { s.push('\\'); s.push(other as char); }
+                        b'n' => s.push('\n'),
+                        b't' => s.push('\t'),
+                        other if other.is_ascii() => {
+                            s.push('\\');
+                            s.push(other as char);
+                        }
                         _ => s.push('\\'),
                     }
                     i += 1;
@@ -114,7 +194,10 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, String> {
                 return Err(format!("unterminated string starting at offset {start}"));
             }
             i += 1; // consume closing quote
-            out.push(Spanned { token: Token::Quoted(s), offset: start });
+            out.push(Spanned {
+                token: Token::Quoted(s),
+                offset: start,
+            });
             continue;
         }
 
@@ -129,7 +212,10 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, String> {
                     .ok_or_else(|| format!("integer literal too large at offset {start}"))?;
                 i += 1;
             }
-            out.push(Spanned { token: Token::Int(n), offset: start });
+            out.push(Spanned {
+                token: Token::Int(n),
+                offset: start,
+            });
             continue;
         }
 
@@ -144,19 +230,27 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned>, String> {
             while i < bytes.len()
                 && (bytes[i].is_ascii_alphanumeric()
                     || bytes[i] == b'_'
-                    || (bytes[i] == b'-'
-                        && !(i + 1 < bytes.len() && bytes[i + 1] == b'>')))
+                    || (bytes[i] == b'-' && !(i + 1 < bytes.len() && bytes[i + 1] == b'>')))
             {
                 s.push(bytes[i] as char);
                 i += 1;
             }
-            out.push(Spanned { token: Token::Word(s), offset: start });
+            out.push(Spanned {
+                token: Token::Word(s),
+                offset: start,
+            });
             continue;
         }
 
-        return Err(format!("unexpected character {:?} at offset {start}", bytes[i] as char));
+        return Err(format!(
+            "unexpected character {:?} at offset {start}",
+            bytes[i] as char
+        ));
     }
 
-    out.push(Spanned { token: Token::Eof, offset: src.len() });
+    out.push(Spanned {
+        token: Token::Eof,
+        offset: src.len(),
+    });
     Ok(out)
 }

@@ -3,7 +3,8 @@ use structurizr_model::Workspace;
 use structurizr_query::generate_views;
 
 fn shop() -> Workspace {
-    parse_str(r#"
+    parse_str(
+        r#"
 workspace "Shop" {
     milestones {
         mvp "2026-08"
@@ -55,12 +56,18 @@ workspace "Shop" {
         auto lint
     }
 }
-"#).expect("fixture parses")
+"#,
+    )
+    .expect("fixture parses")
 }
 
 fn find_landscape<'a>(ws: &'a Workspace, key: &str) -> &'a structurizr_model::SystemLandscapeView {
-    ws.views.system_landscape_views.as_ref().unwrap()
-        .iter().find(|v| v.key.as_deref() == Some(key))
+    ws.views
+        .system_landscape_views
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|v| v.key.as_deref() == Some(key))
         .unwrap_or_else(|| panic!("view {} not found", key))
 }
 
@@ -70,7 +77,8 @@ fn elem_count(v: &structurizr_model::SystemLandscapeView) -> usize {
 
 #[test]
 fn default_set_generated_when_no_views() {
-    let mut ws = parse_str(r#"
+    let mut ws = parse_str(
+        r#"
 workspace {
     model {
         u = person "User"
@@ -83,19 +91,43 @@ workspace {
         u -> c "clicks"
     }
 }
-"#).unwrap();
+"#,
+    )
+    .unwrap();
     let keys = generate_views(&mut ws).unwrap();
-    assert!(keys.contains(&"auto-landscape".to_string()), "keys: {:?}", keys);
-    assert!(keys.contains(&"auto-context-sys".to_string()), "keys: {:?}", keys);
-    assert!(keys.contains(&"auto-container-sys".to_string()), "keys: {:?}", keys);
-    assert!(keys.contains(&"auto-component-c".to_string()), "keys: {:?}", keys);
+    assert!(
+        keys.contains(&"auto-landscape".to_string()),
+        "keys: {:?}",
+        keys
+    );
+    assert!(
+        keys.contains(&"auto-context-sys".to_string()),
+        "keys: {:?}",
+        keys
+    );
+    assert!(
+        keys.contains(&"auto-container-sys".to_string()),
+        "keys: {:?}",
+        keys
+    );
+    assert!(
+        keys.contains(&"auto-component-c".to_string()),
+        "keys: {:?}",
+        keys
+    );
     // landscape holds person + system and the induced relationship
     let l = find_landscape(&ws, "auto-landscape");
     assert_eq!(elem_count(l), 2);
     assert_eq!(l.relationship_views.as_ref().unwrap().len(), 1);
     // container view: container + external person neighbor
     let cv = &ws.views.container_views.as_ref().unwrap()[0];
-    let ids: Vec<&str> = cv.element_views.as_ref().unwrap().iter().map(|e| e.id.as_str()).collect();
+    let ids: Vec<&str> = cv
+        .element_views
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|e| e.id.as_str())
+        .collect();
     assert_eq!(ids.len(), 2, "container + person, got {:?}", ids);
 }
 
@@ -107,7 +139,11 @@ fn focus_depth_one_and_split_by_kind() {
     let f = find_landscape(&ws, "auto-focus-api");
     assert_eq!(elem_count(f), 5, "api + 4 neighbors");
     // splitBy kind buckets: sync, async, unspecified (web->api and api->legacy have no kind)
-    assert!(keys.contains(&"auto-focus-api-sync".to_string()), "keys: {:?}", keys);
+    assert!(
+        keys.contains(&"auto-focus-api-sync".to_string()),
+        "keys: {:?}",
+        keys
+    );
     assert!(keys.contains(&"auto-focus-api-async".to_string()));
     assert!(keys.contains(&"auto-focus-api-unspecified".to_string()));
     let sync = find_landscape(&ws, "auto-focus-api-sync");
@@ -116,7 +152,8 @@ fn focus_depth_one_and_split_by_kind() {
 
 #[test]
 fn focus_direction_in_vs_out() {
-    let mut ws = parse_str(r#"
+    let mut ws = parse_str(
+        r#"
 workspace {
     model {
         a = softwareSystem "A"
@@ -130,7 +167,9 @@ workspace {
         auto focus b { direction out splitBy kind }
     }
 }
-"#).unwrap();
+"#,
+    )
+    .unwrap();
     generate_views(&mut ws).unwrap();
     let vin = find_landscape(&ws, "auto-focus-b");
     assert_eq!(elem_count(vin), 2, "b + a (inbound only)");
@@ -144,7 +183,11 @@ fn perspective_layer_slice() {
     let mut ws = shop();
     generate_views(&mut ws).unwrap();
     let p = find_landscape(&ws, "auto-perspective-security");
-    assert_eq!(elem_count(p), 2, "user + shop from the security perspective rel");
+    assert_eq!(
+        elem_count(p),
+        2,
+        "user + shop from the security perspective rel"
+    );
     let l = find_landscape(&ws, "auto-layer-domain");
     assert_eq!(elem_count(l), 1, "only api has layer=domain");
     let s = find_landscape(&ws, "auto-slice-element-tag-database");
@@ -169,13 +212,32 @@ fn asof_and_delta() {
     // as of billingSplit: legacy retired, billing introduced → user, shop, web, api, db, billing, ghost
     let a = find_landscape(&ws, "auto-asof-billingsplit");
     assert_eq!(elem_count(a), 7);
-    let ids: Vec<&str> = a.element_views.as_ref().unwrap().iter().map(|e| e.id.as_str()).collect();
+    let ids: Vec<&str> = a
+        .element_views
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|e| e.id.as_str())
+        .collect();
     // legacy must be gone: check by looking up its relationships absence instead of id string
     let d = find_landscape(&ws, "auto-delta-now-billingsplit");
     let desc = d.description.as_deref().unwrap();
-    assert!(desc.contains("added: 1 elements (Billing)"), "desc: {}", desc);
-    assert!(desc.contains("removed: 1 elements (Legacy CRM)"), "desc: {}", desc);
-    assert!(elem_count(d) >= 8, "delta shows the union; got {} ({:?})", elem_count(d), ids);
+    assert!(
+        desc.contains("added: 1 elements (Billing)"),
+        "desc: {}",
+        desc
+    );
+    assert!(
+        desc.contains("removed: 1 elements (Legacy CRM)"),
+        "desc: {}",
+        desc
+    );
+    assert!(
+        elem_count(d) >= 8,
+        "delta shows the union; got {} ({:?})",
+        elem_count(d),
+        ids
+    );
 }
 
 #[test]
@@ -185,8 +247,16 @@ fn lint_findings() {
     let l = find_landscape(&ws, "auto-lint");
     let desc = l.description.as_deref().unwrap();
     assert!(desc.contains("orphans: Ghost"), "desc: {}", desc);
-    assert!(desc.contains("unbound ports: API.Order events"), "desc: {}", desc);
-    assert!(!desc.contains("REST API"), "rest port is bound; desc: {}", desc);
+    assert!(
+        desc.contains("unbound ports: API.Order events"),
+        "desc: {}",
+        desc
+    );
+    assert!(
+        !desc.contains("REST API"),
+        "rest port is bound; desc: {}",
+        desc
+    );
 }
 
 #[test]
@@ -195,7 +265,11 @@ fn idempotent_and_deterministic() {
     let keys1 = generate_views(&mut ws).unwrap();
     assert!(!keys1.is_empty());
     let keys2 = generate_views(&mut ws).unwrap();
-    assert!(keys2.is_empty(), "second run must generate nothing, got {:?}", keys2);
+    assert!(
+        keys2.is_empty(),
+        "second run must generate nothing, got {:?}",
+        keys2
+    );
 
     let mut ws_b = shop();
     let keys_b = generate_views(&mut ws_b).unwrap();
@@ -204,7 +278,8 @@ fn idempotent_and_deterministic() {
 
 #[test]
 fn existing_views_disable_implicit_default() {
-    let mut ws = parse_str(r#"
+    let mut ws = parse_str(
+        r#"
 workspace {
     model {
         s = softwareSystem "Sys"
@@ -215,7 +290,12 @@ workspace {
         }
     }
 }
-"#).unwrap();
+"#,
+    )
+    .unwrap();
     let keys = generate_views(&mut ws).unwrap();
-    assert!(keys.is_empty(), "explicit views present, no auto specs → nothing generated");
+    assert!(
+        keys.is_empty(),
+        "explicit views present, no auto specs → nothing generated"
+    );
 }

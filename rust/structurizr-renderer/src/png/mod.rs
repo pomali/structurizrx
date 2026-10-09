@@ -59,11 +59,21 @@ fn font_database() -> std::sync::Arc<usvg::fontdb::Database> {
             let mut db = usvg::fontdb::Database::new();
             db.load_system_fonts();
             const SANS: [&str; 8] = [
-                "Arial", "Helvetica", "Helvetica Neue", "Liberation Sans", "DejaVu Sans",
-                "Noto Sans", "Segoe UI", "Verdana",
+                "Arial",
+                "Helvetica",
+                "Helvetica Neue",
+                "Liberation Sans",
+                "DejaVu Sans",
+                "Noto Sans",
+                "Segoe UI",
+                "Verdana",
             ];
             let installed = |name: &str| {
-                db.faces().any(|f| f.families.iter().any(|(fam, _)| fam.eq_ignore_ascii_case(name)))
+                db.faces().any(|f| {
+                    f.families
+                        .iter()
+                        .any(|(fam, _)| fam.eq_ignore_ascii_case(name))
+                })
             };
             if let Some(name) = SANS.iter().find(|n| installed(n)) {
                 db.set_sans_serif_family(*name);
@@ -80,8 +90,7 @@ fn rasterize(svg_content: &str) -> Result<tiny_skia::Pixmap, String> {
     {
         opt.fontdb = font_database();
     }
-    let tree =
-        usvg::Tree::from_str(svg_content, &opt).map_err(|e| e.to_string())?;
+    let tree = usvg::Tree::from_str(svg_content, &opt).map_err(|e| e.to_string())?;
 
     let width = tree.size().width().ceil() as u32;
     let height = tree.size().height().ceil() as u32;

@@ -68,9 +68,20 @@ impl RelationshipSummary {
         if let Some(r) = &self.retired {
             markers.push(format!("retired:{}", r));
         }
-        let marker_s = if markers.is_empty() { String::new() } else { format!(" [{}]", markers.join(", ")) };
-        let desc = self.description.as_deref().map(|d| format!(" \"{}\"", d)).unwrap_or_default();
-        format!("{} -> {}{}{}", self.source, self.destination, desc, marker_s)
+        let marker_s = if markers.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", markers.join(", "))
+        };
+        let desc = self
+            .description
+            .as_deref()
+            .map(|d| format!(" \"{}\"", d))
+            .unwrap_or_default();
+        format!(
+            "{} -> {}{}{}",
+            self.source, self.destination, desc, marker_s
+        )
     }
 }
 
@@ -94,8 +105,14 @@ pub fn relationship_summaries(ws: &Workspace) -> HashMap<String, RelationshipSum
     }
 
     let summarize = |r: &Relationship| -> RelationshipSummary {
-        let mut src = paths.get(&r.source_id).cloned().unwrap_or_else(|| r.source_id.clone());
-        let mut dst = paths.get(&r.destination_id).cloned().unwrap_or_else(|| r.destination_id.clone());
+        let mut src = paths
+            .get(&r.source_id)
+            .cloned()
+            .unwrap_or_else(|| r.source_id.clone());
+        let mut dst = paths
+            .get(&r.destination_id)
+            .cloned()
+            .unwrap_or_else(|| r.destination_id.clone());
         if let Some(pid) = &r.source_port_id {
             if let Some(pname) = port_names.get(&(r.source_id.clone(), pid.clone())) {
                 src = format!("{}.{}", src, pname);
@@ -159,7 +176,8 @@ pub fn digest(ws: &Workspace) -> String {
         let _ = writeln!(out, "description: {}", desc);
     }
     if let Some(ms) = &ws.milestones {
-        let list: Vec<String> = ms.iter()
+        let list: Vec<String> = ms
+            .iter()
             .map(|m| match &m.date {
                 Some(d) => format!("{}({})", m.name, d),
                 None => m.name.clone(),
@@ -194,17 +212,26 @@ pub fn digest(ws: &Workspace) -> String {
         if let Some(r) = retired {
             m.push(format!("retired:{}", r));
         }
-        if m.is_empty() { String::new() } else { format!(" [{}]", m.join(", ")) }
+        if m.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", m.join(", "))
+        }
     }
 
     fn ports_suffix(ports: &Option<Vec<Port>>) -> String {
         match ports {
             Some(ps) if !ps.is_empty() => {
-                let list: Vec<String> = ps.iter().map(|p| {
-                    let mut s = p.name.clone();
-                    if let Some(proto) = &p.protocol { s = format!("{}({})", s, proto); }
-                    s
-                }).collect();
+                let list: Vec<String> = ps
+                    .iter()
+                    .map(|p| {
+                        let mut s = p.name.clone();
+                        if let Some(proto) = &p.protocol {
+                            s = format!("{}({})", s, proto);
+                        }
+                        s
+                    })
+                    .collect();
                 format!(" ports: {}", list.join(", "))
             }
             _ => String::new(),
@@ -212,16 +239,44 @@ pub fn digest(ws: &Workspace) -> String {
     }
 
     for p in ws.model.people.iter().flatten() {
-        let _ = writeln!(out, "person {}{}", p.name, markers(&p.status, &p.introduced, &p.retired, &None));
+        let _ = writeln!(
+            out,
+            "person {}{}",
+            p.name,
+            markers(&p.status, &p.introduced, &p.retired, &None)
+        );
     }
     for s in ws.model.software_systems.iter().flatten() {
-        let _ = writeln!(out, "system {}{}{}", s.name, markers(&s.status, &s.introduced, &s.retired, &None), ports_suffix(&s.ports));
+        let _ = writeln!(
+            out,
+            "system {}{}{}",
+            s.name,
+            markers(&s.status, &s.introduced, &s.retired, &None),
+            ports_suffix(&s.ports)
+        );
         for c in s.containers.iter().flatten() {
             let path = &paths[&c.id];
-            let _ = writeln!(out, "  container {}{}{}", path, markers(&c.status, &c.introduced, &c.retired, &c.technology), ports_suffix(&c.ports));
+            let _ = writeln!(
+                out,
+                "  container {}{}{}",
+                path,
+                markers(&c.status, &c.introduced, &c.retired, &c.technology),
+                ports_suffix(&c.ports)
+            );
             for comp in c.components.iter().flatten() {
                 let cpath = &paths[&comp.id];
-                let _ = writeln!(out, "    component {}{}{}", cpath, markers(&comp.status, &comp.introduced, &comp.retired, &comp.technology), ports_suffix(&comp.ports));
+                let _ = writeln!(
+                    out,
+                    "    component {}{}{}",
+                    cpath,
+                    markers(
+                        &comp.status,
+                        &comp.introduced,
+                        &comp.retired,
+                        &comp.technology
+                    ),
+                    ports_suffix(&comp.ports)
+                );
             }
         }
     }

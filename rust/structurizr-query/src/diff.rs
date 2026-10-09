@@ -275,7 +275,11 @@ impl Side {
             by_path.insert(key(&path), i);
             paths.push(path);
         }
-        Side { idx, by_path, paths }
+        Side {
+            idx,
+            by_path,
+            paths,
+        }
     }
 
     fn element(&self, path: &str) -> Option<&crate::index::ElementEntry> {
@@ -375,12 +379,42 @@ fn element_fields(
     // a modification rather than a replacement — worth reporting.
     compare("name", Some(&old.name), Some(&new.name), &mut fields);
     compare("kind", Some(old.kind), Some(new.kind), &mut fields);
-    compare("description", old.description.as_deref(), new.description.as_deref(), &mut fields);
-    compare("technology", old.technology.as_deref(), new.technology.as_deref(), &mut fields);
-    compare("group", old.group.as_deref(), new.group.as_deref(), &mut fields);
-    compare("status", old.status.as_deref(), new.status.as_deref(), &mut fields);
-    compare("introduced", old.introduced.as_deref(), new.introduced.as_deref(), &mut fields);
-    compare("retired", old.retired.as_deref(), new.retired.as_deref(), &mut fields);
+    compare(
+        "description",
+        old.description.as_deref(),
+        new.description.as_deref(),
+        &mut fields,
+    );
+    compare(
+        "technology",
+        old.technology.as_deref(),
+        new.technology.as_deref(),
+        &mut fields,
+    );
+    compare(
+        "group",
+        old.group.as_deref(),
+        new.group.as_deref(),
+        &mut fields,
+    );
+    compare(
+        "status",
+        old.status.as_deref(),
+        new.status.as_deref(),
+        &mut fields,
+    );
+    compare(
+        "introduced",
+        old.introduced.as_deref(),
+        new.introduced.as_deref(),
+        &mut fields,
+    );
+    compare(
+        "retired",
+        old.retired.as_deref(),
+        new.retired.as_deref(),
+        &mut fields,
+    );
     compare_list("tags", &old.tags, &new.tags, &mut fields);
     compare_list(
         "ports",
@@ -464,12 +498,37 @@ fn diff_relationships(a: &Side, b: &Side, counts: &mut CategoryCounts) -> Vec<Re
             Some(&j) => {
                 let old = &a.idx.relationships[j];
                 let mut fields = Vec::new();
-                compare("description", old.description.as_deref(), r.description.as_deref(), &mut fields);
-                compare("technology", old.technology.as_deref(), r.technology.as_deref(), &mut fields);
+                compare(
+                    "description",
+                    old.description.as_deref(),
+                    r.description.as_deref(),
+                    &mut fields,
+                );
+                compare(
+                    "technology",
+                    old.technology.as_deref(),
+                    r.technology.as_deref(),
+                    &mut fields,
+                );
                 compare("kind", old.kind.as_deref(), r.kind.as_deref(), &mut fields);
-                compare("status", old.status.as_deref(), r.status.as_deref(), &mut fields);
-                compare("introduced", old.introduced.as_deref(), r.introduced.as_deref(), &mut fields);
-                compare("retired", old.retired.as_deref(), r.retired.as_deref(), &mut fields);
+                compare(
+                    "status",
+                    old.status.as_deref(),
+                    r.status.as_deref(),
+                    &mut fields,
+                );
+                compare(
+                    "introduced",
+                    old.introduced.as_deref(),
+                    r.introduced.as_deref(),
+                    &mut fields,
+                );
+                compare(
+                    "retired",
+                    old.retired.as_deref(),
+                    r.retired.as_deref(),
+                    &mut fields,
+                );
                 compare_list("tags", &old.tags, &r.tags, &mut fields);
                 compare_properties(&old.properties, &r.properties, &mut fields);
                 if fields.is_empty() {
@@ -509,7 +568,12 @@ fn diff_views(a: &Side, b: &Side, counts: &mut CategoryCounts) -> Vec<ViewChange
 
     let mut out = Vec::new();
 
-    for v in a.idx.views.iter().filter(|v| !b_keys.contains(v.key.as_str())) {
+    for v in a
+        .idx
+        .views
+        .iter()
+        .filter(|v| !b_keys.contains(v.key.as_str()))
+    {
         out.push(ViewChange {
             key: v.key.clone(),
             name: v.name.clone(),
@@ -690,16 +754,22 @@ fn rename_hints(a: &Side, b: &Side, elements: &[ElementChange]) -> Vec<RenameHin
     /// Below this, the two elements have nothing in common but their kind.
     const MIN_SCORE: u32 = 2;
 
-    let removed: Vec<&ElementChange> =
-        elements.iter().filter(|c| c.change == Change::Removed).collect();
-    let added: Vec<&ElementChange> =
-        elements.iter().filter(|c| c.change == Change::Added).collect();
+    let removed: Vec<&ElementChange> = elements
+        .iter()
+        .filter(|c| c.change == Change::Removed)
+        .collect();
+    let added: Vec<&ElementChange> = elements
+        .iter()
+        .filter(|c| c.change == Change::Added)
+        .collect();
 
     let mut hints = Vec::new();
     let mut claimed: HashSet<&str> = HashSet::new();
 
     for r in &removed {
-        let Some(old) = a.element(&r.path) else { continue };
+        let Some(old) = a.element(&r.path) else {
+            continue;
+        };
 
         let mut scored: Vec<(u32, &&ElementChange)> = added
             .iter()
@@ -877,7 +947,10 @@ mod tests {
 
     #[test]
     fn identical_models_with_different_ids_produce_an_empty_diff() {
-        let d = diff(&workspace("API", "The API", 100), &workspace("API", "The API", 500));
+        let d = diff(
+            &workspace("API", "The API", 100),
+            &workspace("API", "The API", 500),
+        );
         assert!(d.summary.is_empty(), "unexpected changes: {d:?}");
         assert_eq!(d.elements, vec![]);
         assert_eq!(d.relationships, vec![]);
@@ -885,7 +958,10 @@ mod tests {
 
     #[test]
     fn a_changed_description_is_one_modification() {
-        let d = diff(&workspace("API", "The API", 1), &workspace("API", "The gateway", 1));
+        let d = diff(
+            &workspace("API", "The API", 1),
+            &workspace("API", "The gateway", 1),
+        );
         assert_eq!(d.summary.elements.modified, 1);
         assert_eq!(d.summary.elements.added, 0);
         let change = &d.elements[0];
@@ -903,7 +979,10 @@ mod tests {
 
     #[test]
     fn a_rename_is_an_add_and_a_remove_with_a_hint() {
-        let d = diff(&workspace("API", "The API", 1), &workspace("Gateway", "The API", 1));
+        let d = diff(
+            &workspace("API", "The API", 1),
+            &workspace("Gateway", "The API", 1),
+        );
         assert_eq!(d.summary.elements.added, 1);
         assert_eq!(d.summary.elements.removed, 1);
         assert_eq!(
@@ -1012,7 +1091,10 @@ mod tests {
                 title: Some("Context".into()),
                 element_views: Some(
                     ids.into_iter()
-                        .map(|id| ElementView { id, ..Default::default() })
+                        .map(|id| ElementView {
+                            id,
+                            ..Default::default()
+                        })
                         .collect(),
                 ),
                 ..Default::default()
@@ -1022,7 +1104,10 @@ mod tests {
 
         before.views = view(vec!["1".into(), "4".into()]);
         after.views = view(vec!["701".into(), "704".into()]);
-        assert!(diff(&before, &after).views.is_empty(), "same elements, new ids");
+        assert!(
+            diff(&before, &after).views.is_empty(),
+            "same elements, new ids"
+        );
 
         after.views = view(vec!["701".into()]);
         let d = diff(&before, &after);

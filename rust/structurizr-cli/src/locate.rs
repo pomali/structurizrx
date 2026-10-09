@@ -36,7 +36,10 @@ pub fn run(file: &Path, inputs: &[String], json_output: bool) -> Result<bool> {
     let located = locate::locate(&catalog, locations.as_ref(), &generated, &references);
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&locate::to_json(&located))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&locate::to_json(&located))?
+        );
     } else {
         let mut sources = SourceLines::default();
         for item in &located.items {
@@ -51,7 +54,13 @@ pub fn run(file: &Path, inputs: &[String], json_output: bool) -> Result<bool> {
                 } else {
                     String::new()
                 };
-                println!("  {}:{}:{}{}", locate::display_file(loc), loc.line, loc.col, through);
+                println!(
+                    "  {}:{}:{}{}",
+                    locate::display_file(loc),
+                    loc.line,
+                    loc.col,
+                    through
+                );
                 if let Some(text) = loc.file.as_deref().and_then(|f| sources.line(f, loc.line)) {
                     println!("    {text}");
                 }

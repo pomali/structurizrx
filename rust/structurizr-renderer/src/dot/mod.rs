@@ -20,7 +20,10 @@ impl DiagramExporter for DotExporter {
 
         if let Some(sl_views) = &workspace.views.system_landscape_views {
             for v in sl_views {
-                let key = v.key.clone().unwrap_or_else(|| "SystemLandscape".to_string());
+                let key = v
+                    .key
+                    .clone()
+                    .unwrap_or_else(|| "SystemLandscape".to_string());
                 let content = render_dot(workspace, &key);
                 diagrams.push(Diagram::new(key, content, DiagramFormat::Dot));
             }
@@ -113,8 +116,10 @@ fn emit_dot_rel(rel: &Relationship, out: &mut String, styles: Option<&Styles>) {
     // Async-family kinds render dashed (spec §5.2 → DOT mapping).
     {
         use structurizr_model::RelationshipKind::*;
-        if matches!(rel.kind, Some(Async) | Some(Publish) | Some(Subscribe) | Some(Dataflow))
-            && !edge_attrs.contains("style=")
+        if matches!(
+            rel.kind,
+            Some(Async) | Some(Publish) | Some(Subscribe) | Some(Dataflow)
+        ) && !edge_attrs.contains("style=")
         {
             if edge_attrs.is_empty() {
                 edge_attrs = " [style=dashed]".to_string();
@@ -128,7 +133,10 @@ fn emit_dot_rel(rel: &Relationship, out: &mut String, styles: Option<&Styles>) {
     } else {
         out.push_str(&format!(
             "    {} -> {} [label=\"{}\"{}];\n",
-            src, dst, desc, edge_attrs_without_brackets(&edge_attrs)
+            src,
+            dst,
+            desc,
+            edge_attrs_without_brackets(&edge_attrs)
         ));
     }
 }
@@ -136,8 +144,12 @@ fn emit_dot_rel(rel: &Relationship, out: &mut String, styles: Option<&Styles>) {
 /// Build a DOT attribute string (e.g. `, style=filled, fillcolor="#ff0000"`)
 /// based on element styles for the given tag list.
 fn node_style_attrs(tags: Option<&str>, default_type_tag: &str, styles: Option<&Styles>) -> String {
-    let Some(styles) = styles else { return String::new() };
-    let Some(element_styles) = &styles.elements else { return String::new() };
+    let Some(styles) = styles else {
+        return String::new();
+    };
+    let Some(element_styles) = &styles.elements else {
+        return String::new();
+    };
 
     let owned;
     let tags_str: &str = match tags {
@@ -155,9 +167,15 @@ fn node_style_attrs(tags: Option<&str>, default_type_tag: &str, styles: Option<&
     for tag in tags_str.split(',').map(|t| t.trim()) {
         for style in element_styles {
             if style.tag.eq_ignore_ascii_case(tag) {
-                if let Some(b) = &style.background { bg = Some(b.clone()); }
-                if let Some(c) = &style.color     { fg = Some(c.clone()); }
-                if let Some(s) = &style.stroke    { stroke = Some(s.clone()); }
+                if let Some(b) = &style.background {
+                    bg = Some(b.clone());
+                }
+                if let Some(c) = &style.color {
+                    fg = Some(c.clone());
+                }
+                if let Some(s) = &style.stroke {
+                    stroke = Some(s.clone());
+                }
             }
         }
     }
@@ -165,17 +183,27 @@ fn node_style_attrs(tags: Option<&str>, default_type_tag: &str, styles: Option<&
     let mut attrs = String::new();
     if bg.is_some() || fg.is_some() || stroke.is_some() {
         attrs.push_str(", style=filled");
-        if let Some(b) = bg    { attrs.push_str(&format!(", fillcolor=\"{}\"", b)); }
-        if let Some(f) = fg    { attrs.push_str(&format!(", fontcolor=\"{}\"", f)); }
-        if let Some(s) = stroke { attrs.push_str(&format!(", color=\"{}\"", s)); }
+        if let Some(b) = bg {
+            attrs.push_str(&format!(", fillcolor=\"{}\"", b));
+        }
+        if let Some(f) = fg {
+            attrs.push_str(&format!(", fontcolor=\"{}\"", f));
+        }
+        if let Some(s) = stroke {
+            attrs.push_str(&format!(", color=\"{}\"", s));
+        }
     }
     attrs
 }
 
 /// Build DOT edge attribute extras from relationship styles.
 fn rel_style_attrs(tags: Option<&str>, styles: Option<&Styles>) -> String {
-    let Some(styles) = styles else { return String::new() };
-    let Some(rel_styles) = &styles.relationships else { return String::new() };
+    let Some(styles) = styles else {
+        return String::new();
+    };
+    let Some(rel_styles) = &styles.relationships else {
+        return String::new();
+    };
 
     let tags_str = tags.unwrap_or("Relationship");
     let mut color: Option<String> = None;
@@ -184,18 +212,30 @@ fn rel_style_attrs(tags: Option<&str>, styles: Option<&Styles>) -> String {
     for tag in tags_str.split(',').map(|t| t.trim()) {
         for style in rel_styles {
             if style.tag.eq_ignore_ascii_case(tag) {
-                if let Some(c) = &style.color   { color = Some(c.clone()); }
-                if let Some(d) = style.dashed    { dashed = Some(d); }
+                if let Some(c) = &style.color {
+                    color = Some(c.clone());
+                }
+                if let Some(d) = style.dashed {
+                    dashed = Some(d);
+                }
             }
         }
     }
 
     let mut parts: Vec<String> = Vec::new();
-    if let Some(c) = color  { parts.push(format!("color=\"{}\"", c)); }
-    if let Some(d) = dashed {
-        if d { parts.push("style=dashed".to_string()); } else { parts.push("style=solid".to_string()); }
+    if let Some(c) = color {
+        parts.push(format!("color=\"{}\"", c));
     }
-    if parts.is_empty() { return String::new(); }
+    if let Some(d) = dashed {
+        if d {
+            parts.push("style=dashed".to_string());
+        } else {
+            parts.push("style=solid".to_string());
+        }
+    }
+    if parts.is_empty() {
+        return String::new();
+    }
     format!(" [{}]", parts.join(", "))
 }
 
@@ -283,8 +323,14 @@ mod tests {
         let exporter = DotExporter;
         let diagrams = exporter.export_workspace(&workspace);
         let dot = &diagrams[0].content;
-        assert!(dot.contains("fillcolor=\"#AA0000\""), "fillcolor should appear in DOT output");
-        assert!(dot.contains("fontcolor=\"#FFFFFF\""), "fontcolor should appear in DOT output");
+        assert!(
+            dot.contains("fillcolor=\"#AA0000\""),
+            "fillcolor should appear in DOT output"
+        );
+        assert!(
+            dot.contains("fontcolor=\"#FFFFFF\""),
+            "fontcolor should appear in DOT output"
+        );
         assert!(dot.contains("style=filled"), "style=filled must be present");
     }
 }

@@ -3,9 +3,9 @@ pub mod dot;
 pub mod exporter;
 pub mod indenting_writer;
 pub mod mermaid;
+pub mod plantuml;
 #[cfg(feature = "png")]
 pub mod png;
-pub mod plantuml;
 mod scope;
 pub mod svg;
 

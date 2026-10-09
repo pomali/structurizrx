@@ -185,13 +185,19 @@ pub fn tokenize(source: &str) -> Vec<Spanned> {
 
         // Open/close brace
         if c == '{' {
-            tokens.push(Spanned { token: Token::OpenBrace, pos });
+            tokens.push(Spanned {
+                token: Token::OpenBrace,
+                pos,
+            });
             i += 1;
             col += 1;
             continue;
         }
         if c == '}' {
-            tokens.push(Spanned { token: Token::CloseBrace, pos });
+            tokens.push(Spanned {
+                token: Token::CloseBrace,
+                pos,
+            });
             i += 1;
             col += 1;
             continue;
@@ -199,7 +205,10 @@ pub fn tokenize(source: &str) -> Vec<Spanned> {
 
         // Equals
         if c == '=' && !(i + 1 < chars.len() && chars[i + 1] == '>') {
-            tokens.push(Spanned { token: Token::Equals, pos });
+            tokens.push(Spanned {
+                token: Token::Equals,
+                pos,
+            });
             i += 1;
             col += 1;
             continue;
@@ -207,7 +216,10 @@ pub fn tokenize(source: &str) -> Vec<Spanned> {
 
         // Arrow ->
         if c == '-' && i + 1 < chars.len() && chars[i + 1] == '>' {
-            tokens.push(Spanned { token: Token::Arrow, pos });
+            tokens.push(Spanned {
+                token: Token::Arrow,
+                pos,
+            });
             i += 2;
             col += 2;
             continue;
@@ -218,7 +230,8 @@ pub fn tokenize(source: &str) -> Vec<Spanned> {
             i += 1;
             col += 1;
             let start = i;
-            while i < chars.len() && !chars[i].is_whitespace() && chars[i] != '{' && chars[i] != '}' {
+            while i < chars.len() && !chars[i].is_whitespace() && chars[i] != '{' && chars[i] != '}'
+            {
                 i += 1;
                 col += 1;
             }

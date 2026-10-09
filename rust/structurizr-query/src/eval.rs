@@ -15,7 +15,6 @@ pub(crate) use crate::index::{
     build_index, ElementEntry as ElemEntry, Index, RelationshipEntry as RelEntry,
 };
 
-
 // ---------------------------------------------------------------------------
 // Universe helpers
 // ---------------------------------------------------------------------------
@@ -62,7 +61,9 @@ fn elem_eq(elem: &ElemEntry, path: &[String], value: &str) -> bool {
 
         "parent" => {
             // direct parent by id or by name
-            elem.parent_id.as_ref().is_some_and(|pid| pid.to_lowercase() == v)
+            elem.parent_id
+                .as_ref()
+                .is_some_and(|pid| pid.to_lowercase() == v)
                 || elem
                     .ancestor_names
                     .first()
@@ -75,7 +76,10 @@ fn elem_eq(elem: &ElemEntry, path: &[String], value: &str) -> bool {
                 || elem.ancestor_names.iter().any(|a| a.to_lowercase() == v)
         }
 
-        "technology" => elem.technology.as_ref().is_some_and(|t| t.to_lowercase() == v),
+        "technology" => elem
+            .technology
+            .as_ref()
+            .is_some_and(|t| t.to_lowercase() == v),
 
         "name" => elem.name.to_lowercase() == v,
 
@@ -148,8 +152,10 @@ fn eval_neighborhood(idx: &Index, target: &str, depth: u32) -> Result<Selection,
         }
     }
 
-    let elem_ids: BTreeSet<String> =
-        visited.iter().map(|&i| idx.elements[i].id.clone()).collect();
+    let elem_ids: BTreeSet<String> = visited
+        .iter()
+        .map(|&i| idx.elements[i].id.clone())
+        .collect();
 
     // Induced subgraph: include relationships whose both endpoints are in the
     // element set (consistent with the §6.1 induced-subgraph rule).
@@ -160,7 +166,10 @@ fn eval_neighborhood(idx: &Index, target: &str, depth: u32) -> Result<Selection,
         .map(|r| r.id.clone())
         .collect();
 
-    Ok(Selection { elements: elem_ids, relationships: rel_ids })
+    Ok(Selection {
+        elements: elem_ids,
+        relationships: rel_ids,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -169,7 +178,10 @@ fn eval_neighborhood(idx: &Index, target: &str, depth: u32) -> Result<Selection,
 
 fn eval_expr(expr: &Expr, idx: &Index) -> Result<Selection, QueryError> {
     match expr {
-        Expr::Star => Ok(Selection { elements: all_elem_ids(idx), relationships: all_rel_ids(idx) }),
+        Expr::Star => Ok(Selection {
+            elements: all_elem_ids(idx),
+            relationships: all_rel_ids(idx),
+        }),
 
         Expr::Neighborhood { target, depth } => eval_neighborhood(idx, target, *depth),
 
@@ -193,7 +205,10 @@ fn eval_expr(expr: &Expr, idx: &Index) -> Result<Selection, QueryError> {
                     all
                 }
             };
-            Ok(Selection { elements, relationships: BTreeSet::new() })
+            Ok(Selection {
+                elements,
+                relationships: BTreeSet::new(),
+            })
         }
 
         Expr::RelationshipComparison { path, op, value } => {
@@ -216,7 +231,10 @@ fn eval_expr(expr: &Expr, idx: &Index) -> Result<Selection, QueryError> {
                     all
                 }
             };
-            Ok(Selection { elements: BTreeSet::new(), relationships })
+            Ok(Selection {
+                elements: BTreeSet::new(),
+                relationships,
+            })
         }
 
         Expr::And(l, r) => {
@@ -251,7 +269,10 @@ fn eval_expr(expr: &Expr, idx: &Index) -> Result<Selection, QueryError> {
             for id in &is.relationships {
                 relationships.remove(id);
             }
-            Ok(Selection { elements, relationships })
+            Ok(Selection {
+                elements,
+                relationships,
+            })
         }
     }
 }

@@ -78,7 +78,11 @@ pub fn render_svg_str(workspace_json: &str) -> Result<String, String> {
 pub fn render_first_svg_str(workspace_json: &str) -> Result<String, String> {
     let workspace = parse_workspace_str(workspace_json)?;
     let diagrams = SvgExporter.export_workspace(&workspace);
-    Ok(diagrams.into_iter().next().map(|d| d.content).unwrap_or_default())
+    Ok(diagrams
+        .into_iter()
+        .next()
+        .map(|d| d.content)
+        .unwrap_or_default())
 }
 
 /// Render all diagrams in a workspace JSON as PNG data-URLs.
@@ -185,8 +189,8 @@ pub fn render_to_canvas(canvas_id: &str, workspace_json: &str) -> Result<(), JsV
     }
 
     // Rasterize the SVG to RGBA pixels using resvg/tiny-skia.
-    let (width, height, rgba) = structurizr_renderer::png::svg_to_rgba(&svg)
-        .map_err(|e| JsValue::from_str(&e))?;
+    let (width, height, rgba) =
+        structurizr_renderer::png::svg_to_rgba(&svg).map_err(|e| JsValue::from_str(&e))?;
 
     canvas.set_width(width);
     canvas.set_height(height);
@@ -201,8 +205,7 @@ pub fn render_to_canvas(canvas_id: &str, workspace_json: &str) -> Result<(), JsV
     // (alpha = 255 everywhere) this equals straight RGBA.
     let clamped = js_sys::Uint8ClampedArray::new_with_length(rgba.len() as u32);
     clamped.copy_from(&rgba);
-    let image_data =
-        ImageData::new_with_js_u8_clamped_array_and_sh(&clamped, width, height)?;
+    let image_data = ImageData::new_with_js_u8_clamped_array_and_sh(&clamped, width, height)?;
     ctx.put_image_data(&image_data, 0.0, 0.0)
 }
 
@@ -210,8 +213,7 @@ pub fn render_to_canvas(canvas_id: &str, workspace_json: &str) -> Result<(), JsV
 
 /// Encode `data` as a standard Base64 string (RFC 4648, with padding).
 fn base64_encode(data: &[u8]) -> String {
-    const ALPHABET: &[u8] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
     for chunk in data.chunks(3) {
         let b0 = chunk[0] as u32;

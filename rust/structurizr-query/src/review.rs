@@ -96,11 +96,14 @@ pub fn review(workspace: &Workspace) -> Review {
     // alongside the softer ones.
     let mut blocking: HashMap<String, Vec<ReviewFinding>> = HashMap::new();
     for f in lint(workspace) {
-        blocking.entry(f.element_id.clone()).or_default().push(ReviewFinding {
-            code: f.code,
-            message: f.message,
-            blocking: true,
-        });
+        blocking
+            .entry(f.element_id.clone())
+            .or_default()
+            .push(ReviewFinding {
+                code: f.code,
+                message: f.message,
+                blocking: true,
+            });
     }
 
     let duplicates = duplicate_names(&idx);
@@ -150,8 +153,11 @@ pub fn review(workspace: &Workspace) -> Review {
                 });
             }
 
-            let children: Vec<String> =
-                idx.children(&e.id).into_iter().map(|c| c.id.clone()).collect();
+            let children: Vec<String> = idx
+                .children(&e.id)
+                .into_iter()
+                .map(|c| c.id.clone())
+                .collect();
 
             // A parent with children is a boundary, not an orphan: its
             // children carry the relationships.
@@ -259,7 +265,10 @@ fn relationships(
 fn duplicate_names(idx: &Index) -> HashMap<String, Vec<String>> {
     let mut by_name: HashMap<String, Vec<String>> = HashMap::new();
     for e in &idx.elements {
-        by_name.entry(normalise(&e.name)).or_default().push(e.id.clone());
+        by_name
+            .entry(normalise(&e.name))
+            .or_default()
+            .push(e.id.clone());
     }
     by_name.retain(|_, ids| ids.len() > 1);
     by_name

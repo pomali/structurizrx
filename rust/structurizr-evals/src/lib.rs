@@ -79,9 +79,7 @@ pub fn grade(workspace: &Workspace, rubric: &Rubric) -> Vec<String> {
     for selector in &rubric.required {
         match structurizr_query::query(selector, workspace) {
             Ok(sel) if sel.elements.is_empty() && sel.relationships.is_empty() => {
-                failures.push(format!(
-                    "required: selector `{selector}` matched nothing"
-                ));
+                failures.push(format!("required: selector `{selector}` matched nothing"));
             }
             Ok(_) => {}
             Err(e) => failures.push(format!(
@@ -110,9 +108,7 @@ pub fn grade(workspace: &Workspace, rubric: &Rubric) -> Vec<String> {
         let text = structurizr_query::digest(workspace);
         for needle in &rubric.digest_contains {
             if !text.contains(needle.as_str()) {
-                failures.push(format!(
-                    "digest_contains: digest is missing `{needle}`"
-                ));
+                failures.push(format!("digest_contains: digest is missing `{needle}`"));
             }
         }
     }

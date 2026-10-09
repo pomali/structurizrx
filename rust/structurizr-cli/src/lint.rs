@@ -49,10 +49,7 @@ pub fn run(file: &Path, strict: bool, json: bool) -> Result<bool> {
 
     // Cycles: container level always, component level too when the model has
     // any components.
-    let has_components = review
-        .elements
-        .iter()
-        .any(|e| e.kind == "component");
+    let has_components = review.elements.iter().any(|e| e.kind == "component");
     let mut levels = vec![Level::Container];
     if has_components {
         levels.push(Level::Component);
@@ -60,7 +57,10 @@ pub fn run(file: &Path, strict: bool, json: bool) -> Result<bool> {
     for level in levels {
         let analysis = cluster(
             &workspace,
-            &ClusterOptions { level, ..Default::default() },
+            &ClusterOptions {
+                level,
+                ..Default::default()
+            },
         );
         for cyc in &analysis.cycles {
             let members = cyc.member_names.join(" -> ");

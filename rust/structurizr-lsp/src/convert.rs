@@ -4,8 +4,8 @@
 //! land one line or column away from where the user expects, so it's isolated
 //! here and unit-tested rather than inlined at every call site.
 
-use structurizr_dsl::lexer::Pos;
 use ls_types::{Position, Range};
+use structurizr_dsl::lexer::Pos;
 
 pub fn pos_to_position(pos: Pos) -> Position {
     Position {

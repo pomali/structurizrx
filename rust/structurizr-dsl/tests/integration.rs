@@ -1,5 +1,5 @@
-use structurizr_dsl::{parse_file, parse_str};
 use std::path::PathBuf;
+use structurizr_dsl::{parse_file, parse_str};
 use structurizr_model::{RelationshipKind, Status};
 
 fn dsl_path(name: &str) -> PathBuf {
@@ -22,7 +22,11 @@ fn parse_getting_started() {
     let people = ws.model.people.as_ref().expect("should have people");
     assert_eq!(people.len(), 1);
     assert_eq!(people[0].name, "User");
-    let systems = ws.model.software_systems.as_ref().expect("should have software systems");
+    let systems = ws
+        .model
+        .software_systems
+        .as_ref()
+        .expect("should have software systems");
     assert_eq!(systems.len(), 1);
     assert_eq!(systems[0].name, "Software System");
 }
@@ -34,14 +38,28 @@ fn parse_big_bank_plc() {
     assert_eq!(ws.name, "Big Bank plc");
     let people = ws.model.people.as_ref().expect("should have people");
     // customer, supportStaff, backoffice
-    assert!(people.len() >= 3, "expected at least 3 people, got {}", people.len());
-    let systems = ws.model.software_systems.as_ref().expect("should have software systems");
+    assert!(
+        people.len() >= 3,
+        "expected at least 3 people, got {}",
+        people.len()
+    );
+    let systems = ws
+        .model
+        .software_systems
+        .as_ref()
+        .expect("should have software systems");
     assert!(systems.len() >= 1, "expected at least 1 software system");
     // internetBankingSystem should have containers
-    let ibs = systems.iter().find(|s| s.name == "Internet Banking System")
+    let ibs = systems
+        .iter()
+        .find(|s| s.name == "Internet Banking System")
         .expect("Internet Banking System not found");
     let containers = ibs.containers.as_ref().expect("should have containers");
-    assert!(containers.len() >= 4, "expected at least 4 containers, got {}", containers.len());
+    assert!(
+        containers.len() >= 4,
+        "expected at least 4 containers, got {}",
+        containers.len()
+    );
 }
 
 #[test]
@@ -145,7 +163,10 @@ workspace "Implied" {
     assert_ne!(&lifted.destination_id, api_id);
 }
 
-fn find_container<'a>(ws: &'a structurizr_model::Workspace, name: &str) -> &'a structurizr_model::Container {
+fn find_container<'a>(
+    ws: &'a structurizr_model::Workspace,
+    name: &str,
+) -> &'a structurizr_model::Container {
     ws.model
         .software_systems
         .as_ref()
@@ -170,21 +191,42 @@ fn parse_avisi_adrs() {
     assert_eq!(decisions.len(), 10, "expected 10 total decisions");
 
     // The 4 workspace-level ADRs should have no element_id
-    let workspace_level: Vec<_> = decisions.iter().filter(|d| d.element_id.is_none()).collect();
-    assert_eq!(workspace_level.len(), 4, "expected 4 workspace-level decisions");
+    let workspace_level: Vec<_> = decisions
+        .iter()
+        .filter(|d| d.element_id.is_none())
+        .collect();
+    assert_eq!(
+        workspace_level.len(),
+        4,
+        "expected 4 workspace-level decisions"
+    );
 
     // element-scoped decisions should have element_id set
-    let element_level: Vec<_> = decisions.iter().filter(|d| d.element_id.is_some()).collect();
-    assert_eq!(element_level.len(), 6, "expected 6 element-scoped decisions");
+    let element_level: Vec<_> = decisions
+        .iter()
+        .filter(|d| d.element_id.is_some())
+        .collect();
+    assert_eq!(
+        element_level.len(),
+        6,
+        "expected 6 element-scoped decisions"
+    );
 
     // Spot-check a workspace-level decision
-    let adr1 = workspace_level.iter().find(|d| d.id == "1").expect("ADR-1 not found");
+    let adr1 = workspace_level
+        .iter()
+        .find(|d| d.id == "1")
+        .expect("ADR-1 not found");
     assert_eq!(adr1.title, "Record architecture decisions");
     assert_eq!(adr1.status, "Accepted");
     assert_eq!(adr1.format, "Markdown");
 
     // Internet Banking System should have 5 containers with API Application having 6 components
-    let systems = ws.model.software_systems.as_ref().expect("no software systems");
+    let systems = ws
+        .model
+        .software_systems
+        .as_ref()
+        .expect("no software systems");
     let ibs = systems
         .iter()
         .find(|s| s.name == "Internet Banking System")
@@ -195,8 +237,15 @@ fn parse_avisi_adrs() {
         .iter()
         .find(|c| c.name == "API Application")
         .expect("API Application container not found");
-    let components = api_app.components.as_ref().expect("API App should have components");
-    assert_eq!(components.len(), 6, "expected 6 components in API Application");
+    let components = api_app
+        .components
+        .as_ref()
+        .expect("API App should have components");
+    assert_eq!(
+        components.len(),
+        6,
+        "expected 6 components in API Application"
+    );
 }
 
 // ─── Phase 2a: Relationship body parsing ────────────────────────────────────
@@ -218,7 +267,10 @@ workspace {
     let ws = parse_str(dsl).expect("should parse");
     let systems = ws.model.software_systems.as_ref().unwrap();
     let a = systems.iter().find(|s| s.name == "A").unwrap();
-    let rels = a.relationships.as_ref().expect("A should have relationships");
+    let rels = a
+        .relationships
+        .as_ref()
+        .expect("A should have relationships");
     assert_eq!(rels.len(), 1);
     assert_eq!(rels[0].kind, Some(RelationshipKind::Async));
     assert_eq!(rels[0].status, Some(Status::Implemented));
@@ -241,11 +293,17 @@ workspace {
 "#;
     let ws = parse_str(dsl).expect("should parse");
     let people = ws.model.people.as_ref().unwrap();
-    let rels = people[0].relationships.as_ref().expect("User should have relationships");
+    let rels = people[0]
+        .relationships
+        .as_ref()
+        .expect("User should have relationships");
     assert_eq!(rels.len(), 1);
     assert_eq!(rels[0].introduced.as_deref(), Some("v1"));
     assert_eq!(rels[0].retired.as_deref(), Some("v3"));
-    let persp = rels[0].perspectives.as_ref().expect("should have perspectives");
+    let persp = rels[0]
+        .perspectives
+        .as_ref()
+        .expect("should have perspectives");
     assert_eq!(persp.len(), 1);
     assert_eq!(persp[0].name, "Security");
     assert_eq!(persp[0].description.as_deref(), Some("Must use TLS"));
@@ -272,14 +330,17 @@ workspace {
     let ws = parse_str(dsl).expect("should parse");
     let systems = ws.model.software_systems.as_ref().unwrap();
     let a = systems.iter().find(|s| s.name == "A").unwrap();
-    let rels = a.relationships.as_ref().expect("A should have relationships");
+    let rels = a
+        .relationships
+        .as_ref()
+        .expect("A should have relationships");
     let rel = &rels[0];
     assert_eq!(rel.technology.as_deref(), Some("gRPC"));
     // Tags should include "Relationship" base plus the extra tags
     let tags = rel.tags.as_deref().unwrap_or("");
     assert!(tags.contains("Relationship"), "base tag must be present");
-    assert!(tags.contains("SyncCall"),     "SyncCall tag must be present");
-    assert!(tags.contains("Critical"),     "Critical tag must be present");
+    assert!(tags.contains("SyncCall"), "SyncCall tag must be present");
+    assert!(tags.contains("Critical"), "Critical tag must be present");
     let props = rel.properties.as_ref().expect("should have properties");
     assert_eq!(props.get("sla").map(|s| s.as_str()), Some("99.9"));
     assert_eq!(props.get("owner").map(|s| s.as_str()), Some("team-alpha"));
@@ -304,7 +365,10 @@ workspace {
 "#;
     let ws = parse_str(dsl).expect("should parse");
     let people = ws.model.people.as_ref().unwrap();
-    let rels = people[0].relationships.as_ref().expect("User should have relationships");
+    let rels = people[0]
+        .relationships
+        .as_ref()
+        .expect("User should have relationships");
     assert_eq!(rels.len(), 1);
     assert_eq!(rels[0].kind, Some(RelationshipKind::Sync));
     assert_eq!(rels[0].status, Some(Status::Specified));
@@ -329,8 +393,14 @@ workspace {
 "#;
     let ws = parse_str(dsl).expect("should parse");
     let systems = ws.model.software_systems.as_ref().unwrap();
-    let containers = systems[0].containers.as_ref().expect("should have containers");
-    let api = containers.iter().find(|c| c.name == "API").expect("API container not found");
+    let containers = systems[0]
+        .containers
+        .as_ref()
+        .expect("should have containers");
+    let api = containers
+        .iter()
+        .find(|c| c.name == "API")
+        .expect("API container not found");
     assert_eq!(api.status, Some(Status::Implemented));
     assert_eq!(api.introduced.as_deref(), Some("v2.0"));
     let persp = api.perspectives.as_ref().expect("should have perspectives");
@@ -376,10 +446,16 @@ workspace {
     let systems = ws.model.software_systems.as_ref().unwrap();
     assert_eq!(systems[0].status, Some(Status::Draft));
     assert_eq!(systems[0].introduced.as_deref(), Some("milestone-1"));
-    let persp = systems[0].perspectives.as_ref().expect("should have perspectives");
+    let persp = systems[0]
+        .perspectives
+        .as_ref()
+        .expect("should have perspectives");
     assert_eq!(persp.len(), 2);
     assert_eq!(persp[0].name, "Security");
-    assert_eq!(persp[0].description.as_deref(), Some("Threat model in progress"));
+    assert_eq!(
+        persp[0].description.as_deref(),
+        Some("Threat model in progress")
+    );
     assert_eq!(persp[1].name, "Performance");
 }
 
@@ -423,10 +499,16 @@ workspace {
 }
 "#;
     let ws = parse_str(dsl).expect("should parse");
-    let persp = ws.perspectives.as_ref().expect("should have workspace perspectives");
+    let persp = ws
+        .perspectives
+        .as_ref()
+        .expect("should have workspace perspectives");
     assert_eq!(persp.len(), 2);
     assert_eq!(persp[0].name, "Security");
-    assert_eq!(persp[0].description.as_deref(), Some("All security-related concerns"));
+    assert_eq!(
+        persp[0].description.as_deref(),
+        Some("All security-related concerns")
+    );
     assert_eq!(persp[1].name, "Compliance");
     assert!(persp[1].description.is_none());
 }
@@ -449,8 +531,11 @@ workspace {
     let result = parse_str(dsl);
     assert!(result.is_err(), "unknown kind value must produce an error");
     let msg = format!("{}", result.unwrap_err());
-    assert!(msg.contains("kind") || msg.contains("teleportation"),
-        "error message should mention the bad value; got: {}", msg);
+    assert!(
+        msg.contains("kind") || msg.contains("teleportation"),
+        "error message should mention the bad value; got: {}",
+        msg
+    );
 }
 
 #[test]
@@ -465,7 +550,10 @@ workspace {
 }
 "#;
     let result = parse_str(dsl);
-    assert!(result.is_err(), "unknown status value must produce an error");
+    assert!(
+        result.is_err(),
+        "unknown status value must produce an error"
+    );
 }
 
 // ─── Regression: technology and tags in relationship body no longer skipped ──
@@ -488,10 +576,16 @@ workspace {
     let ws = parse_str(dsl).expect("should parse");
     let systems = ws.model.software_systems.as_ref().unwrap();
     let a = systems.iter().find(|s| s.name == "A").unwrap();
-    let rels = a.relationships.as_ref().expect("A should have relationships");
+    let rels = a
+        .relationships
+        .as_ref()
+        .expect("A should have relationships");
     // technology must be set from the body block, not silently lost
-    assert_eq!(rels[0].technology.as_deref(), Some("REST"),
-        "technology from relationship body must not be silently skipped");
+    assert_eq!(
+        rels[0].technology.as_deref(),
+        Some("REST"),
+        "technology from relationship body must not be silently skipped"
+    );
 }
 
 // ─── Phase-2b: ports ─────────────────────────────────────────────────────────
@@ -518,11 +612,17 @@ workspace {
     let ws = parse_str(dsl).expect("should parse");
     let systems = ws.model.software_systems.as_ref().unwrap();
     let container = &systems[0].containers.as_ref().unwrap()[0];
-    let ports = container.ports.as_ref().expect("container should have ports");
+    let ports = container
+        .ports
+        .as_ref()
+        .expect("container should have ports");
     assert_eq!(ports.len(), 2);
     assert_eq!(ports[0].name, "Customer REST API");
     assert_eq!(ports[0].protocol.as_deref(), Some("HTTPS/JSON"));
-    assert_eq!(ports[0].direction, Some(structurizr_model::PortDirection::In));
+    assert_eq!(
+        ports[0].direction,
+        Some(structurizr_model::PortDirection::In)
+    );
     assert_eq!(ports[0].description.as_deref(), Some("Public API"));
     let persp = ports[0].perspectives.as_ref().expect("port perspective");
     assert_eq!(persp[0].name, "security");
@@ -552,7 +652,10 @@ workspace {
     let web = &containers[0];
     let api = &containers[1];
     let port_id = &api.ports.as_ref().unwrap()[0].id;
-    let rels = web.relationships.as_ref().expect("webC should own the relationship");
+    let rels = web
+        .relationships
+        .as_ref()
+        .expect("webC should own the relationship");
     assert_eq!(rels[0].destination_id, api.id);
     assert_eq!(rels[0].destination_port_id.as_ref(), Some(port_id));
     assert!(rels[0].source_port_id.is_none());
@@ -583,7 +686,10 @@ workspace {
     let api = &shop.containers.as_ref().unwrap()[0];
     let billing = &ws.model.software_systems.as_ref().unwrap()[1];
     let port_id = &api.ports.as_ref().unwrap()[0].id;
-    let rels = api.relationships.as_ref().expect("apiC should own the relationship");
+    let rels = api
+        .relationships
+        .as_ref()
+        .expect("apiC should own the relationship");
     assert_eq!(rels[0].source_port_id.as_ref(), Some(port_id));
     assert_eq!(rels[0].destination_id, billing.id);
     assert_eq!(rels[0].kind, Some(RelationshipKind::Async));
@@ -608,7 +714,10 @@ workspace {
     let containers = shop.containers.as_ref().unwrap();
     let web = &containers[0];
     let api = &containers[1];
-    let rels = web.relationships.as_ref().expect("web should own the relationship");
+    let rels = web
+        .relationships
+        .as_ref()
+        .expect("web should own the relationship");
     // dotted hierarchical element refs must resolve to elements, never ports
     assert_eq!(rels[0].destination_id, api.id);
     assert!(rels[0].destination_port_id.is_none());
@@ -655,8 +764,11 @@ workspace {
 "#;
     let err = parse_str(dsl).expect_err("sideways is not a valid direction");
     let msg = format!("{}", err);
-    assert!(msg.contains("direction") || msg.contains("sideways"),
-        "error should mention the bad direction, got: {}", msg);
+    assert!(
+        msg.contains("direction") || msg.contains("sideways"),
+        "error should mention the bad direction, got: {}",
+        msg
+    );
 }
 
 #[test]
@@ -674,7 +786,10 @@ workspace {
 "#;
     let err = parse_str(dsl).expect_err("unresolved port ref must be an error");
     let msg = err.to_string();
-    assert!(msg.contains("apiC.nonexistent"), "error names the identifier: {msg}");
+    assert!(
+        msg.contains("apiC.nonexistent"),
+        "error names the identifier: {msg}"
+    );
 }
 
 // ─── Phase-2c: sketch mode, aliases, named rels, ?, !include ────────────────
@@ -688,15 +803,25 @@ billing -> erp
 "#;
     let ws = parse_str(dsl).expect("bare sketch should parse");
     assert_eq!(ws.name, "Sketch");
-    let systems = ws.model.software_systems.as_ref().expect("placeholders created");
+    let systems = ws
+        .model
+        .software_systems
+        .as_ref()
+        .expect("placeholders created");
     assert_eq!(systems.len(), 4, "customer, shop, billing, erp");
-    assert!(systems.iter().all(|s| s.tags.as_deref().unwrap_or("").contains("Placeholder")));
+    assert!(systems
+        .iter()
+        .all(|s| s.tags.as_deref().unwrap_or("").contains("Placeholder")));
     // the uncertain relationship carries the Uncertain tag
     let shop = systems.iter().find(|s| s.name == "shop").unwrap();
     let rels = shop.relationships.as_ref().expect("shop -> billing");
     assert!(rels[0].tags.as_deref().unwrap_or("").contains("Uncertain"));
     // a default landscape view exists and includes all four placeholders
-    let views = ws.views.system_landscape_views.as_ref().expect("default sketch view");
+    let views = ws
+        .views
+        .system_landscape_views
+        .as_ref()
+        .expect("default sketch view");
     assert_eq!(views.len(), 1);
     let elements = views[0].element_views.as_ref().expect("view has elements");
     assert_eq!(elements.len(), 4);
@@ -794,7 +919,10 @@ workspace {
 "#;
     let ws = parse_str(dsl).expect("should parse");
     let api = &ws.model.software_systems.as_ref().unwrap()[0];
-    let rels = api.relationships.as_ref().expect("api owns the relationship");
+    let rels = api
+        .relationships
+        .as_ref()
+        .expect("api owns the relationship");
     assert_eq!(rels[0].kind, Some(RelationshipKind::Async));
     assert_eq!(rels[0].description.as_deref(), Some("OrderPlaced"));
 }
@@ -818,13 +946,24 @@ workspace {
 "#;
     let ws = parse_str(dsl).expect("should parse");
     let shop = &ws.model.software_systems.as_ref().unwrap()[0];
-    let containers = shop.containers.as_ref().expect("alias should create a container");
+    let containers = shop
+        .containers
+        .as_ref()
+        .expect("alias should create a container");
     assert_eq!(containers.len(), 1);
     let q = &containers[0];
     assert_eq!(q.name, "Order queue");
     let tags = q.tags.as_deref().unwrap();
-    assert!(tags.contains("Queue") && tags.contains("Connector"), "alias tags merged: {}", tags);
-    assert_eq!(q.technology.as_deref(), Some("Kafka"), "alias default technology");
+    assert!(
+        tags.contains("Queue") && tags.contains("Connector"),
+        "alias tags merged: {}",
+        tags
+    );
+    assert_eq!(
+        q.technology.as_deref(),
+        Some("Kafka"),
+        "alias default technology"
+    );
     let props = q.properties.as_ref().expect("kind property recorded");
     assert_eq!(props.get("kind").map(|s| s.as_str()), Some("queue"));
 }
@@ -846,12 +985,23 @@ workspace {
 }
 "#;
     let ws = parse_str(dsl).expect("should parse");
-    let people = ws.model.people.as_ref().expect("actor alias creates person");
+    let people = ws
+        .model
+        .people
+        .as_ref()
+        .expect("actor alias creates person");
     assert_eq!(people[0].name, "Operator");
-    assert_eq!(people[0].properties.as_ref().unwrap().get("kind").unwrap(), "actor");
+    assert_eq!(
+        people[0].properties.as_ref().unwrap().get("kind").unwrap(),
+        "actor"
+    );
     let shop = &ws.model.software_systems.as_ref().unwrap()[0];
     let lambda = &shop.containers.as_ref().unwrap()[0];
-    assert_eq!(lambda.technology.as_deref(), Some("Rust"), "explicit technology beats alias default");
+    assert_eq!(
+        lambda.technology.as_deref(),
+        Some("Rust"),
+        "explicit technology beats alias default"
+    );
 }
 
 #[test]
@@ -865,14 +1015,21 @@ workspace {
 }
 "#;
     let err = parse_str(dsl).expect_err("gadget is not a valid base kind");
-    assert!(format!("{}", err).contains("base"), "error should mention base kinds");
+    assert!(
+        format!("{}", err).contains("base"),
+        "error should mention base kinds"
+    );
 }
 
 #[test]
 fn include_directive_splices_files() {
     let dir = std::env::temp_dir().join(format!("sdsl-include-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("sub.dsl"), "billing = softwareSystem \"Billing\"\n").unwrap();
+    std::fs::write(
+        dir.join("sub.dsl"),
+        "billing = softwareSystem \"Billing\"\n",
+    )
+    .unwrap();
     std::fs::write(
         dir.join("main.dsl"),
         "workspace {\n    model {\n        shop = softwareSystem \"Shop\"\n        !include sub.dsl\n        shop -> billing \"charges\"\n    }\n}\n",
@@ -881,7 +1038,10 @@ fn include_directive_splices_files() {
     let systems = ws.model.software_systems.as_ref().unwrap();
     assert_eq!(systems.len(), 2);
     let shop = &systems[0];
-    let rels = shop.relationships.as_ref().expect("relationship resolved across include");
+    let rels = shop
+        .relationships
+        .as_ref()
+        .expect("relationship resolved across include");
     assert_eq!(rels[0].destination_id, systems[1].id);
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -903,12 +1063,18 @@ workspace {
 }
 "#;
     let ws = parse_str(dsl).expect("should parse");
-    let db = &ws.model.software_systems.as_ref().unwrap()[0].containers.as_ref().unwrap()[0];
+    let db = &ws.model.software_systems.as_ref().unwrap()[0]
+        .containers
+        .as_ref()
+        .unwrap()[0];
     assert_eq!(db.technology.as_deref(), Some("PostgreSQL"));
     assert_eq!(db.description.as_deref(), Some("Primary store"));
     assert_eq!(db.url.as_deref(), Some("https://internal/db"));
-    assert!(db.tags.as_deref().unwrap().contains("Database"),
-        "body tags must not be silently dropped: {:?}", db.tags);
+    assert!(
+        db.tags.as_deref().unwrap().contains("Database"),
+        "body tags must not be silently dropped: {:?}",
+        db.tags
+    );
 }
 
 // ─── Phase 4a: auto view specs ───────────────────────────────────────────────
@@ -957,11 +1123,17 @@ workspace {
     assert_eq!(specs[2].target.as_deref(), Some("security"));
     assert_eq!(specs[3].target.as_deref(), Some("domain"));
     assert_eq!(specs[4].generator, "slice");
-    assert_eq!(specs[4].expression.as_deref(), Some("relationship.kind==dataflow&&element.tag==Core"));
+    assert_eq!(
+        specs[4].expression.as_deref(),
+        Some("relationship.kind==dataflow&&element.tag==Core")
+    );
     assert_eq!(specs[5].target.as_deref(), Some(api_id.as_str()));
     assert_eq!(specs[5].target2.as_deref(), Some(db_id.as_str()));
     assert_eq!(specs[6].target.as_deref(), Some("owner"));
-    assert!(specs[7].target.is_none(), "bare rollup takes owner default at generation time");
+    assert!(
+        specs[7].target.is_none(),
+        "bare rollup takes owner default at generation time"
+    );
     assert_eq!(specs[8].target.as_deref(), Some("m1"));
     assert_eq!(specs[9].target.as_deref(), Some("m1"));
     assert_eq!(specs[9].target2.as_deref(), Some("m2"));
@@ -997,7 +1169,10 @@ workspace {
     let err = parse_str(dsl).expect_err("typo must error");
     let msg = err.to_string();
     assert!(msg.contains("shoop"), "names the bad identifier: {msg}");
-    assert!(msg.contains("did you mean 'shop'"), "suggests the fix: {msg}");
+    assert!(
+        msg.contains("did you mean 'shop'"),
+        "suggests the fix: {msg}"
+    );
 }
 
 #[test]
@@ -1013,9 +1188,15 @@ workspace {
 "#;
     let ws = parse_str(dsl).expect("forward references are legal");
     let user = &ws.model.people.as_ref().unwrap()[0];
-    let rels = user.relationships.as_ref().expect("relationship attached to source");
+    let rels = user
+        .relationships
+        .as_ref()
+        .expect("relationship attached to source");
     let shop_id = &ws.model.software_systems.as_ref().unwrap()[0].id;
-    assert_eq!(&rels[0].destination_id, shop_id, "destination rewritten to real id");
+    assert_eq!(
+        &rels[0].destination_id, shop_id,
+        "destination rewritten to real id"
+    );
 }
 
 #[test]
@@ -1031,7 +1212,10 @@ workspace {
 "#;
     let err = parse_str(dsl).expect_err("must error");
     let msg = err.to_string();
-    assert!(msg.contains("nope1") && msg.contains("nope2"), "reports both: {msg}");
+    assert!(
+        msg.contains("nope1") && msg.contains("nope2"),
+        "reports both: {msg}"
+    );
 }
 
 #[test]
@@ -1045,7 +1229,10 @@ workspace {
 "#;
     let err = parse_str(dsl).expect_err("must error");
     let msg = err.to_string();
-    assert!(msg.contains("softwareSystem"), "tells the user where containers go: {msg}");
+    assert!(
+        msg.contains("softwareSystem"),
+        "tells the user where containers go: {msg}"
+    );
 }
 
 #[test]
@@ -1064,7 +1251,10 @@ workspace {
     let err = parse_str(dsl).expect_err("unknown body keyword must error");
     let msg = err.to_string();
     assert!(msg.contains("statuss"), "names the keyword: {msg}");
-    assert!(msg.contains("did you mean 'status'"), "suggests the fix: {msg}");
+    assert!(
+        msg.contains("did you mean 'status'"),
+        "suggests the fix: {msg}"
+    );
 }
 
 #[test]
@@ -1095,7 +1285,11 @@ workspace {
 }
 "#;
     let ws = parse_str(dsl).expect("sketch mode tolerates unknowns");
-    assert_eq!(ws.model.software_systems.as_ref().unwrap().len(), 2, "billing vivified");
+    assert_eq!(
+        ws.model.software_systems.as_ref().unwrap().len(),
+        2,
+        "billing vivified"
+    );
 }
 
 #[test]
@@ -1137,7 +1331,10 @@ workspace {
     let ws = parse_str(dsl).expect("this parses");
     let s = &ws.model.software_systems.as_ref().unwrap()[0];
     let rels = s.relationships.as_ref().unwrap();
-    assert_eq!(rels[0].destination_id, s.id, "this resolves to the software system");
+    assert_eq!(
+        rels[0].destination_id, s.id,
+        "this resolves to the software system"
+    );
     let custom = &ws.model.custom_elements.as_ref().unwrap()[0];
     assert_eq!(rels[0].source_id, custom.id);
 }
@@ -1162,11 +1359,20 @@ workspace {
 "#;
     let ws = parse_str(dsl).expect("groups parse");
     let s = &ws.model.software_systems.as_ref().unwrap()[0];
-    assert_eq!(s.group.as_deref(), Some("Org"), "model-level group membership");
+    assert_eq!(
+        s.group.as_deref(),
+        Some("Org"),
+        "model-level group membership"
+    );
     let containers = s.containers.as_ref().unwrap();
     assert_eq!(containers.len(), 2);
-    assert!(containers.iter().all(|c| c.group.as_deref() == Some("Service 1")));
-    let rels = s.relationships.as_ref().expect("relationship inside group kept");
+    assert!(containers
+        .iter()
+        .all(|c| c.group.as_deref() == Some("Service 1")));
+    let rels = s
+        .relationships
+        .as_ref()
+        .expect("relationship inside group kept");
     assert_eq!(rels.len(), 1);
 }
 
@@ -1182,7 +1388,10 @@ workspace "W" {
 "#;
     let ws = parse_str(dsl).expect("workspace properties parse");
     assert_eq!(
-        ws.properties.as_ref().and_then(|p| p.get("owner")).map(String::as_str),
+        ws.properties
+            .as_ref()
+            .and_then(|p| p.get("owner"))
+            .map(String::as_str),
         Some("team-x")
     );
 }
@@ -1202,9 +1411,16 @@ workspace {
 "#;
     let ws = parse_str(dsl).expect("enterprise block parses");
     assert_eq!(ws.model.enterprise.as_ref().unwrap().name, "Big Corp");
-    let people = ws.model.people.as_ref().expect("person inside enterprise kept");
+    let people = ws
+        .model
+        .people
+        .as_ref()
+        .expect("person inside enterprise kept");
     assert_eq!(people[0].name, "Staff");
-    assert!(people[0].relationships.is_some(), "relationship from enterprise person");
+    assert!(
+        people[0].relationships.is_some(),
+        "relationship from enterprise person"
+    );
 }
 
 #[test]
@@ -1218,7 +1434,10 @@ fn unclosed_brace_reports_opening_location() {
     let err = parse_str(dsl).expect_err("unbalanced braces must error");
     let msg = err.to_string();
     assert!(msg.contains("never closed"), "explains the problem: {msg}");
-    assert!(msg.contains("line 1"), "points at the unmatched open brace: {msg}");
+    assert!(
+        msg.contains("line 1"),
+        "points at the unmatched open brace: {msg}"
+    );
 }
 
 #[test]
@@ -1239,7 +1458,10 @@ fn errors_in_included_files_name_the_file_and_original_line() {
     let err = parse_file(dir.join("main.dsl")).expect_err("typo in include must error");
     let msg = err.to_string();
     assert!(msg.contains("model.dsl"), "names the included file: {msg}");
-    assert!(msg.contains("line 3"), "line number is relative to model.dsl: {msg}");
+    assert!(
+        msg.contains("line 3"),
+        "line number is relative to model.dsl: {msg}"
+    );
     assert!(msg.contains("did you mean 'shop'"), "still suggests: {msg}");
 }
 
@@ -1338,7 +1560,11 @@ workspace "Dyn" {
         .unwrap();
 
     // The unmatched step is dropped rather than given a made-up id.
-    assert_eq!(steps.len(), 2, "unmatched step should be dropped: {steps:?}");
+    assert_eq!(
+        steps.len(),
+        2,
+        "unmatched step should be dropped: {steps:?}"
+    );
 
     assert_eq!(&steps[0].id, rel_id);
     assert_eq!(steps[0].response, None);
@@ -1388,22 +1614,41 @@ workspace "Deploy" {
     let ws = parse_str(dsl).expect("should parse");
     let nodes = ws.model.deployment_nodes.as_ref().unwrap();
 
-    let live = nodes.iter().find(|n| n.environment.as_deref() == Some("Live")).unwrap();
+    let live = nodes
+        .iter()
+        .find(|n| n.environment.as_deref() == Some("Live"))
+        .unwrap();
     let instances = live.container_instances.as_ref().unwrap();
-    let web_instance = instances.iter().find(|i| i.relationships.is_some()).unwrap();
+    let web_instance = instances
+        .iter()
+        .find(|i| i.relationships.is_some())
+        .unwrap();
     let replicated = web_instance.relationships.as_ref().unwrap();
 
     // The component-level relationship counts as one between the containers.
-    assert_eq!(replicated.len(), 1, "expected one replicated edge: {replicated:?}");
+    assert_eq!(
+        replicated.len(),
+        1,
+        "expected one replicated edge: {replicated:?}"
+    );
     assert_eq!(replicated[0].description.as_deref(), Some("Calls"));
-    assert!(replicated[0].linked_relationship_id.is_some(), "links back to the original");
+    assert!(
+        replicated[0].linked_relationship_id.is_some(),
+        "links back to the original"
+    );
     let api_instance = instances.iter().find(|i| i.id != web_instance.id).unwrap();
     assert_eq!(replicated[0].destination_id, api_instance.id);
 
     // Instances in a different environment are never wired together.
-    let test = nodes.iter().find(|n| n.environment.as_deref() == Some("Test")).unwrap();
+    let test = nodes
+        .iter()
+        .find(|n| n.environment.as_deref() == Some("Test"))
+        .unwrap();
     for instance in test.container_instances.iter().flatten() {
-        assert!(instance.relationships.is_none(), "no cross-environment edges");
+        assert!(
+            instance.relationships.is_none(),
+            "no cross-environment edges"
+        );
     }
 
     // …and the view picks the replicated relationship up.
@@ -1535,7 +1780,10 @@ fn locations_cover_elements_ports_and_relationships() {
     let parsed = structurizr_dsl::parse_str_detailed(LOCATED).expect("parses");
     let ws = &parsed.workspace;
     let at = |id: String| {
-        let loc = parsed.locations.get(&id).unwrap_or_else(|| panic!("no location for {id}"));
+        let loc = parsed
+            .locations
+            .get(&id)
+            .unwrap_or_else(|| panic!("no location for {id}"));
         assert_eq!(loc.file, None, "a string parse has no file");
         (loc.line, loc.col, loc.end_line)
     };
@@ -1551,7 +1799,10 @@ fn locations_cover_elements_ports_and_relationships() {
     assert_eq!(at(element_id(ws, "DB")), (9, 13, 9));
     // A one-line nested block: the outer and inner statements start apart.
     assert_eq!(at(element_id(ws, "Pay")), (12, 9, 12));
-    assert_eq!(at(element_id(ws, "Gateway")), (12, col_of(LOCATED, 12, "gw"), 12));
+    assert_eq!(
+        at(element_id(ws, "Gateway")),
+        (12, col_of(LOCATED, 12, "gw"), 12)
+    );
 
     assert_eq!(at(relationship_id(ws, "reads")), (10, 13, 10));
     assert_eq!(at(relationship_id(ws, "buys")), (13, 9, 15));
@@ -1575,22 +1826,43 @@ fn locations_resolve_through_nested_includes() {
         "// billing\nbilling = softwareSystem \"Billing\" {\n    ledger = container \"Ledger\"\n}\n!include more.dsl\n",
     )
     .unwrap();
-    std::fs::write(dir.join("parts/more.dsl"), "audit = softwareSystem \"Audit\"\n").unwrap();
+    std::fs::write(
+        dir.join("parts/more.dsl"),
+        "audit = softwareSystem \"Audit\"\n",
+    )
+    .unwrap();
 
     let parsed = structurizr_dsl::parse_file_detailed(dir.join("main.dsl")).expect("parses");
     let ws = &parsed.workspace;
     let at = |id: String| {
         let loc = parsed.locations.get(&id).expect("located");
-        (loc.file.clone().expect("file parse names the file"), loc.line, loc.col, loc.end_line)
+        (
+            loc.file.clone().expect("file parse names the file"),
+            loc.line,
+            loc.col,
+            loc.end_line,
+        )
     };
 
     assert_eq!(at(element_id(ws, "Shop")), (dir.join("main.dsl"), 3, 9, 3));
-    assert_eq!(at(element_id(ws, "Billing")), (dir.join("parts/billing.dsl"), 2, 1, 4));
-    assert_eq!(at(element_id(ws, "Ledger")), (dir.join("parts/billing.dsl"), 3, 5, 3));
+    assert_eq!(
+        at(element_id(ws, "Billing")),
+        (dir.join("parts/billing.dsl"), 2, 1, 4)
+    );
+    assert_eq!(
+        at(element_id(ws, "Ledger")),
+        (dir.join("parts/billing.dsl"), 3, 5, 3)
+    );
     // A nested include is joined onto its including file's directory.
-    assert_eq!(at(element_id(ws, "Audit")), (dir.join("parts/more.dsl"), 1, 1, 1));
+    assert_eq!(
+        at(element_id(ws, "Audit")),
+        (dir.join("parts/more.dsl"), 1, 1, 1)
+    );
     // Lines after an include are counted in the including file, not spliced.
-    assert_eq!(at(relationship_id(ws, "charges")), (dir.join("main.dsl"), 5, 9, 5));
+    assert_eq!(
+        at(relationship_id(ws, "charges")),
+        (dir.join("main.dsl"), 5, 9, 5)
+    );
 
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -1618,7 +1890,10 @@ fn locations_for_deployment_instances_and_replicated_relationships() {
     let parsed = structurizr_dsl::parse_str_detailed(dsl).expect("parses");
     let ws = &parsed.workspace;
     let at = |id: &str| {
-        let loc = parsed.locations.get(id).unwrap_or_else(|| panic!("no location for {id}"));
+        let loc = parsed
+            .locations
+            .get(id)
+            .unwrap_or_else(|| panic!("no location for {id}"));
         (loc.line, loc.col, loc.end_line)
     };
 
@@ -1645,7 +1920,11 @@ fn locations_for_views_and_imported_decisions() {
     std::fs::create_dir_all(dir.join("s-decisions")).unwrap();
     let adr = |title: &str| format!("# 1. {title}\n\nDate: 2024-01-01\n\n## Status\n\nAccepted\n");
     std::fs::write(dir.join("decisions/0001-use-rust.md"), adr("Use Rust")).unwrap();
-    std::fs::write(dir.join("s-decisions/0001-split-db.md"), adr("Split the database")).unwrap();
+    std::fs::write(
+        dir.join("s-decisions/0001-split-db.md"),
+        adr("Split the database"),
+    )
+    .unwrap();
     std::fs::write(
         dir.join("main.dsl"),
         r#"workspace {
@@ -1667,17 +1946,36 @@ fn locations_for_views_and_imported_decisions() {
     .unwrap();
 
     let parsed = structurizr_dsl::parse_file_detailed(dir.join("main.dsl")).expect("parses");
-    let view = |key: &str| parsed.locations.view(key).map(|l| (l.line, l.col, l.end_line));
+    let view = |key: &str| {
+        parsed
+            .locations
+            .view(key)
+            .map(|l| (l.line, l.col, l.end_line))
+    };
     assert_eq!(view("ctx"), Some((9, 9, 11)));
     assert_eq!(view("land"), Some((12, 9, 12)));
 
     // Each `!adrs` directory numbers from 1, so the owner tells them apart.
-    let system_id = parsed.workspace.model.software_systems.as_ref().unwrap()[0].id.clone();
-    let workspace_adr = parsed.locations.decision("1", None).expect("workspace decision");
-    assert_eq!(workspace_adr.file.as_deref(), Some(dir.join("decisions/0001-use-rust.md").as_path()));
+    let system_id = parsed.workspace.model.software_systems.as_ref().unwrap()[0]
+        .id
+        .clone();
+    let workspace_adr = parsed
+        .locations
+        .decision("1", None)
+        .expect("workspace decision");
+    assert_eq!(
+        workspace_adr.file.as_deref(),
+        Some(dir.join("decisions/0001-use-rust.md").as_path())
+    );
     assert_eq!((workspace_adr.line, workspace_adr.end_line), (1, 7));
-    let system_adr = parsed.locations.decision("1", Some(&system_id)).expect("element decision");
-    assert_eq!(system_adr.file.as_deref(), Some(dir.join("s-decisions/0001-split-db.md").as_path()));
+    let system_adr = parsed
+        .locations
+        .decision("1", Some(&system_id))
+        .expect("element decision");
+    assert_eq!(
+        system_adr.file.as_deref(),
+        Some(dir.join("s-decisions/0001-split-db.md").as_path())
+    );
 
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -1686,15 +1984,23 @@ fn locations_for_views_and_imported_decisions() {
 fn unsaved_text_resolves_includes_against_its_path() {
     let dir = std::env::temp_dir().join(format!("sdsl-parse-at-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("parts.dsl"), "billing = softwareSystem \"Billing\"\n").unwrap();
+    std::fs::write(
+        dir.join("parts.dsl"),
+        "billing = softwareSystem \"Billing\"\n",
+    )
+    .unwrap();
     // What is on disk is not what gets parsed.
     std::fs::write(dir.join("main.dsl"), "workspace {\n}\n").unwrap();
     let buffer = "workspace {\n    model {\n        shop = softwareSystem \"Shop\"\n        !include parts.dsl\n        shop -> billing \"charges\"\n    }\n}\n";
 
-    let parsed = structurizr_dsl::parse_str_detailed_at(buffer, dir.join("main.dsl")).expect("parses");
+    let parsed =
+        structurizr_dsl::parse_str_detailed_at(buffer, dir.join("main.dsl")).expect("parses");
     let ws = &parsed.workspace;
     let at = |name: &str| {
-        let loc = parsed.locations.get(&element_id(ws, name)).expect("located");
+        let loc = parsed
+            .locations
+            .get(&element_id(ws, name))
+            .expect("located");
         (loc.file.clone().unwrap(), loc.line)
     };
     assert_eq!(at("Shop"), (dir.join("main.dsl"), 3));

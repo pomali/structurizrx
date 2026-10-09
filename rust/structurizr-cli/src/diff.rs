@@ -39,7 +39,12 @@ pub fn run(args: &Args) -> Result<bool> {
         }
         let before = load_and_materialize(&args.file)?;
         let after = load_and_materialize(against)?;
-        (before, after, args.file.display().to_string(), against.display().to_string())
+        (
+            before,
+            after,
+            args.file.display().to_string(),
+            against.display().to_string(),
+        )
     } else {
         if !structurizr_web::git::is_tracked(&args.file) {
             anyhow::bail!(
@@ -48,7 +53,10 @@ pub fn run(args: &Args) -> Result<bool> {
             );
         }
         let from = args.from.clone().unwrap_or_else(|| "HEAD".to_string());
-        let to = args.to.clone().unwrap_or_else(|| structurizr_web::git::WORKING.to_string());
+        let to = args
+            .to
+            .clone()
+            .unwrap_or_else(|| structurizr_web::git::WORKING.to_string());
 
         let load = |rev: &str| -> Result<Workspace> {
             if rev == structurizr_web::git::WORKING {
@@ -119,7 +127,13 @@ fn print_text(d: &Diff, from: &str, to: &str) {
                 Change::Removed => println!("  − {} ({})", c.path, c.kind),
                 Change::Modified => {
                     for f in &c.fields {
-                        println!("  ~ {} ({}): {} {}", c.path, c.kind, f.field, field_change_str(f));
+                        println!(
+                            "  ~ {} ({}): {} {}",
+                            c.path,
+                            c.kind,
+                            f.field,
+                            field_change_str(f)
+                        );
                     }
                 }
             }
@@ -159,13 +173,29 @@ fn print_text(d: &Diff, from: &str, to: &str) {
                 Change::Removed => println!("  − {} ({})", c.key, c.kind),
                 Change::Modified => {
                     for f in &c.fields {
-                        println!("  ~ {} ({}): {} {}", c.key, c.kind, f.field, field_change_str(f));
+                        println!(
+                            "  ~ {} ({}): {} {}",
+                            c.key,
+                            c.kind,
+                            f.field,
+                            field_change_str(f)
+                        );
                     }
                     if !c.elements_added.is_empty() {
-                        println!("  ~ {} ({}): +{}", c.key, c.kind, c.elements_added.join(", +"));
+                        println!(
+                            "  ~ {} ({}): +{}",
+                            c.key,
+                            c.kind,
+                            c.elements_added.join(", +")
+                        );
                     }
                     if !c.elements_removed.is_empty() {
-                        println!("  ~ {} ({}): -{}", c.key, c.kind, c.elements_removed.join(", -"));
+                        println!(
+                            "  ~ {} ({}): -{}",
+                            c.key,
+                            c.kind,
+                            c.elements_removed.join(", -")
+                        );
                     }
                 }
             }
@@ -181,7 +211,13 @@ fn print_text(d: &Diff, from: &str, to: &str) {
                 Change::Removed => println!("  − {} {}", c.id, c.title),
                 Change::Modified => {
                     for f in &c.fields {
-                        println!("  ~ {} {}: {} {}", c.id, c.title, f.field, field_change_str(f));
+                        println!(
+                            "  ~ {} {}: {} {}",
+                            c.id,
+                            c.title,
+                            f.field,
+                            field_change_str(f)
+                        );
                     }
                 }
             }

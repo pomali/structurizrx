@@ -24,7 +24,10 @@ impl DiagramExporter for MermaidExporter {
         let views = &workspace.views;
 
         for v in views.system_landscape_views.iter().flatten() {
-            let key = v.key.clone().unwrap_or_else(|| "SystemLandscape".to_string());
+            let key = v
+                .key
+                .clone()
+                .unwrap_or_else(|| "SystemLandscape".to_string());
             let (filter, _) = build_element_filter(v.element_views.as_deref());
             // A landscape without an explicit element list keeps its classic
             // people + software systems scope.
@@ -72,7 +75,8 @@ impl DiagramExporter for MermaidExporter {
         for v in views.component_views.iter().flatten() {
             let key = v.key.clone().unwrap_or_else(|| "Component".to_string());
             let (filter, _) = build_element_filter(v.element_views.as_deref());
-            let scope = filter.unwrap_or_else(|| component_scope(&workspace.model, &v.container_id));
+            let scope =
+                filter.unwrap_or_else(|| component_scope(&workspace.model, &v.container_id));
             let content = render_view(
                 workspace,
                 v.title.as_deref(),
@@ -265,7 +269,12 @@ fn collect_edges(
             r.kind,
             Some(Async) | Some(Publish) | Some(Subscribe) | Some(Dataflow)
         );
-        out.push(MEdge { src, dst, label, dotted });
+        out.push(MEdge {
+            src,
+            dst,
+            label,
+            dotted,
+        });
     }
     out
 }
@@ -354,7 +363,11 @@ fn render_view(
             out.push_str(&format!("    {} {} {}\n", src, arrow, dst));
         } else {
             // Labelled arrows split around the label: `A --"text"--> B`.
-            let (head, tail) = if e.dotted { ("-.", ".->") } else { ("--", "-->") };
+            let (head, tail) = if e.dotted {
+                ("-.", ".->")
+            } else {
+                ("--", "-->")
+            };
             out.push_str(&format!(
                 "    {} {}\"{}\"{} {}\n",
                 src,
@@ -460,9 +473,15 @@ fn build_mermaid_class(
     for tag in tags_str.split(',').map(|t| t.trim()) {
         for style in element_styles {
             if style.tag.eq_ignore_ascii_case(tag) {
-                if let Some(b) = &style.background { bg = Some(b.clone()); }
-                if let Some(c) = &style.color      { fg = Some(c.clone()); }
-                if let Some(s) = &style.stroke     { stroke = Some(s.clone()); }
+                if let Some(b) = &style.background {
+                    bg = Some(b.clone());
+                }
+                if let Some(c) = &style.color {
+                    fg = Some(c.clone());
+                }
+                if let Some(s) = &style.stroke {
+                    stroke = Some(s.clone());
+                }
                 last_matching_tag = tag.to_string();
             }
         }
@@ -475,9 +494,15 @@ fn build_mermaid_class(
     // Use the last matched tag as the class name (sanitized)
     let cls = sanitize_mermaid_class(&last_matching_tag);
     let mut parts: Vec<String> = Vec::new();
-    if let Some(b) = bg     { parts.push(format!("fill:{}", b)); }
-    if let Some(f) = fg     { parts.push(format!("color:{}", f)); }
-    if let Some(s) = stroke { parts.push(format!("stroke:{}", s)); }
+    if let Some(b) = bg {
+        parts.push(format!("fill:{}", b));
+    }
+    if let Some(f) = fg {
+        parts.push(format!("color:{}", f));
+    }
+    if let Some(s) = stroke {
+        parts.push(format!("stroke:{}", s));
+    }
     let def = parts.join(",");
 
     Some((cls, def))
@@ -485,7 +510,13 @@ fn build_mermaid_class(
 
 fn sanitize_mermaid_class(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -614,8 +645,14 @@ mod tests {
         let diagrams = exporter.export_workspace(&workspace);
         let md = &diagrams[0].content;
         assert!(md.contains("classDef"), "should emit classDef");
-        assert!(md.contains("#CC0000"), "fill colour should appear in classDef");
-        assert!(md.contains("#FFFFFF"), "text colour should appear in classDef");
+        assert!(
+            md.contains("#CC0000"),
+            "fill colour should appear in classDef"
+        );
+        assert!(
+            md.contains("#FFFFFF"),
+            "text colour should appear in classDef"
+        );
         assert!(md.contains("class "), "should assign class to nodes");
     }
 

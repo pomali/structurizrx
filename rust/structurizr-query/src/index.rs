@@ -119,7 +119,9 @@ impl Index {
 
     /// The entry for `name` (case-insensitive), if exactly that name exists.
     pub fn element_by_name(&self, name: &str) -> Option<&ElementEntry> {
-        self.by_name.get(&name.to_lowercase()).map(|&i| &self.elements[i])
+        self.by_name
+            .get(&name.to_lowercase())
+            .map(|&i| &self.elements[i])
     }
 
     /// Relationships leaving `id`, in model order.
@@ -143,7 +145,10 @@ impl Index {
     /// container), in model order.
     pub fn children(&self, id: &str) -> Vec<&ElementEntry> {
         match self.by_id.get(id) {
-            Some(&i) => self.children[i].iter().map(|&c| &self.elements[c]).collect(),
+            Some(&i) => self.children[i]
+                .iter()
+                .map(|&c| &self.elements[c])
+                .collect(),
             None => Vec::new(),
         }
     }
@@ -457,22 +462,58 @@ fn build_views(workspace: &Workspace) -> Vec<ViewEntry> {
     };
 
     for v in views.system_landscape_views.as_deref().unwrap_or(&[]) {
-        add(&v.key, &v.title, &v.description, &v.element_views, "system landscape");
+        add(
+            &v.key,
+            &v.title,
+            &v.description,
+            &v.element_views,
+            "system landscape",
+        );
     }
     for v in views.system_context_views.as_deref().unwrap_or(&[]) {
-        add(&v.key, &v.title, &v.description, &v.element_views, "system context");
+        add(
+            &v.key,
+            &v.title,
+            &v.description,
+            &v.element_views,
+            "system context",
+        );
     }
     for v in views.container_views.as_deref().unwrap_or(&[]) {
-        add(&v.key, &v.title, &v.description, &v.element_views, "container");
+        add(
+            &v.key,
+            &v.title,
+            &v.description,
+            &v.element_views,
+            "container",
+        );
     }
     for v in views.component_views.as_deref().unwrap_or(&[]) {
-        add(&v.key, &v.title, &v.description, &v.element_views, "component");
+        add(
+            &v.key,
+            &v.title,
+            &v.description,
+            &v.element_views,
+            "component",
+        );
     }
     for v in views.dynamic_views.as_deref().unwrap_or(&[]) {
-        add(&v.key, &v.title, &v.description, &v.element_views, "dynamic");
+        add(
+            &v.key,
+            &v.title,
+            &v.description,
+            &v.element_views,
+            "dynamic",
+        );
     }
     for v in views.deployment_views.as_deref().unwrap_or(&[]) {
-        add(&v.key, &v.title, &v.description, &v.element_views, "deployment");
+        add(
+            &v.key,
+            &v.title,
+            &v.description,
+            &v.element_views,
+            "deployment",
+        );
     }
     for v in views.custom_views.as_deref().unwrap_or(&[]) {
         add(&v.key, &v.title, &v.description, &v.element_views, "custom");
@@ -533,8 +574,14 @@ mod tests {
             key: Some("ctx".into()),
             software_system_id: "1".into(),
             element_views: Some(vec![
-                ElementView { id: "1".into(), ..Default::default() },
-                ElementView { id: "4".into(), ..Default::default() },
+                ElementView {
+                    id: "1".into(),
+                    ..Default::default()
+                },
+                ElementView {
+                    id: "4".into(),
+                    ..Default::default()
+                },
             ]),
             ..Default::default()
         }]);
@@ -542,8 +589,14 @@ mod tests {
             key: Some("containers".into()),
             software_system_id: "1".into(),
             element_views: Some(vec![
-                ElementView { id: "2".into(), ..Default::default() },
-                ElementView { id: "3".into(), ..Default::default() },
+                ElementView {
+                    id: "2".into(),
+                    ..Default::default()
+                },
+                ElementView {
+                    id: "3".into(),
+                    ..Default::default()
+                },
             ]),
             ..Default::default()
         }]);

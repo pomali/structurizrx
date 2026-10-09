@@ -311,14 +311,26 @@ mod tests {
 
     #[test]
     fn include_paths_resolve_against_the_including_file() {
-        assert_eq!(join_repo_path("docs/workspace.dsl", "model.dsl"), "docs/model.dsl");
-        assert_eq!(join_repo_path("docs/workspace.dsl", "./model.dsl"), "docs/model.dsl");
-        assert_eq!(join_repo_path("docs/workspace.dsl", "../model.dsl"), "model.dsl");
+        assert_eq!(
+            join_repo_path("docs/workspace.dsl", "model.dsl"),
+            "docs/model.dsl"
+        );
+        assert_eq!(
+            join_repo_path("docs/workspace.dsl", "./model.dsl"),
+            "docs/model.dsl"
+        );
+        assert_eq!(
+            join_repo_path("docs/workspace.dsl", "../model.dsl"),
+            "model.dsl"
+        );
         assert_eq!(
             join_repo_path("a/b/workspace.dsl", "../c/model.dsl"),
             "a/c/model.dsl"
         );
-        assert_eq!(join_repo_path("workspace.dsl", "parts/model.dsl"), "parts/model.dsl");
+        assert_eq!(
+            join_repo_path("workspace.dsl", "parts/model.dsl"),
+            "parts/model.dsl"
+        );
     }
 
     /// The repository this test runs in is a git repository, which makes the
@@ -348,7 +360,8 @@ mod tests {
     /// revision's includes rather than the working tree's.
     #[test]
     fn a_multi_file_workspace_is_followed_through_its_includes() {
-        let dir = std::env::temp_dir().join(format!("structurizrx-git-test-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("structurizrx-git-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("parts")).expect("temp dir");
 
@@ -371,7 +384,11 @@ mod tests {
 
         let log = history(&entry, 10).expect("history");
         let subjects: Vec<&str> = log.revisions.iter().map(|r| r.subject.as_str()).collect();
-        assert_eq!(subjects, vec!["second", "first"], "includes are part of the history");
+        assert_eq!(
+            subjects,
+            vec!["second", "first"],
+            "includes are part of the history"
+        );
         assert!(!log.dirty);
 
         let oldest = &log.revisions[1].sha;
@@ -383,7 +400,10 @@ mod tests {
         );
 
         std::fs::write(dir.join("parts/model.dsl"), "model {\n// third\n}\n").unwrap();
-        assert!(history(&entry, 10).expect("history").dirty, "an edited include is a dirty tree");
+        assert!(
+            history(&entry, 10).expect("history").dirty,
+            "an edited include is a dirty tree"
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -394,7 +414,9 @@ mod tests {
         let err = read(&path, "definitely-not-a-rev").expect_err("must fail");
         assert!(
             err.to_string().contains("definitely-not-a-rev")
-                || err.chain().any(|c| c.to_string().contains("definitely-not-a-rev")),
+                || err
+                    .chain()
+                    .any(|c| c.to_string().contains("definitely-not-a-rev")),
             "error should name the revision: {err:#}"
         );
     }

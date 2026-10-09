@@ -20,9 +20,9 @@ fn parse_level(value: &str) -> Result<Level> {
         "system" | "softwareSystem" | "systems" => Ok(Level::SoftwareSystem),
         "container" | "containers" => Ok(Level::Container),
         "component" | "components" => Ok(Level::Component),
-        other => anyhow::bail!(
-            "invalid level '{other}': expected one of system, container, component"
-        ),
+        other => {
+            anyhow::bail!("invalid level '{other}': expected one of system, container, component")
+        }
     }
 }
 
@@ -134,7 +134,13 @@ fn print_text(a: &ClusterAnalysis) {
 
     if !a.nodes.is_empty() {
         println!();
-        let name_w = a.nodes.iter().map(|n| n.name.len()).max().unwrap_or(4).max(4);
+        let name_w = a
+            .nodes
+            .iter()
+            .map(|n| n.name.len())
+            .max()
+            .unwrap_or(4)
+            .max(4);
         println!(
             "{:<name_w$}  {:>9}  {:>9}  {:>11}  {:>8}  {:>11}",
             "name",

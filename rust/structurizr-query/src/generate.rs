@@ -10,8 +10,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 
 use structurizr_model::{
-    AutoViewSpec, ComponentView, ContainerView, ElementView, RelationshipView,
-    SystemContextView, SystemLandscapeView, Workspace,
+    AutoViewSpec, ComponentView, ContainerView, ElementView, RelationshipView, SystemContextView,
+    SystemLandscapeView, Workspace,
 };
 
 use crate::eval::{build_index, Index};
@@ -29,7 +29,10 @@ pub fn generate_views(workspace: &mut Workspace) -> Result<Vec<String>, QueryErr
             if has_any_concrete_view(workspace) {
                 return Ok(vec![]);
             }
-            vec![AutoViewSpec { generator: "default".to_string(), ..Default::default() }]
+            vec![AutoViewSpec {
+                generator: "default".to_string(),
+                ..Default::default()
+            }]
         }
     };
 
@@ -131,14 +134,28 @@ fn element_views(ids: &BTreeSet<String>) -> Option<Vec<ElementView>> {
     if ids.is_empty() {
         return None;
     }
-    Some(ids.iter().map(|id| ElementView { id: id.clone(), ..Default::default() }).collect())
+    Some(
+        ids.iter()
+            .map(|id| ElementView {
+                id: id.clone(),
+                ..Default::default()
+            })
+            .collect(),
+    )
 }
 
 fn relationship_views(ids: &BTreeSet<String>) -> Option<Vec<RelationshipView>> {
     if ids.is_empty() {
         return None;
     }
-    Some(ids.iter().map(|id| RelationshipView { id: id.clone(), ..Default::default() }).collect())
+    Some(
+        ids.iter()
+            .map(|id| RelationshipView {
+                id: id.clone(),
+                ..Default::default()
+            })
+            .collect(),
+    )
 }
 
 /// Lift relationship endpoint `e` to the level a view scoped to `boundary`
@@ -153,10 +170,15 @@ fn lift_endpoint(idx: &Index, e: &str, boundary: Option<&str>) -> Option<String>
     chain.extend(el.ancestors.iter().map(String::as_str));
     if let Some(b) = boundary {
         let bel = &idx.elements[*idx.by_id.get(b)?];
-        let scope: HashSet<&str> =
-            std::iter::once(b).chain(bel.ancestors.iter().map(String::as_str)).collect();
+        let scope: HashSet<&str> = std::iter::once(b)
+            .chain(bel.ancestors.iter().map(String::as_str))
+            .collect();
         if let Some(k) = chain.iter().position(|c| scope.contains(c)) {
-            return if k == 0 { None } else { Some(chain[k - 1].to_string()) };
+            return if k == 0 {
+                None
+            } else {
+                Some(chain[k - 1].to_string())
+            };
         }
     }
     chain.last().map(|s| s.to_string())
@@ -197,7 +219,11 @@ fn induced_rels(idx: &Index, elems: &BTreeSet<String>) -> BTreeSet<String> {
             return Some(id.to_string());
         }
         let i = *idx.by_id.get(id)?;
-        idx.elements[i].ancestors.iter().find(|a| elems.contains(*a)).cloned()
+        idx.elements[i]
+            .ancestors
+            .iter()
+            .find(|a| elems.contains(*a))
+            .cloned()
     };
     let mut out = BTreeSet::new();
     let mut pairs: HashSet<(String, String)> = HashSet::new();
@@ -244,7 +270,10 @@ fn push_generated(
         relationship_views: relationship_views(rels),
         ..Default::default()
     };
-    ws.views.system_landscape_views.get_or_insert_with(Vec::new).push(view);
+    ws.views
+        .system_landscape_views
+        .get_or_insert_with(Vec::new)
+        .push(view);
     generated.push(key);
 }
 
@@ -346,7 +375,10 @@ fn gen_default(ws: &mut Workspace, idx: &Index, generated: &mut Vec<String>) {
             relationship_views: relationship_views(&rels),
             ..Default::default()
         };
-        ws.views.system_landscape_views.get_or_insert_with(Vec::new).push(view);
+        ws.views
+            .system_landscape_views
+            .get_or_insert_with(Vec::new)
+            .push(view);
         generated.push(key);
     }
 
@@ -368,9 +400,9 @@ fn gen_default(ws: &mut Workspace, idx: &Index, generated: &mut Vec<String>) {
         let mut elems: BTreeSet<String> = neighbors(sys_id, None)
             .into_iter()
             .filter(|n| {
-                idx.by_id.get(n).is_some_and(|i| {
-                    matches!(idx.elements[*i].kind, "person" | "softwareSystem")
-                })
+                idx.by_id
+                    .get(n)
+                    .is_some_and(|i| matches!(idx.elements[*i].kind, "person" | "softwareSystem"))
             })
             .collect();
         elems.insert(sys_id.clone());
@@ -383,7 +415,10 @@ fn gen_default(ws: &mut Workspace, idx: &Index, generated: &mut Vec<String>) {
             relationship_views: relationship_views(&rels),
             ..Default::default()
         };
-        ws.views.system_context_views.get_or_insert_with(Vec::new).push(view);
+        ws.views
+            .system_context_views
+            .get_or_insert_with(Vec::new)
+            .push(view);
         generated.push(key);
     }
 
@@ -417,7 +452,10 @@ fn gen_default(ws: &mut Workspace, idx: &Index, generated: &mut Vec<String>) {
             relationship_views: relationship_views(&rels),
             ..Default::default()
         };
-        ws.views.container_views.get_or_insert_with(Vec::new).push(view);
+        ws.views
+            .container_views
+            .get_or_insert_with(Vec::new)
+            .push(view);
         generated.push(key);
     }
 
@@ -455,7 +493,10 @@ fn gen_default(ws: &mut Workspace, idx: &Index, generated: &mut Vec<String>) {
             relationship_views: relationship_views(&rels),
             ..Default::default()
         };
-        ws.views.component_views.get_or_insert_with(Vec::new).push(view);
+        ws.views
+            .component_views
+            .get_or_insert_with(Vec::new)
+            .push(view);
         generated.push(key);
     }
 }
@@ -600,7 +641,12 @@ fn perspective_sets(idx: &Index, name: &str) -> (BTreeSet<String>, BTreeSet<Stri
     (elems, rels)
 }
 
-fn gen_perspective(ws: &mut Workspace, idx: &Index, spec: &AutoViewSpec, generated: &mut Vec<String>) {
+fn gen_perspective(
+    ws: &mut Workspace,
+    idx: &Index,
+    spec: &AutoViewSpec,
+    generated: &mut Vec<String>,
+) {
     let target = spec.target.as_deref().unwrap_or("*");
     let names: BTreeSet<String> = if target == "*" {
         let mut n: BTreeSet<String> = ws
@@ -638,7 +684,10 @@ fn gen_layer(ws: &mut Workspace, idx: &Index, spec: &AutoViewSpec, generated: &m
                 .get("layer")
                 .map(|l| l.eq_ignore_ascii_case(target))
                 .unwrap_or(false)
-                || e.group.as_deref().map(|g| g.eq_ignore_ascii_case(target)).unwrap_or(false)
+                || e.group
+                    .as_deref()
+                    .map(|g| g.eq_ignore_ascii_case(target))
+                    .unwrap_or(false)
         })
         .map(|e| e.id.clone())
         .collect();
@@ -648,7 +697,11 @@ fn gen_layer(ws: &mut Workspace, idx: &Index, spec: &AutoViewSpec, generated: &m
     push_generated(ws, generated, key, title, None, &elems, &rels);
 }
 
-fn gen_slice(ws: &mut Workspace, spec: &AutoViewSpec, generated: &mut Vec<String>) -> Result<(), QueryError> {
+fn gen_slice(
+    ws: &mut Workspace,
+    spec: &AutoViewSpec,
+    generated: &mut Vec<String>,
+) -> Result<(), QueryError> {
     let expr = spec.expression.as_deref().unwrap_or("*");
     let selection = query(expr, ws)?;
     let idx = build_index(ws);
@@ -744,7 +797,10 @@ fn gen_delta(ws: &mut Workspace, idx: &Index, spec: &AutoViewSpec, generated: &m
     let m2 = spec.target2.as_deref().unwrap_or("now");
     let order = milestone_order(ws);
     let (Some(p1), Some(p2)) = (ms_pos(&order, m1), ms_pos(&order, m2)) else {
-        eprintln!("note: `auto delta {} {}` skipped — unknown milestone", m1, m2);
+        eprintln!(
+            "note: `auto delta {} {}` skipped — unknown milestone",
+            m1, m2
+        );
         return;
     };
     let (e1, r1) = asof_sets(idx, &order, p1);
@@ -782,10 +838,22 @@ fn gen_delta(ws: &mut Workspace, idx: &Index, spec: &AutoViewSpec, generated: &m
     // Record added/removed ids so renderers can style them (spec §8.3).
     let join = |ids: Vec<&String>| ids.into_iter().cloned().collect::<Vec<_>>().join(",");
     let mut properties = std::collections::HashMap::new();
-    properties.insert("delta.addedElements".to_string(), join(e2.difference(&e1).collect()));
-    properties.insert("delta.removedElements".to_string(), join(e1.difference(&e2).collect()));
-    properties.insert("delta.addedRelationships".to_string(), join(r2.difference(&r1).collect()));
-    properties.insert("delta.removedRelationships".to_string(), join(r1.difference(&r2).collect()));
+    properties.insert(
+        "delta.addedElements".to_string(),
+        join(e2.difference(&e1).collect()),
+    );
+    properties.insert(
+        "delta.removedElements".to_string(),
+        join(e1.difference(&e2).collect()),
+    );
+    properties.insert(
+        "delta.addedRelationships".to_string(),
+        join(r2.difference(&r1).collect()),
+    );
+    properties.insert(
+        "delta.removedRelationships".to_string(),
+        join(r1.difference(&r2).collect()),
+    );
     let view = SystemLandscapeView {
         key: Some(key.clone()),
         title: Some(title),
@@ -795,7 +863,10 @@ fn gen_delta(ws: &mut Workspace, idx: &Index, spec: &AutoViewSpec, generated: &m
         relationship_views: relationship_views(&rels),
         ..Default::default()
     };
-    ws.views.system_landscape_views.get_or_insert_with(Vec::new).push(view);
+    ws.views
+        .system_landscape_views
+        .get_or_insert_with(Vec::new)
+        .push(view);
     generated.push(key);
 }
 

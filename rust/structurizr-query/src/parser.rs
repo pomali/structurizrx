@@ -74,8 +74,10 @@ struct Parser {
 
 impl Parser {
     fn new(src: &str) -> Result<Self, QueryError> {
-        let tokens =
-            tokenize(src).map_err(|e| QueryError::Parse { offset: 0, message: e })?;
+        let tokens = tokenize(src).map_err(|e| QueryError::Parse {
+            offset: 0,
+            message: e,
+        })?;
         Ok(Self { tokens, pos: 0 })
     }
 
@@ -158,8 +160,7 @@ impl Parser {
             }
             Token::Arrow => self.parse_neighborhood(),
             Token::Word(ref w)
-                if w.eq_ignore_ascii_case("element")
-                    || w.eq_ignore_ascii_case("relationship") =>
+                if w.eq_ignore_ascii_case("element") || w.eq_ignore_ascii_case("relationship") =>
             {
                 self.parse_comparison()
             }
@@ -205,10 +206,7 @@ impl Parser {
         if *self.peek() != Token::Dot {
             return Err(QueryError::Parse {
                 offset: self.offset(),
-                message: format!(
-                    "expected `.` after `{subject}`, found `{:?}`",
-                    self.peek()
-                ),
+                message: format!("expected `.` after `{subject}`, found `{:?}`", self.peek()),
             });
         }
         self.eat();
@@ -309,9 +307,7 @@ impl Parser {
             }
             tok => Err(QueryError::Parse {
                 offset: self.offset(),
-                message: format!(
-                    "expected word or quoted string as {context}, found `{tok:?}`"
-                ),
+                message: format!("expected word or quoted string as {context}, found `{tok:?}`"),
             }),
         }
     }
@@ -328,10 +324,7 @@ pub fn parse(src: &str) -> Result<Expr, QueryError> {
     if *p.peek() != Token::Eof {
         return Err(QueryError::Parse {
             offset: p.offset(),
-            message: format!(
-                "unexpected token after expression: `{:?}`",
-                p.peek()
-            ),
+            message: format!("unexpected token after expression: `{:?}`", p.peek()),
         });
     }
     Ok(expr)

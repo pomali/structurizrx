@@ -15,8 +15,8 @@ pub mod core;
 mod diagnostics;
 mod document;
 mod index;
-mod semantic;
 pub mod jsonrpc;
+mod semantic;
 
 /// Runs the language server over stdio. Intended to be spawned by an editor
 /// (e.g. `structurizrx lsp`), not run interactively.

@@ -28,16 +28,27 @@ pub fn lint(workspace: &Workspace) -> Vec<LintFinding> {
     let idx = build_index(workspace);
     let mut findings: Vec<LintFinding> = Vec::new();
 
-    for e in idx.elements.iter().filter(|e| e.tags.iter().any(|t| t == "Placeholder")) {
+    for e in idx
+        .elements
+        .iter()
+        .filter(|e| e.tags.iter().any(|t| t == "Placeholder"))
+    {
         findings.push(LintFinding {
             code: "placeholder",
             element_id: e.id.clone(),
             name: e.name.clone(),
-            message: format!("'{}' is a placeholder auto-created in sketch mode; declare it properly", e.name),
+            message: format!(
+                "'{}' is a placeholder auto-created in sketch mode; declare it properly",
+                e.name
+            ),
         });
     }
 
-    for e in idx.elements.iter().filter(|e| e.tags.iter().any(|t| t == "Uncertain")) {
+    for e in idx
+        .elements
+        .iter()
+        .filter(|e| e.tags.iter().any(|t| t == "Uncertain"))
+    {
         findings.push(LintFinding {
             code: "uncertain",
             element_id: e.id.clone(),
@@ -77,8 +88,12 @@ pub fn lint(workspace: &Workspace) -> Vec<LintFinding> {
         .iter()
         .flat_map(|r| {
             [
-                r.source_port_id.as_ref().map(|p| (r.source_id.clone(), p.clone())),
-                r.dest_port_id.as_ref().map(|p| (r.dest_id.clone(), p.clone())),
+                r.source_port_id
+                    .as_ref()
+                    .map(|p| (r.source_id.clone(), p.clone())),
+                r.dest_port_id
+                    .as_ref()
+                    .map(|p| (r.dest_id.clone(), p.clone())),
             ]
         })
         .flatten()
@@ -90,7 +105,10 @@ pub fn lint(workspace: &Workspace) -> Vec<LintFinding> {
                     code: "unbound-port",
                     element_id: e.id.clone(),
                     name: format!("{}.{}", e.name, pname),
-                    message: format!("port '{}' on '{}' is never used by a relationship", pname, e.name),
+                    message: format!(
+                        "port '{}' on '{}' is never used by a relationship",
+                        pname, e.name
+                    ),
                 });
             }
         }
@@ -126,8 +144,12 @@ mod tests {
         };
 
         let findings = lint(&ws);
-        assert!(findings.iter().any(|f| f.code == "orphan" && f.element_id == "1"));
-        assert!(findings.iter().any(|f| f.code == "placeholder" && f.element_id == "2"));
+        assert!(findings
+            .iter()
+            .any(|f| f.code == "orphan" && f.element_id == "1"));
+        assert!(findings
+            .iter()
+            .any(|f| f.code == "placeholder" && f.element_id == "2"));
         for f in &findings {
             assert!(!f.message.is_empty());
         }

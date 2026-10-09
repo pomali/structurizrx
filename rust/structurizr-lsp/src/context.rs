@@ -34,8 +34,12 @@ impl CompletionContext {
             "softwaresystem" => "softwareSystem",
             "container" => "container",
             "deploymentnode" => "deploymentNode",
-            "person" | "component" | "infrastructurenode" | "containerinstance"
-            | "softwaresysteminstance" | "element" => "element",
+            "person"
+            | "component"
+            | "infrastructurenode"
+            | "containerinstance"
+            | "softwaresysteminstance"
+            | "element" => "element",
             _ => return None,
         })
     }
@@ -150,7 +154,10 @@ mod tests {
 
     #[test]
     fn top_level_has_no_block() {
-        assert_eq!(context_at(&tokenize(DSL), Pos { line: 1, col: 1 }).block, None);
+        assert_eq!(
+            context_at(&tokenize(DSL), Pos { line: 1, col: 1 }).block,
+            None
+        );
     }
 
     #[test]
@@ -162,7 +169,10 @@ mod tests {
 
     #[test]
     fn workspace_body_does_not_want_identifiers() {
-        let ctx = context_at(&tokenize("workspace \"w\" {\n    \n}\n"), Pos { line: 2, col: 5 });
+        let ctx = context_at(
+            &tokenize("workspace \"w\" {\n    \n}\n"),
+            Pos { line: 2, col: 5 },
+        );
         assert_eq!(ctx.keyword_set(), Some("workspace"));
         assert!(!ctx.wants_identifiers());
     }

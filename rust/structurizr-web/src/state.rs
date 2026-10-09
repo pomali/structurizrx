@@ -135,7 +135,6 @@ impl AppState {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,8 +150,18 @@ mod tests {
             "body".to_string()
         };
 
-        let first = state.cached("ws", |c| c.review_json.clone(), |c, v| c.review_json = Some(v), &mut produce);
-        let second = state.cached("ws", |c| c.review_json.clone(), |c, v| c.review_json = Some(v), &mut produce);
+        let first = state.cached(
+            "ws",
+            |c| c.review_json.clone(),
+            |c, v| c.review_json = Some(v),
+            &mut produce,
+        );
+        let second = state.cached(
+            "ws",
+            |c| c.review_json.clone(),
+            |c, v| c.review_json = Some(v),
+            &mut produce,
+        );
 
         assert_eq!(builds.load(Ordering::SeqCst), 1, "the body is built once");
         assert_eq!(*first, *second);
@@ -168,9 +177,19 @@ mod tests {
             "body".to_string()
         };
 
-        state.cached("ws", |c| c.review_json.clone(), |c, v| c.review_json = Some(v), &mut produce);
+        state.cached(
+            "ws",
+            |c| c.review_json.clone(),
+            |c, v| c.review_json = Some(v),
+            &mut produce,
+        );
         state.invalidate_derived();
-        state.cached("ws", |c| c.review_json.clone(), |c, v| c.review_json = Some(v), &mut produce);
+        state.cached(
+            "ws",
+            |c| c.review_json.clone(),
+            |c, v| c.review_json = Some(v),
+            &mut produce,
+        );
 
         assert_eq!(builds.load(Ordering::SeqCst), 2);
     }
@@ -179,8 +198,18 @@ mod tests {
     fn workspaces_do_not_share_a_cache_entry() {
         let state = AppState::new(vec![]);
 
-        let a = state.cached("a", |c| c.review_json.clone(), |c, v| c.review_json = Some(v), || "A".to_string());
-        let b = state.cached("b", |c| c.review_json.clone(), |c, v| c.review_json = Some(v), || "B".to_string());
+        let a = state.cached(
+            "a",
+            |c| c.review_json.clone(),
+            |c, v| c.review_json = Some(v),
+            || "A".to_string(),
+        );
+        let b = state.cached(
+            "b",
+            |c| c.review_json.clone(),
+            |c, v| c.review_json = Some(v),
+            || "B".to_string(),
+        );
 
         assert_eq!(*a, "A");
         assert_eq!(*b, "B");

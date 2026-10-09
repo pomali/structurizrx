@@ -98,8 +98,16 @@ workspace "Lint" {
 fn lint_runs_and_reports_expected_codes() {
     let path = write_temp("lint.dsl", WS_LINT);
 
-    let output = bin().arg("lint").arg(&path).arg("--json").output().expect("run lint");
-    assert!(output.status.success(), "lint should exit 0 without --strict: {output:?}");
+    let output = bin()
+        .arg("lint")
+        .arg(&path)
+        .arg("--json")
+        .output()
+        .expect("run lint");
+    assert!(
+        output.status.success(),
+        "lint should exit 0 without --strict: {output:?}"
+    );
 
     let json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("lint --json must be valid JSON");
@@ -111,19 +119,34 @@ fn lint_runs_and_reports_expected_codes() {
         .iter()
         .map(|w| w["code"].as_str().unwrap())
         .collect();
-    assert!(warning_codes.contains(&"missing-description"), "{warning_codes:?}");
-    assert!(warning_codes.contains(&"missing-technology"), "{warning_codes:?}");
+    assert!(
+        warning_codes.contains(&"missing-description"),
+        "{warning_codes:?}"
+    );
+    assert!(
+        warning_codes.contains(&"missing-technology"),
+        "{warning_codes:?}"
+    );
     assert!(warning_codes.contains(&"cycle"), "{warning_codes:?}");
     assert!(json["blocking"].as_array().unwrap().is_empty());
 
     // Text mode also runs cleanly and mentions the cycle.
-    let text_output = bin().arg("lint").arg(&path).output().expect("run lint text");
+    let text_output = bin()
+        .arg("lint")
+        .arg(&path)
+        .output()
+        .expect("run lint text");
     assert!(text_output.status.success());
     let text = String::from_utf8_lossy(&text_output.stdout);
     assert!(text.contains("cycle"), "{text}");
 
     // --strict fails the build because of the warnings.
-    let strict = bin().arg("lint").arg(&path).arg("--strict").status().expect("run lint --strict");
+    let strict = bin()
+        .arg("lint")
+        .arg(&path)
+        .arg("--strict")
+        .status()
+        .expect("run lint --strict");
     assert!(!strict.success(), "strict lint should fail on warnings");
 }
 
@@ -131,7 +154,11 @@ fn lint_runs_and_reports_expected_codes() {
 fn clusters_prints_stats_line_and_json_parses() {
     let path = shop_dsl();
 
-    let text_output = bin().arg("clusters").arg(&path).output().expect("run clusters");
+    let text_output = bin()
+        .arg("clusters")
+        .arg(&path)
+        .output()
+        .expect("run clusters");
     assert!(text_output.status.success(), "{text_output:?}");
     let text = String::from_utf8_lossy(&text_output.stdout);
     assert!(text.contains("elements"), "{text}");
@@ -184,8 +211,8 @@ fn graph_dot_starts_with_digraph() {
         .output()
         .expect("run graph --format json");
     assert!(json_output.status.success());
-    let json: serde_json::Value =
-        serde_json::from_slice(&json_output.stdout).expect("graph --format json must be valid JSON");
+    let json: serde_json::Value = serde_json::from_slice(&json_output.stdout)
+        .expect("graph --format json must be valid JSON");
     assert!(json["nodes"].is_array());
 }
 
@@ -201,7 +228,10 @@ fn diff_against_reports_the_added_element_and_exit_codes() {
         .arg(&b)
         .output()
         .expect("run diff --against");
-    assert!(output.status.success(), "diff without --fail-on-change exits 0: {output:?}");
+    assert!(
+        output.status.success(),
+        "diff without --fail-on-change exits 0: {output:?}"
+    );
     let text = String::from_utf8_lossy(&output.stdout);
     assert!(text.contains("Shop/Database"), "{text}");
     assert!(text.contains('+'), "{text}");
@@ -227,7 +257,10 @@ fn diff_against_reports_the_added_element_and_exit_codes() {
         .arg("--fail-on-change")
         .status()
         .expect("run diff --fail-on-change");
-    assert!(!fail_on_change.success(), "diff --fail-on-change must exit 1 when something changed");
+    assert!(
+        !fail_on_change.success(),
+        "diff --fail-on-change must exit 1 when something changed"
+    );
 
     // No changes: comparing a workspace against itself.
     let no_change = bin()

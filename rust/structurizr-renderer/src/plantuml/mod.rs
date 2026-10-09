@@ -21,7 +21,10 @@ impl DiagramExporter for PlantUmlExporter {
 
         if let Some(sl_views) = &views.system_landscape_views {
             for v in sl_views {
-                let key = v.key.clone().unwrap_or_else(|| "SystemLandscape".to_string());
+                let key = v
+                    .key
+                    .clone()
+                    .unwrap_or_else(|| "SystemLandscape".to_string());
                 let content = render_system_landscape(v, workspace);
                 diagrams.push(Diagram::new(key, content, DiagramFormat::PlantUml));
             }
@@ -54,7 +57,10 @@ fn render_system_context(view: &SystemContextView, workspace: &Workspace) -> Str
         for p in people {
             let alias = safe_alias(&p.id);
             let desc = p.description.as_deref().unwrap_or("");
-            out.push_str(&format!("Person({}, \"{}\", \"{}\")\n", alias, p.name, desc));
+            out.push_str(&format!(
+                "Person({}, \"{}\", \"{}\")\n",
+                alias, p.name, desc
+            ));
         }
     }
 
@@ -62,7 +68,10 @@ fn render_system_context(view: &SystemContextView, workspace: &Workspace) -> Str
         for ss in systems {
             let alias = safe_alias(&ss.id);
             let desc = ss.description.as_deref().unwrap_or("");
-            out.push_str(&format!("System({}, \"{}\", \"{}\")\n", alias, ss.name, desc));
+            out.push_str(&format!(
+                "System({}, \"{}\", \"{}\")\n",
+                alias, ss.name, desc
+            ));
         }
     }
 
@@ -87,7 +96,10 @@ fn render_system_landscape(view: &SystemLandscapeView, workspace: &Workspace) ->
         for p in people {
             let alias = safe_alias(&p.id);
             let desc = p.description.as_deref().unwrap_or("");
-            out.push_str(&format!("Person({}, \"{}\", \"{}\")\n", alias, p.name, desc));
+            out.push_str(&format!(
+                "Person({}, \"{}\", \"{}\")\n",
+                alias, p.name, desc
+            ));
         }
     }
 
@@ -95,7 +107,10 @@ fn render_system_landscape(view: &SystemLandscapeView, workspace: &Workspace) ->
         for ss in systems {
             let alias = safe_alias(&ss.id);
             let desc = ss.description.as_deref().unwrap_or("");
-            out.push_str(&format!("System({}, \"{}\", \"{}\")\n", alias, ss.name, desc));
+            out.push_str(&format!(
+                "System({}, \"{}\", \"{}\")\n",
+                alias, ss.name, desc
+            ));
         }
     }
 
@@ -120,14 +135,21 @@ fn render_container_view(view: &ContainerView, workspace: &Workspace) -> String 
         for p in people {
             let alias = safe_alias(&p.id);
             let desc = p.description.as_deref().unwrap_or("");
-            out.push_str(&format!("Person({}, \"{}\", \"{}\")\n", alias, p.name, desc));
+            out.push_str(&format!(
+                "Person({}, \"{}\", \"{}\")\n",
+                alias, p.name, desc
+            ));
         }
     }
 
     if let Some(systems) = &model.software_systems {
         for ss in systems {
             if ss.id == view.software_system_id {
-                out.push_str(&format!("System_Boundary({}, \"{}\") {{\n", safe_alias(&ss.id), ss.name));
+                out.push_str(&format!(
+                    "System_Boundary({}, \"{}\") {{\n",
+                    safe_alias(&ss.id),
+                    ss.name
+                ));
                 if let Some(containers) = &ss.containers {
                     for c in containers {
                         let alias = safe_alias(&c.id);
@@ -143,7 +165,10 @@ fn render_container_view(view: &ContainerView, workspace: &Workspace) -> String 
             } else {
                 let alias = safe_alias(&ss.id);
                 let desc = ss.description.as_deref().unwrap_or("");
-                out.push_str(&format!("System_Ext({}, \"{}\", \"{}\")\n", alias, ss.name, desc));
+                out.push_str(&format!(
+                    "System_Ext({}, \"{}\", \"{}\")\n",
+                    alias, ss.name, desc
+                ));
             }
         }
     }
@@ -210,7 +235,10 @@ fn emit_rel(rel: &Relationship, out: &mut String) {
     if tech_full.is_empty() {
         out.push_str(&format!("Rel({}, {}, \"{}\")\n", src, dst, desc));
     } else {
-        out.push_str(&format!("Rel({}, {}, \"{}\", \"{}\")\n", src, dst, desc, tech_full));
+        out.push_str(&format!(
+            "Rel({}, {}, \"{}\", \"{}\")\n",
+            src, dst, desc, tech_full
+        ));
     }
 }
 
@@ -241,8 +269,16 @@ mod tests {
         let mut workspace = Workspace::default();
         workspace.name = "Test".to_string();
 
-        let person = Person { id: "1".to_string(), name: "User".to_string(), ..Default::default() };
-        let system = SoftwareSystem { id: "2".to_string(), name: "System".to_string(), ..Default::default() };
+        let person = Person {
+            id: "1".to_string(),
+            name: "User".to_string(),
+            ..Default::default()
+        };
+        let system = SoftwareSystem {
+            id: "2".to_string(),
+            name: "System".to_string(),
+            ..Default::default()
+        };
 
         workspace.model.people = Some(vec![person]);
         workspace.model.software_systems = Some(vec![system]);

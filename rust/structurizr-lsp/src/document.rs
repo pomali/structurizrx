@@ -3,10 +3,10 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use ls_types::Diagnostic;
 use structurizr_dsl::lexer::{tokenize, Pos, Spanned};
 use structurizr_dsl::{IdentifierRegister, Parsed, SourceLocation, SourceLocations};
 use structurizr_model::Workspace;
-use ls_types::Diagnostic;
 
 use crate::diagnostics;
 use crate::index::{self, Declarations};
@@ -57,7 +57,11 @@ impl DocumentState {
             None => structurizr_dsl::parse_str_detailed(&self.text),
         };
         match parsed {
-            Ok(Parsed { workspace, identifiers, locations }) => {
+            Ok(Parsed {
+                workspace,
+                identifiers,
+                locations,
+            }) => {
                 // Model id -> declaration position in this document (anonymous
                 // elements and relationships included), to anchor validation
                 // diagnostics.
@@ -65,7 +69,13 @@ impl DocumentState {
                     .iter()
                     .filter(|(_, location)| self.is_here(location))
                     .map(|(id, location)| {
-                        (id.to_string(), Pos { line: location.line, col: location.col })
+                        (
+                            id.to_string(),
+                            Pos {
+                                line: location.line,
+                                col: location.col,
+                            },
+                        )
                     })
                     .collect();
                 let diags = diagnostics::validation_diagnostics(&workspace, &id_to_pos);

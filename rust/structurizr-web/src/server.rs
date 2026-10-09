@@ -1,5 +1,6 @@
 //! HTTP server and route handlers.
 
+use axum::extract::ws::{Message, WebSocket};
 use axum::{
     extract::{Path, RawQuery, State, WebSocketUpgrade},
     http::{header, StatusCode},
@@ -7,7 +8,6 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use axum::extract::ws::{Message, WebSocket};
 
 use structurizr_renderer::{exporter::DiagramExporter, mermaid::MermaidExporter, svg::SvgExporter};
 
@@ -43,9 +43,18 @@ pub fn build_router(state: AppState) -> Router {
         .route("/workspace/{name}/diff", get(diff_handler))
         .route("/api/workspaces", get(api_workspaces_handler))
         .route("/api/workspace/{name}", get(api_workspace_handler))
-        .route("/api/workspace/{name}/decisions", get(api_decisions_handler))
-        .route("/api/workspace/{name}/decisions/{id}", get(api_decision_handler))
-        .route("/api/workspace/{name}/diagram/{key}/svg", get(api_diagram_svg_handler))
+        .route(
+            "/api/workspace/{name}/decisions",
+            get(api_decisions_handler),
+        )
+        .route(
+            "/api/workspace/{name}/decisions/{id}",
+            get(api_decision_handler),
+        )
+        .route(
+            "/api/workspace/{name}/diagram/{key}/svg",
+            get(api_diagram_svg_handler),
+        )
         .route(
             "/api/workspace/{name}/diagram/{key}/mermaid",
             get(api_diagram_mermaid_handler),
@@ -53,14 +62,20 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/workspace/{name}/graph", get(api_graph_handler))
         .route("/api/workspace/{name}/review", get(api_review_handler))
         .route("/api/workspace/{name}/clusters", get(api_clusters_handler))
-        .route("/api/workspace/{name}/revisions", get(api_revisions_handler))
+        .route(
+            "/api/workspace/{name}/revisions",
+            get(api_revisions_handler),
+        )
         .route("/api/workspace/{name}/diff", get(api_diff_handler))
         .route("/api/workspace/{name}/digest", get(api_digest_handler))
         .route("/api/workspace/{name}/query", get(api_query_handler))
         .route("/api/workspace/{name}/locate", get(api_locate_handler))
         .route("/llms.txt", get(llms_txt_handler))
         .route("/docs", get(|| async { Redirect::permanent("/docs/") }))
-        .route("/docs/", get(|| async { docs_asset_response("index.html") }))
+        .route(
+            "/docs/",
+            get(|| async { docs_asset_response("index.html") }),
+        )
         .route("/docs/{*path}", get(docs_handler))
         .route("/static/{*path}", get(static_handler))
         .route("/ws", get(ws_handler))
@@ -92,7 +107,10 @@ async fn no_store_dynamic_responses(
 /// The one-page DSL extension cheat sheet (spec §9.4), for agents and humans.
 async fn llms_txt_handler() -> ([(axum::http::HeaderName, &'static str); 1], &'static str) {
     (
-        [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; charset=utf-8",
+        )],
         include_str!("../../../llms.txt"),
     )
 }
@@ -220,7 +238,11 @@ async fn api_workspace_handler(
             Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
         }
     } else {
-        (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response()
+        (
+            StatusCode::NOT_FOUND,
+            format!("Workspace '{}' not found", name),
+        )
+            .into_response()
     }
 }
 
@@ -247,7 +269,11 @@ async fn api_decisions_handler(
             Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
         }
     } else {
-        (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response()
+        (
+            StatusCode::NOT_FOUND,
+            format!("Workspace '{}' not found", name),
+        )
+            .into_response()
     }
 }
 
@@ -281,10 +307,18 @@ async fn api_decision_handler(
                     Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
                 }
             }
-            None => (StatusCode::NOT_FOUND, format!("Decision '{}' not found", id)).into_response(),
+            None => (
+                StatusCode::NOT_FOUND,
+                format!("Decision '{}' not found", id),
+            )
+                .into_response(),
         }
     } else {
-        (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response()
+        (
+            StatusCode::NOT_FOUND,
+            format!("Workspace '{}' not found", name),
+        )
+            .into_response()
     }
 }
 
@@ -296,10 +330,7 @@ async fn api_decision_handler(
 ///
 /// Served from [`AppState::cached`]: the body is the same for every reader
 /// until the workspace file changes, and building it costs a full index pass.
-async fn api_review_handler(
-    State(state): State<AppState>,
-    Path(name): Path<String>,
-) -> Response {
+async fn api_review_handler(State(state): State<AppState>, Path(name): Path<String>) -> Response {
     let workspace = {
         let workspaces = state.workspaces.lock().unwrap();
         match workspaces.iter().find(|e| e.name == name) {
@@ -416,7 +447,11 @@ async fn api_revisions_handler(
     Path(name): Path<String>,
 ) -> Response {
     let Some(path) = workspace_path(&state, &name) else {
-        return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            format!("Workspace '{}' not found", name),
+        )
+            .into_response();
     };
 
     if !crate::git::is_tracked(&path) {
@@ -472,9 +507,15 @@ async fn api_diff_handler(
     Path(name): Path<String>,
     axum::extract::Query(params): axum::extract::Query<DiffParams>,
 ) -> Response {
-    let (Some(path), Some(current)) = (workspace_path(&state, &name), current_workspace(&state, &name))
-    else {
-        return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
+    let (Some(path), Some(current)) = (
+        workspace_path(&state, &name),
+        current_workspace(&state, &name),
+    ) else {
+        return (
+            StatusCode::NOT_FOUND,
+            format!("Workspace '{}' not found", name),
+        )
+            .into_response();
     };
 
     let from = params.from.unwrap_or_else(|| "HEAD".to_string());
@@ -557,13 +598,14 @@ fn current_workspace(state: &AppState, name: &str) -> Option<structurizr_model::
         .map(|e| e.workspace.clone())
 }
 
-async fn api_digest_handler(
-    State(state): State<AppState>,
-    Path(name): Path<String>,
-) -> Response {
+async fn api_digest_handler(State(state): State<AppState>, Path(name): Path<String>) -> Response {
     let workspaces = state.workspaces.lock().unwrap();
     let Some(entry) = workspaces.iter().find(|e| e.name == name) else {
-        return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            format!("Workspace '{}' not found", name),
+        )
+            .into_response();
     };
     (
         StatusCode::OK,
@@ -578,13 +620,14 @@ async fn api_digest_handler(
 /// link. Backs the universe-graph page.
 ///
 /// `GET /api/workspace/{name}/graph`
-async fn api_graph_handler(
-    State(state): State<AppState>,
-    Path(name): Path<String>,
-) -> Response {
+async fn api_graph_handler(State(state): State<AppState>, Path(name): Path<String>) -> Response {
     let workspaces = state.workspaces.lock().unwrap();
     let Some(entry) = workspaces.iter().find(|e| e.name == name) else {
-        return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            format!("Workspace '{}' not found", name),
+        )
+            .into_response();
     };
     Json(structurizr_query::graph(&entry.workspace)).into_response()
 }
@@ -607,7 +650,11 @@ async fn api_query_handler(
 ) -> Response {
     let workspaces = state.workspaces.lock().unwrap();
     let Some(entry) = workspaces.iter().find(|e| e.name == name) else {
-        return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            format!("Workspace '{}' not found", name),
+        )
+            .into_response();
     };
     match structurizr_query::query(&params.expr, &entry.workspace) {
         Ok(selection) => {
@@ -638,11 +685,16 @@ async fn api_locate_handler(
 ) -> Response {
     let workspaces = state.workspaces.lock().unwrap();
     let Some(entry) = workspaces.iter().find(|e| e.name == name) else {
-        return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            format!("Workspace '{}' not found", name),
+        )
+            .into_response();
     };
-    let references = structurizr_query::parse_viewer_link(&format!("#{}", query.unwrap_or_default()))
-        .map(|link| link.selection)
-        .unwrap_or_default();
+    let references =
+        structurizr_query::parse_viewer_link(&format!("#{}", query.unwrap_or_default()))
+            .map(|link| link.selection)
+            .unwrap_or_default();
     let catalog = structurizr_query::Catalog::new(&entry.workspace);
     let located = crate::locate::locate(
         &catalog,
@@ -665,7 +717,13 @@ async fn api_diagram_svg_handler(
     State(state): State<AppState>,
     Path((name, key)): Path<(String, String)>,
 ) -> Response {
-    render_diagram(&state, &name, &key, &SvgExporter, "image/svg+xml; charset=utf-8")
+    render_diagram(
+        &state,
+        &name,
+        &key,
+        &SvgExporter,
+        "image/svg+xml; charset=utf-8",
+    )
 }
 
 /// The Mermaid source for a single diagram.
@@ -678,7 +736,13 @@ async fn api_diagram_mermaid_handler(
     State(state): State<AppState>,
     Path((name, key)): Path<(String, String)>,
 ) -> Response {
-    render_diagram(&state, &name, &key, &MermaidExporter, "text/plain; charset=utf-8")
+    render_diagram(
+        &state,
+        &name,
+        &key,
+        &MermaidExporter,
+        "text/plain; charset=utf-8",
+    )
 }
 
 /// Look up a workspace, export it with `exporter` and return the diagram whose
@@ -692,7 +756,11 @@ fn render_diagram(
 ) -> Response {
     let workspaces = state.workspaces.lock().unwrap();
     let Some(entry) = workspaces.iter().find(|e| e.name == name) else {
-        return (StatusCode::NOT_FOUND, format!("Workspace '{}' not found", name)).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            format!("Workspace '{}' not found", name),
+        )
+            .into_response();
     };
 
     let diagrams = exporter.export_workspace(&entry.workspace);
@@ -737,7 +805,11 @@ fn docs_asset_response(path: &str) -> Response {
              from the repository root, then restart <code>structurizrx serve</code>.</p>",
         )
             .into_response(),
-        None => (StatusCode::NOT_FOUND, format!("Doc page not found: {}", path)).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            format!("Doc page not found: {}", path),
+        )
+            .into_response(),
     }
 }
 
@@ -786,10 +858,7 @@ fn mime_from_path(path: &str) -> &'static str {
 
 // ---- WebSocket live reload ----
 
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| ws_session(socket, state))
 }
 

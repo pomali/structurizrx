@@ -76,7 +76,11 @@ pub fn encode(tokens: &[Spanned], declarations: &Declarations) -> Vec<SemanticTo
         let col = t.pos.col.saturating_sub(1) as u32;
         out.push(SemanticToken {
             delta_line: line - prev_line,
-            delta_start: if line == prev_line { col - prev_col } else { col },
+            delta_start: if line == prev_line {
+                col - prev_col
+            } else {
+                col
+            },
             length: len as u32,
             token_type,
             token_modifiers_bitset: 0,
@@ -104,7 +108,11 @@ mod tests {
     fn classifies_keywords_and_identifiers() {
         let out = encode_str("model {\n    user = person \"User\"\n}\n");
         let types: Vec<u32> = out.iter().map(|t| t.token_type).collect();
-        assert_eq!(types, vec![KEYWORD, VARIABLE, KEYWORD], "model, user, person");
+        assert_eq!(
+            types,
+            vec![KEYWORD, VARIABLE, KEYWORD],
+            "model, user, person"
+        );
     }
 
     #[test]

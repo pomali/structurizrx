@@ -19,7 +19,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use structurizr_model::{
-    Component, Container, CustomElement, Model, Perspective, Person, Relationship,
+    Component, Container, CustomElement, Model, Person, Perspective, Relationship,
     RelationshipKind, SoftwareSystem, Status, Workspace,
 };
 use structurizr_query::{query, QueryError};
@@ -142,8 +142,14 @@ fn ws() -> Workspace {
             m
         }),
         perspectives: Some(vec![
-            Perspective { name: "performance".to_string(), ..Default::default() },
-            Perspective { name: "security".to_string(), ..Default::default() },
+            Perspective {
+                name: "performance".to_string(),
+                ..Default::default()
+            },
+            Perspective {
+                name: "security".to_string(),
+                ..Default::default()
+            },
         ]),
         containers: Some(vec![api, db]),
         relationships: Some(vec![Relationship {
@@ -271,10 +277,11 @@ fn element_kind_via_property_alias_queue() {
 
 #[test]
 fn element_kind_ne() {
-    let all = ids(&["user1", "user2", "shop", "billing", "api", "db", "router", "bus"]);
+    let all = ids(&[
+        "user1", "user2", "shop", "billing", "api", "db", "router", "bus",
+    ]);
     let containers = ids(&["api", "db"]);
-    let expected: BTreeSet<String> =
-        all.difference(&containers).cloned().collect();
+    let expected: BTreeSet<String> = all.difference(&containers).cloned().collect();
 
     let sel = query("element.kind!=container", &ws()).unwrap();
     assert_eq!(sel.elements, expected);
@@ -451,8 +458,12 @@ fn relationship_perspective() {
 
 #[test]
 fn relationship_kind_ne() {
-    let all_rels =
-        ids(&["r_user1_shop", "r_user2_billing", "r_shop_billing", "r_api_db"]);
+    let all_rels = ids(&[
+        "r_user1_shop",
+        "r_user2_billing",
+        "r_shop_billing",
+        "r_api_db",
+    ]);
     let async_rels = ids(&["r_shop_billing"]);
     let expected: BTreeSet<String> = all_rels.difference(&async_rels).cloned().collect();
 
@@ -467,10 +478,15 @@ fn relationship_kind_ne() {
 
 #[test]
 fn star_all() {
-    let all_elems =
-        ids(&["user1", "user2", "shop", "billing", "api", "db", "router", "bus"]);
-    let all_rels =
-        ids(&["r_user1_shop", "r_user2_billing", "r_shop_billing", "r_api_db"]);
+    let all_elems = ids(&[
+        "user1", "user2", "shop", "billing", "api", "db", "router", "bus",
+    ]);
+    let all_rels = ids(&[
+        "r_user1_shop",
+        "r_user2_billing",
+        "r_shop_billing",
+        "r_api_db",
+    ]);
 
     let sel = query("*", &ws()).unwrap();
     assert_eq!(sel.elements, all_elems);
@@ -507,10 +523,7 @@ fn neighborhood_depth_one_default() {
 fn neighborhood_depth_two() {
     // At depth 2 we also reach user2 (billing → user2 via r_user2_billing)
     let sel = query("->shop->2", &ws()).unwrap();
-    assert_eq!(
-        sel.elements,
-        ids(&["shop", "user1", "billing", "user2"])
-    );
+    assert_eq!(sel.elements, ids(&["shop", "user1", "billing", "user2"]));
     assert_eq!(
         sel.relationships,
         ids(&["r_user1_shop", "r_shop_billing", "r_user2_billing"])
@@ -538,7 +551,11 @@ fn neighborhood_unknown_target() {
 #[test]
 fn and_intersects_element_sets() {
     // containers that are also implemented
-    let sel = query("element.kind==container && element.status==implemented", &ws()).unwrap();
+    let sel = query(
+        "element.kind==container && element.status==implemented",
+        &ws(),
+    )
+    .unwrap();
     assert_eq!(sel.elements, ids(&["api", "db"]));
 }
 
@@ -565,10 +582,13 @@ fn or_unions_element_and_relationship_sets() {
 #[test]
 fn not_complements_both_universes() {
     // !element.kind==container → all elements except containers, PLUS all relationships
-    let all_rels =
-        ids(&["r_user1_shop", "r_user2_billing", "r_shop_billing", "r_api_db"]);
-    let non_containers =
-        ids(&["user1", "user2", "shop", "billing", "router", "bus"]);
+    let all_rels = ids(&[
+        "r_user1_shop",
+        "r_user2_billing",
+        "r_shop_billing",
+        "r_api_db",
+    ]);
+    let non_containers = ids(&["user1", "user2", "shop", "billing", "router", "bus"]);
 
     let sel = query("!(element.kind==container)", &ws()).unwrap();
     assert_eq!(sel.elements, non_containers);
@@ -699,7 +719,10 @@ fn unknown_element_path_parse_error() {
             // valid list should name recognised paths
             assert!(valid.contains("tag"), "valid list should mention 'tag'");
             assert!(valid.contains("kind"), "valid list should mention 'kind'");
-            assert!(valid.contains("status"), "valid list should mention 'status'");
+            assert!(
+                valid.contains("status"),
+                "valid list should mention 'status'"
+            );
         }
         other => panic!("expected UnknownPath, got {other:?}"),
     }

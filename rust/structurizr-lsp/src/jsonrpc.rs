@@ -72,18 +72,22 @@ impl Dispatcher {
                     .core
                     .references(&p.text_document.uri, p.position, include_declaration))
             }),
-            "textDocument/documentHighlight" => decode::<DocumentHighlightParams>(params).map(|p| {
-                let p = p.text_document_position_params;
-                json!(self
-                    .core
-                    .document_highlight(&p.text_document.uri, p.position))
-            }),
+            "textDocument/documentHighlight" => {
+                decode::<DocumentHighlightParams>(params).map(|p| {
+                    let p = p.text_document_position_params;
+                    json!(self
+                        .core
+                        .document_highlight(&p.text_document.uri, p.position))
+                })
+            }
             "textDocument/prepareRename" => decode::<TextDocumentPositionParams>(params)
                 .map(|p| json!(self.core.prepare_rename(&p.text_document.uri, p.position))),
             "textDocument/rename" => decode::<RenameParams>(params).map(|p| {
                 let new_name = p.new_name;
                 let p = p.text_document_position;
-                json!(self.core.rename(&p.text_document.uri, p.position, &new_name))
+                json!(self
+                    .core
+                    .rename(&p.text_document.uri, p.position, &new_name))
             }),
             "textDocument/semanticTokens/full" => decode::<SemanticTokensParams>(params)
                 .map(|p| json!(self.core.semantic_tokens(&p.text_document.uri))),
@@ -383,8 +387,9 @@ mod tests {
 
     #[test]
     fn unknown_request_gets_a_method_not_found_error() {
-        let out = Dispatcher::new()
-            .handle(&json!({"jsonrpc": "2.0", "id": 9, "method": "textDocument/formatting"}).to_string());
+        let out = Dispatcher::new().handle(
+            &json!({"jsonrpc": "2.0", "id": 9, "method": "textDocument/formatting"}).to_string(),
+        );
         let response: Value = serde_json::from_str(&out[0]).unwrap();
         assert_eq!(response["error"]["code"], METHOD_NOT_FOUND);
     }
@@ -427,13 +432,24 @@ mod tests {
             json!({ "textDocument": { "uri": "file:///w.dsl" } }),
         );
         let names = |symbols: &Value| -> Vec<String> {
-            symbols.as_array().unwrap().iter().map(|s| s["name"].as_str().unwrap().to_string()).collect()
+            symbols
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s["name"].as_str().unwrap().to_string())
+                .collect()
         };
         let symbols = &response;
         assert_eq!(names(symbols), ["User", "S", "User → C"]);
         // The anonymous system spans its block, and holds what is declared in it.
         let system = &symbols[1];
-        assert_eq!((system["range"]["start"]["line"].as_u64(), system["range"]["end"]["line"].as_u64()), (Some(3), Some(6)));
+        assert_eq!(
+            (
+                system["range"]["start"]["line"].as_u64(),
+                system["range"]["end"]["line"].as_u64()
+            ),
+            (Some(3), Some(6))
+        );
         assert_eq!(names(&system["children"]), ["C", "S → User"]);
     }
 
@@ -441,7 +457,11 @@ mod tests {
     fn includes_resolve_for_diagnostics_and_definitions() {
         let dir = std::env::temp_dir().join(format!("sx-lsp-include-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("parts.dsl"), "billing = softwareSystem \"Billing\"\n").unwrap();
+        std::fs::write(
+            dir.join("parts.dsl"),
+            "billing = softwareSystem \"Billing\"\n",
+        )
+        .unwrap();
         let main = dir.join("main.dsl");
         let text = "workspace {\n  model {\n    !include parts.dsl\n    s = softwareSystem \"S\"\n    s -> billing \"charges\"\n  }\n}\n";
         std::fs::write(&main, text).unwrap();
@@ -449,7 +469,11 @@ mod tests {
 
         let out = open_at(&dispatcher_for_include(), &uri, text);
         let notification: Value = serde_json::from_str(&out[0]).unwrap();
-        assert_eq!(notification["params"]["diagnostics"], json!([]), "billing resolves through the include");
+        assert_eq!(
+            notification["params"]["diagnostics"],
+            json!([]),
+            "billing resolves through the include"
+        );
 
         let dispatcher = Dispatcher::new();
         open_at(&dispatcher, &uri, text);
@@ -459,7 +483,10 @@ mod tests {
             json!({ "textDocument": { "uri": uri }, "position": { "line": 4, "character": 9 } }),
         );
         let location = &response;
-        assert!(location["uri"].as_str().unwrap().ends_with("/parts.dsl"), "{location}");
+        assert!(
+            location["uri"].as_str().unwrap().ends_with("/parts.dsl"),
+            "{location}"
+        );
         assert_eq!(location["range"]["start"]["line"], 0);
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -470,19 +497,31 @@ mod tests {
 
     #[test]
     fn errors_in_an_included_file_mark_the_include() {
-        let dir = std::env::temp_dir().join(format!("sx-lsp-broken-include-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("sx-lsp-broken-include-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("broken.dsl"), "x = softwareSystem \"X\"\nx -> nowhere \"uses\"\n").unwrap();
+        std::fs::write(
+            dir.join("broken.dsl"),
+            "x = softwareSystem \"X\"\nx -> nowhere \"uses\"\n",
+        )
+        .unwrap();
         let main = dir.join("main.dsl");
         let text = "workspace {\n  model {\n    !include broken.dsl\n  }\n}\n";
         std::fs::write(&main, text).unwrap();
 
-        let out = open_at(&Dispatcher::new(), &format!("file://{}", main.display()), text);
+        let out = open_at(
+            &Dispatcher::new(),
+            &format!("file://{}", main.display()),
+            text,
+        );
         let notification: Value = serde_json::from_str(&out[0]).unwrap();
         let diagnostics = notification["params"]["diagnostics"].as_array().unwrap();
         assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
         assert_eq!(diagnostics[0]["range"]["start"]["line"], 2);
-        assert!(diagnostics[0]["message"].as_str().unwrap().contains("broken.dsl"));
+        assert!(diagnostics[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("broken.dsl"));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

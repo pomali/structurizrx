@@ -28,7 +28,11 @@ pub fn export(workspace: &Workspace, output: &Path) -> Result<()> {
     }
 
     let title = html_escape(&workspace.name);
-    let description = workspace.description.as_deref().map(html_escape).unwrap_or_default();
+    let description = workspace
+        .description
+        .as_deref()
+        .map(html_escape)
+        .unwrap_or_default();
     let report = format!(
         r#"<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -72,7 +76,11 @@ fn viewer_page(workspace: &Workspace) -> String {
 }
 
 /// Render the standalone interactive relationship graph page.
-pub fn graph_page(workspace: &Workspace, overview_href: &str, asset_prefix: &str) -> Result<String> {
+pub fn graph_page(
+    workspace: &Workspace,
+    overview_href: &str,
+    asset_prefix: &str,
+) -> Result<String> {
     let title = html_escape(&workspace.name);
     let workspace_json = serde_json::to_string(workspace)?.replace('<', "\\u003c");
     Ok(format!(
@@ -129,12 +137,22 @@ fn copy_dir(source: &Path, target: &Path) -> Result<()> {
 }
 fn safe_filename(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
 fn html_escape(value: &str) -> String {
-    value.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn base_css() -> &'static str {

@@ -25,7 +25,9 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use petgraph::algo::{articulation_points::articulation_points, bridges, connected_components, page_rank, tarjan_scc};
+use petgraph::algo::{
+    articulation_points::articulation_points, bridges, connected_components, page_rank, tarjan_scc,
+};
 use petgraph::graph::{DiGraph, NodeIndex, UnGraph};
 use petgraph::visit::EdgeRef;
 use serde::Serialize;
@@ -296,7 +298,10 @@ pub fn cluster(workspace: &Workspace, options: &ClusterOptions) -> ClusterAnalys
 
     let mut bridge_list: Vec<Bridge> = bridges(&undirected)
         .map(|e| {
-            let (s, t) = (members[e.source().index()].clone(), members[e.target().index()].clone());
+            let (s, t) = (
+                members[e.source().index()].clone(),
+                members[e.target().index()].clone(),
+            );
             Bridge {
                 source_name: idx.element(&s).map(|x| x.name.clone()).unwrap_or_default(),
                 target_name: idx.element(&t).map(|x| x.name.clone()).unwrap_or_default(),
@@ -397,9 +402,7 @@ fn project_edges(
         }
         let direct = r.source_id == source && r.dest_id == target;
         let key = (position[source.as_str()], position[target.as_str()]);
-        let entry = collapsed
-            .entry(key)
-            .or_insert((source, target, 0, true));
+        let entry = collapsed.entry(key).or_insert((source, target, 0, true));
         entry.2 += 1;
         entry.3 &= !direct;
     }
@@ -714,7 +717,10 @@ mod tests {
     /// Two triangles joined by a single edge: an unambiguous two-community
     /// graph, where the joining edge is also the only bridge.
     fn barbell() -> Workspace {
-        let mut ws = Workspace { name: "T".into(), ..Default::default() };
+        let mut ws = Workspace {
+            name: "T".into(),
+            ..Default::default()
+        };
         ws.model = Model {
             software_systems: Some(vec![SoftwareSystem {
                 id: "1".into(),
@@ -735,7 +741,12 @@ mod tests {
     }
 
     fn community_of<'a>(analysis: &'a ClusterAnalysis, id: &str) -> usize {
-        analysis.nodes.iter().find(|n| n.id == id).unwrap().community
+        analysis
+            .nodes
+            .iter()
+            .find(|n| n.id == id)
+            .unwrap()
+            .community
     }
 
     #[test]
@@ -763,7 +774,10 @@ mod tests {
         let b = cluster(&ws, &ClusterOptions::default());
 
         let signature = |x: &ClusterAnalysis| -> Vec<(String, usize)> {
-            x.nodes.iter().map(|n| (n.id.clone(), n.community)).collect()
+            x.nodes
+                .iter()
+                .map(|n| (n.id.clone(), n.community))
+                .collect()
         };
         assert_eq!(signature(&a), signature(&b));
         assert_eq!(a.modularity, b.modularity);
@@ -847,7 +861,10 @@ mod tests {
 
     #[test]
     fn implied_edges_roll_component_relationships_up_to_containers() {
-        let mut ws = Workspace { name: "T".into(), ..Default::default() };
+        let mut ws = Workspace {
+            name: "T".into(),
+            ..Default::default()
+        };
         ws.model = Model {
             software_systems: Some(vec![SoftwareSystem {
                 id: "1".into(),
@@ -889,18 +906,27 @@ mod tests {
         assert_eq!(rolled.edges.len(), 1);
         assert_eq!(rolled.edges[0].source_id, "a");
         assert_eq!(rolled.edges[0].target_id, "b");
-        assert!(rolled.edges[0].implied, "no container-to-container relationship was declared");
+        assert!(
+            rolled.edges[0].implied,
+            "no container-to-container relationship was declared"
+        );
 
         let direct_only = cluster(
             &ws,
-            &ClusterOptions { implied: false, ..Default::default() },
+            &ClusterOptions {
+                implied: false,
+                ..Default::default()
+            },
         );
         assert!(direct_only.edges.is_empty());
     }
 
     #[test]
     fn parallel_relationships_collapse_into_one_weighted_edge() {
-        let mut ws = Workspace { name: "T".into(), ..Default::default() };
+        let mut ws = Workspace {
+            name: "T".into(),
+            ..Default::default()
+        };
         ws.model = Model {
             software_systems: Some(vec![SoftwareSystem {
                 id: "1".into(),
@@ -929,20 +955,29 @@ mod tests {
 
         let excluded = cluster(
             &ws,
-            &ClusterOptions { exclude_tags: vec!["Legacy".into()], ..Default::default() },
+            &ClusterOptions {
+                exclude_tags: vec!["Legacy".into()],
+                ..Default::default()
+            },
         );
         assert!(!excluded.nodes.iter().any(|n| n.id == "a"));
 
         let included = cluster(
             &ws,
-            &ClusterOptions { include_tags: vec!["Legacy".into()], ..Default::default() },
+            &ClusterOptions {
+                include_tags: vec!["Legacy".into()],
+                ..Default::default()
+            },
         );
         assert_eq!(included.nodes.len(), 1);
     }
 
     #[test]
     fn an_empty_selection_yields_an_empty_analysis_rather_than_panicking() {
-        let ws = Workspace { name: "T".into(), ..Default::default() };
+        let ws = Workspace {
+            name: "T".into(),
+            ..Default::default()
+        };
         let a = cluster(&ws, &ClusterOptions::default());
         assert!(a.nodes.is_empty());
         assert_eq!(a.components, 0);
@@ -952,7 +987,10 @@ mod tests {
     #[test]
     fn betweenness_peaks_on_the_node_every_path_crosses() {
         // A -> B -> C: B is on the only path between the other two.
-        let mut ws = Workspace { name: "T".into(), ..Default::default() };
+        let mut ws = Workspace {
+            name: "T".into(),
+            ..Default::default()
+        };
         ws.model = Model {
             software_systems: Some(vec![SoftwareSystem {
                 id: "1".into(),
