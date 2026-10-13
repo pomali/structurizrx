@@ -77,18 +77,19 @@ structurizr.ui.setIgnoringDslColours = function(bool) {
     }
 };
 
-// Which engine auto-layout uses: dagre (the upstream default) or ELK's
-// layered algorithm with orthogonal or spline edges
-// (structurizr-elk-layout.js). A per-viewer preference, like the colours.
+// Which engine auto-layout uses: ELK's layered algorithm with orthogonal
+// (the default) or spline edges (structurizr-elk-layout.js), or dagre, the
+// upstream engine. A per-viewer preference, like the colours.
 structurizr.ui.LAYOUT_ENGINE_KEY = 'structurizr.layoutEngine';
 structurizr.ui.LAYOUT_ENGINE_DAGRE = 'dagre';
 structurizr.ui.LAYOUT_ENGINE_ELK_ORTHOGONAL = 'elk-orthogonal';
 structurizr.ui.LAYOUT_ENGINE_ELK_SPLINES = 'elk-splines';
 structurizr.ui.LAYOUT_ENGINES = [
-    structurizr.ui.LAYOUT_ENGINE_DAGRE,
     structurizr.ui.LAYOUT_ENGINE_ELK_ORTHOGONAL,
-    structurizr.ui.LAYOUT_ENGINE_ELK_SPLINES
+    structurizr.ui.LAYOUT_ENGINE_ELK_SPLINES,
+    structurizr.ui.LAYOUT_ENGINE_DAGRE
 ];
+structurizr.ui.DEFAULT_LAYOUT_ENGINE = structurizr.ui.LAYOUT_ENGINE_ELK_ORTHOGONAL;
 
 structurizr.ui.getLayoutEngine = function() {
     try {
@@ -99,12 +100,12 @@ structurizr.ui.getLayoutEngine = function() {
     } catch (e) {
         // storage unavailable: fall through to the default
     }
-    return structurizr.ui.LAYOUT_ENGINE_DAGRE;
+    return structurizr.ui.DEFAULT_LAYOUT_ENGINE;
 };
 
 structurizr.ui.setLayoutEngine = function(engine) {
     try {
-        if (engine === structurizr.ui.LAYOUT_ENGINE_DAGRE) {
+        if (engine === structurizr.ui.DEFAULT_LAYOUT_ENGINE) {
             window.localStorage.removeItem(structurizr.ui.LAYOUT_ENGINE_KEY);
         } else {
             window.localStorage.setItem(structurizr.ui.LAYOUT_ENGINE_KEY, engine);

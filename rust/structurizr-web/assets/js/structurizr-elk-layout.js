@@ -70,10 +70,25 @@
         };
     }
 
-    function padding(options) {
+    // structurizr-diagram.js re-fits every boundary around its contents
+    // after layout (reposition()), leaving room under them for the
+    // boundary's name and metadata. Reserve the same room here, or stacked
+    // boundaries overlap once they have been re-fitted.
+    var LABEL_MARGIN = 15;  // `margin` in reposition()
+
+    function padding(cell, options) {
         var p = options.clusterPadding || {};
+        var bottom = (p.bottom || 50) + LABEL_MARGIN + fontSize(cell, '.structurizrName') + LABEL_MARGIN;
+        var metadata = cell.attr('.structurizrMetaData/text');
+        if (metadata && metadata.length > 0) {
+            bottom += fontSize(cell, '.structurizrMetaData');
+        }
         return '[top=' + (p.top || 50) + ',left=' + (p.left || 50) +
-            ',bottom=' + (p.bottom || 50) + ',right=' + (p.right || 50) + ']';
+            ',bottom=' + bottom + ',right=' + (p.right || 50) + ']';
+    }
+
+    function fontSize(cell, selector) {
+        return parseInt(cell.attr(selector + '/font-size')) || 0;
     }
 
     function layout(graphOrCells, options, engine) {
@@ -101,7 +116,7 @@
                 // ELK sizes compound nodes itself; only padding is ours.
                 delete node.width;
                 delete node.height;
-                node.layoutOptions = Object.assign({}, rootOptions, { 'elk.padding': padding(options) });
+                node.layoutOptions = Object.assign({}, rootOptions, { 'elk.padding': padding(cell, options) });
             }
         });
 
