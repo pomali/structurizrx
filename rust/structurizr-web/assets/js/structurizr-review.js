@@ -28,6 +28,15 @@
         return document.getElementById(id);
     }
 
+    /* The API's kinds are model identifiers ("softwareSystem"); show words. */
+    function kindLabel(kind) {
+        return kind.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+    }
+
+    function plural(n, noun) {
+        return n + ' ' + noun + (n === 1 ? '' : 's');
+    }
+
     /* ---- URL state ---- */
 
     function readHash() {
@@ -170,7 +179,7 @@
 
             var kind = document.createElement('span');
             kind.className = 'item-kind';
-            kind.textContent = element.kind;
+            kind.textContent = kindLabel(element.kind);
             li.appendChild(kind);
 
             li.addEventListener('click', function () { select(element.id); });
@@ -178,7 +187,7 @@
         });
 
         el('review-count').textContent =
-            state.filtered.length + ' of ' + state.elements.length + ' element(s)';
+            state.filtered.length + ' of ' + plural(state.elements.length, 'element');
     }
 
     function section(title, node) {
@@ -253,12 +262,12 @@
 
         var subtitle = document.createElement('div');
         subtitle.className = 'detail-subtitle';
-        var bits = [element.kind];
+        var bits = [kindLabel(element.kind)];
         if (element.technology) { bits.push(element.technology); }
         if (element.parentName) { bits.push('in ' + element.parentName); }
         if (element.group) { bits.push('group: ' + element.group); }
         var d = degree(element);
-        bits.push(d + ' relationship(s)');
+        bits.push(plural(d, 'relationship'));
         subtitle.textContent = bits.join(' · ');
         detail.appendChild(subtitle);
 
@@ -427,7 +436,7 @@
             lines.push('## Flagged');
             lines.push('');
             flagged.forEach(function (e) {
-                lines.push('- **' + e.name + '** (' + e.kind + ')');
+                lines.push('- **' + e.name + '** (' + kindLabel(e.kind) + ')');
                 e.findings.forEach(function (f) {
                     lines.push('  - `' + f.code + '` ' + f.message);
                 });
@@ -443,7 +452,7 @@
             lines.push('| --- | --- | --- | --- |');
             withFindings.forEach(function (e) {
                 e.findings.forEach(function (f) {
-                    lines.push('| ' + e.name + ' | ' + e.kind + ' | `' + f.code + '` | ' + f.message + ' |');
+                    lines.push('| ' + e.name + ' | ' + kindLabel(e.kind) + ' | `' + f.code + '` | ' + f.message + ' |');
                 });
             });
         }
@@ -474,7 +483,7 @@
         kinds.forEach(function (kind) {
             var option = document.createElement('option');
             option.value = kind;
-            option.textContent = kind;
+            option.textContent = kindLabel(kind);
             select.appendChild(option);
         });
     }

@@ -107,8 +107,9 @@
             card.style.borderLeftColor = colorFor(community.id);
 
             var title = document.createElement('h3');
+            var size = community.memberIds.length;
             title.textContent = 'Community ' + (community.id + 1) +
-                ' · ' + community.memberIds.length + ' element(s)';
+                ' · ' + size + (size === 1 ? ' element' : ' elements');
             card.appendChild(title);
 
             var declared = document.createElement('div');
@@ -124,10 +125,17 @@
                 var node = byId[id];
                 var li = document.createElement('li');
                 li.textContent = node.name;
+                /* Informational, not an error: most communities mix declared
+                   groups, and only the conformance findings above are worth
+                   acting on. Styling every mixed member as a warning made a
+                   single finding look like dozens. */
                 if (node.declared && community.dominantDeclared &&
                     node.declared !== community.dominantDeclared) {
                     li.classList.add('mismatch');
-                    li.textContent += ' — declared "' + node.declared + '"';
+                    var where = document.createElement('span');
+                    where.className = 'declared-elsewhere';
+                    where.textContent = ' · in ' + node.declared;
+                    li.appendChild(where);
                 }
                 list.appendChild(li);
             });

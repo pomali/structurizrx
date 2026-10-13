@@ -360,6 +360,30 @@
     var diagram = null;
     var currentViewKey = null;
     var diagramReady = false;
+    // View keys in the order the sidebar lists them; the first is the view a
+    // visitor lands on when neither the URL nor the workspace names one.
+    var sidebarViewOrder = [];
+
+    // Generated views have auto-* keys and titles like "focus: Event Bus"
+    // (structurizr-query/src/generate.rs).
+    function isAuto(view) { return view.key && view.key.indexOf('auto-') === 0; }
+    var GENERATED_TITLE_PREFIX = /^(focus|perspective|layer|slice|paths|delta): /;
+    var GENERATOR_LABELS = {
+        focus: 'Focus', perspective: 'Perspective', layer: 'Layer', slice: 'Slice',
+        paths: 'Paths', asof: 'Timeline', delta: 'Timeline', lint: 'Lint'
+    };
+    var VIEW_TYPE_LABELS = {
+        SystemLandscape: 'System landscape', SystemContext: 'System context',
+        Container: 'Container', Component: 'Component', Dynamic: 'Dynamic',
+        Deployment: 'Deployment', Filtered: 'Filtered', Image: 'Image', Custom: 'Custom'
+    };
+
+    // What kind of view this is, in words: the generator for a generated
+    // view (they are all landscape-shaped underneath), else the C4 type.
+    function viewKindLabel(view) {
+        if (isAuto(view)) return GENERATOR_LABELS[view.key.split('-')[1]] || 'Generated';
+        return VIEW_TYPE_LABELS[view.type] || view.type || '';
+    }
 
     // --- Status bar ---
     function setStatus(msg) {
@@ -590,7 +614,7 @@
                 targetKey = structurizr.workspace.views.configuration.defaultView;
             }
             if (!targetKey || !structurizr.workspace.findViewByKey(targetKey)) {
-                targetKey = views[0].key;
+                targetKey = sidebarViewOrder.length > 0 ? sidebarViewOrder[0] : views[0].key;
             }
 
             // The diagram widget is created once — a live reload reloads the
@@ -645,7 +669,7 @@
         if (!key || !structurizr.workspace.findViewByKey(key)) {
             var views = structurizr.workspace.getViews();
             if (views.length === 0) return;
-            key = views[0].key;
+            key = sidebarViewOrder.length > 0 ? sidebarViewOrder[0] : views[0].key;
         }
         // A selection belongs to the view it was made on.
         if (selection && key !== currentViewKey) selection.items = [];
@@ -689,6 +713,7 @@
         var views = structurizr.workspace.getViews();
         var list = document.getElementById('view-list');
         list.innerHTML = '';
+        sidebarViewOrder = [];
 
         if (!STATIC_EXPORT) {
             // Canvas demo link
@@ -757,12 +782,15 @@
         }
 
         function addViewItem(v) {
+            var title = structurizr.ui.getTitleForView(v);
             var a = document.createElement('a');
             a.className = 'view-item';
             a.href = '#' + v.key;
             a.dataset.key = v.key;
-            a.title = v.description || '';
-            a.textContent = structurizr.ui.getTitleForView(v);
+            a.title = title + (v.description ? ' — ' + v.description : '');
+            // Under a "Focus" header, "focus: Event Bus" says focus twice.
+            a.textContent = isAuto(v) ? title.replace(GENERATED_TITLE_PREFIX, '') : title;
+            sidebarViewOrder.push(v.key);
             a.addEventListener('click', function(e) {
                 e.preventDefault();
                 if (diagramReady) activateView(v.key);
@@ -780,12 +808,29 @@
             groupViews.forEach(addViewItem);
         }
 
-        // Generated views (auto-* keys) are grouped by their generator so the
-        // sidebar reads: Focus, Perspectives, Timeline, … (spec §6.3).
-        var isAuto = function(v) { return v.key && v.key.indexOf('auto-') === 0; };
         var autoViews = views.filter(isAuto);
         var manualViews = views.filter(function(v) { return !isAuto(v); });
 
+        // Hand-authored views first, in C4 order: they are what the author
+        // chose to show, and the first of them is the view a visitor opens on.
+        var groups = [
+            { label: 'Landscape',      type: structurizr.constants.SYSTEM_LANDSCAPE_VIEW_TYPE },
+            { label: 'System Context', type: structurizr.constants.SYSTEM_CONTEXT_VIEW_TYPE },
+            { label: 'Container',      type: structurizr.constants.CONTAINER_VIEW_TYPE },
+            { label: 'Component',      type: structurizr.constants.COMPONENT_VIEW_TYPE },
+            { label: 'Dynamic',        type: structurizr.constants.DYNAMIC_VIEW_TYPE },
+            { label: 'Deployment',     type: structurizr.constants.DEPLOYMENT_VIEW_TYPE },
+            { label: 'Filtered',       type: structurizr.constants.FILTERED_VIEW_TYPE },
+            { label: 'Image',          type: structurizr.constants.IMAGE_VIEW_TYPE },
+            { label: 'Custom',         type: structurizr.constants.CUSTOM_VIEW_TYPE },
+        ];
+
+        groups.forEach(function(g) {
+            addGroup(g.label, manualViews.filter(function(v) { return v.type === g.type; }));
+        });
+
+        // Generated views (auto-* keys) follow, grouped by their generator so
+        // the sidebar reads: Focus, Perspectives, Timeline, … (spec §6.3).
         var autoGroups = [
             { label: 'Overview (generated)', gens: ['landscape', 'context', 'container', 'component'] },
             { label: 'Focus',                gens: ['focus'] },
@@ -806,23 +851,6 @@
             var gen = v.key.split('-')[1];
             return !autoGroups.some(function(g) { return g.gens.indexOf(gen) !== -1; });
         }));
-
-        // Hand-authored views, grouped by type
-        var groups = [
-            { label: 'Landscape',      type: structurizr.constants.SYSTEM_LANDSCAPE_VIEW_TYPE },
-            { label: 'System Context', type: structurizr.constants.SYSTEM_CONTEXT_VIEW_TYPE },
-            { label: 'Container',      type: structurizr.constants.CONTAINER_VIEW_TYPE },
-            { label: 'Component',      type: structurizr.constants.COMPONENT_VIEW_TYPE },
-            { label: 'Dynamic',        type: structurizr.constants.DYNAMIC_VIEW_TYPE },
-            { label: 'Deployment',     type: structurizr.constants.DEPLOYMENT_VIEW_TYPE },
-            { label: 'Filtered',       type: structurizr.constants.FILTERED_VIEW_TYPE },
-            { label: 'Image',          type: structurizr.constants.IMAGE_VIEW_TYPE },
-            { label: 'Custom',         type: structurizr.constants.CUSTOM_VIEW_TYPE },
-        ];
-
-        groups.forEach(function(g) {
-            addGroup(g.label, manualViews.filter(function(v) { return v.type === g.type; }));
-        });
 
         buildQuickNavigation();
     }
@@ -1034,7 +1062,8 @@
         var svgBtn = document.getElementById('btnDownloadSvg');
         var mermaidBtn = document.getElementById('btnCopyMermaid');
         if (view) {
-            badge.textContent = view.type || '';
+            badge.textContent = viewKindLabel(view);
+            badge.title = isAuto(view) ? 'Generated view' : '';
             badge.classList.remove('d-none');
             var title = structurizr.ui.getTitleForView(view);
             setStatus(title + (view.description ? ' – ' + view.description : ''));

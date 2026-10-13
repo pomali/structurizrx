@@ -54,6 +54,13 @@ pub async fn serve(opts: ServeOptions) -> Result<()> {
         println!("  • {} ({})", w.display_name, w.source_path.display());
     }
 
+    // Serving one file, there is nothing to choose between on the index page:
+    // open the workspace itself. A directory still opens on the index.
+    let landing = match workspaces.as_slice() {
+        [only] if path.is_file() => format!("/workspace/{}", only.name),
+        _ => String::new(),
+    };
+
     let state = state::AppState::new(workspaces);
 
     // Start file watcher
@@ -64,7 +71,7 @@ pub async fn serve(opts: ServeOptions) -> Result<()> {
 
     let addr = format!("0.0.0.0:{}", opts.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    let url = format!("http://localhost:{}", opts.port);
+    let url = format!("http://localhost:{}{}", opts.port, landing);
     println!("Serving at {}", url);
 
     if opts.open_browser {

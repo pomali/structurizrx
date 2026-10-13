@@ -30,6 +30,10 @@ body.clusters-body {
     gap: 0.35rem;
 }
 
+#clusters-header .control label {
+    white-space: nowrap;
+}
+
 #clusters-body {
     padding: 1rem 1.25rem 4rem;
 }
@@ -112,9 +116,9 @@ section.panel > .panel-note {
     padding-left: 1.1rem;
 }
 
-.community-card li.mismatch {
-    color: var(--bs-danger-text-emphasis, #b02a37);
-    font-weight: 500;
+.community-card li.mismatch .declared-elsewhere {
+    color: var(--bs-secondary-color);
+    font-size: 0.85em;
 }
 
 /* ---- dependency structure matrix ---- */
