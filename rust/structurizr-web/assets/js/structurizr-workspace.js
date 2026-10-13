@@ -761,15 +761,8 @@ structurizr.Workspace = class Workspace {
             return;
         }
 
-        this.#workspace.views.configuration.styles.elements = [
-            { tag: 'Element', background: '#dddddd', color: '#000000', shape: 'Box' },
-            { tag: 'Person', background: '#08427b', color: '#ffffff', shape: 'Person' },
-            { tag: 'Software System', background: '#1168bd', color: '#ffffff' },
-            { tag: 'Container', background: '#438dd5', color: '#ffffff' },
-            { tag: 'Component', background: '#85bbf0', color: '#000000' },
-            { tag: 'Deployment Node', background: '#ffffff', color: '#000000' },
-            { tag: 'Infrastructure Node', background: '#999999', color: '#ffffff' }
-        ];
+        this.#workspace.views.configuration.styles.elements =
+            structurizr.ui.DEFAULT_ELEMENT_STYLES.map(function(style) { return Object.assign({}, style); });
     }
 
     #calculateLevel(view) {

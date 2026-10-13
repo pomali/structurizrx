@@ -19,9 +19,9 @@ const GRID_COLS: usize = 4;
 const MAX_VERTICAL_LAYERS: usize = 4;
 const BOUNDARY_PAD: i32 = 26;
 const BOUNDARY_LABEL_HEIGHT: i32 = 18;
-const PERSON_HEAD_RADIUS: i32 = 30;
+const PERSON_HEAD_RADIUS: i32 = 22;
 /// The head circle centre sits this far above the box top edge.
-const PERSON_HEAD_OVERLAP: i32 = 28;
+const PERSON_HEAD_OVERLAP: i32 = 16;
 /// Perpendicular spacing between parallel edges connecting the same node pair.
 const EDGE_SPREAD: f64 = 30.0;
 /// Maximum pixel width of a wrapped edge-label line.
@@ -38,21 +38,34 @@ const FS_NAME: f64 = 14.0;
 const FS_META: f64 = 11.0;
 const FS_DESC: f64 = 11.0;
 const FS_EDGE: f64 = 10.5;
+const FS_PORT: f64 = 9.0;
 const LH_NAME: i32 = 18;
 const LH_SMALL: i32 = 14;
 
 // ── C4 colour palette ────────────────────────────────────────────────────────
+//
+// The C4 hue ladder (person darkest → component lightest, externals grey),
+// with the neutrals on a cool slate scale so lines and text recede behind
+// the elements.
 
-const COLOR_PERSON: &str = "#08427B";
-const COLOR_SYSTEM: &str = "#1168BD";
-const COLOR_SYSTEM_EXT: &str = "#999999";
-const COLOR_CONTAINER: &str = "#438DD5";
-const COLOR_TEXT_LIGHT: &str = "#ffffff";
-const COLOR_BOUNDARY_FILL: &str = "#ffffff";
-const COLOR_BOUNDARY_STROKE: &str = "#bbbbbb";
-const COLOR_ARROW: &str = "#555555";
-const COLOR_TITLE: &str = "#333333";
-const COLOR_BG: &str = "#f8f8f8";
+const COLOR_PERSON: &str = "#0E3A66";
+const COLOR_SYSTEM: &str = "#1B5FAA";
+const COLOR_SYSTEM_EXT: &str = "#7B8797";
+const COLOR_CONTAINER: &str = "#3B80CE";
+const COLOR_COMPONENT: &str = "#A9CDF3";
+const COLOR_TEXT_LIGHT: &str = "#FFFFFF";
+const COLOR_TEXT_DARK: &str = "#0F2440";
+const COLOR_BOUNDARY_FILL: &str = "#FFFFFF";
+const COLOR_BOUNDARY_STROKE: &str = "#AEB8C6";
+const COLOR_BOUNDARY_TEXT: &str = "#4A5568";
+const COLOR_ARROW: &str = "#8792A2";
+const COLOR_EDGE_TEXT: &str = "#4A5568";
+const COLOR_TITLE: &str = "#1A202C";
+const COLOR_BG: &str = "#F5F7FA";
+const COLOR_SHADOW: &str = "#0F172A";
+
+const FONT_FAMILY: &str = "'Helvetica Neue', Helvetica, Arial, sans-serif";
+const STROKE_W: f64 = 1.0;
 
 // ── Internal node/edge types ─────────────────────────────────────────────────
 
@@ -304,7 +317,11 @@ fn make_node(
     if !desc_lines.is_empty() {
         content_h += 6 + desc_lines.len() as i32 * LH_SMALL;
     }
-    let h = (content_h + 26).max(NODE_MIN_H);
+    let mut h = (content_h + 26).max(NODE_MIN_H);
+    if shape == NodeShape::Cylinder {
+        // Room for the lid, which the text region excludes.
+        h += 2 * (h as f64 * 0.14).clamp(8.0, 26.0).round() as i32;
+    }
     Node {
         id: id.to_string(),
         fill: style.fill,
@@ -329,7 +346,6 @@ fn person_node(p: &Person, styles: Option<&Styles>) -> Node {
         "Person",
         styles,
         COLOR_PERSON,
-        COLOR_TEXT_LIGHT,
     );
     make_node(
         &p.id,
@@ -348,7 +364,6 @@ fn system_node(ss: &SoftwareSystem, styles: Option<&Styles>, default_fill: &str)
         "Software System",
         styles,
         default_fill,
-        COLOR_TEXT_LIGHT,
     );
     make_node(
         &ss.id,
@@ -371,7 +386,6 @@ fn container_node(c: &Container, styles: Option<&Styles>) -> Node {
         "Container",
         styles,
         COLOR_CONTAINER,
-        COLOR_TEXT_LIGHT,
     );
     make_node(
         &c.id,
@@ -393,8 +407,7 @@ fn component_node(comp: &Component, styles: Option<&Styles>) -> Node {
         comp.tags.as_deref(),
         "Component",
         styles,
-        COLOR_CONTAINER,
-        COLOR_TEXT_LIGHT,
+        COLOR_COMPONENT,
     );
     make_node(
         &comp.id,
@@ -413,7 +426,6 @@ fn custom_node(ce: &CustomElement, styles: Option<&Styles>) -> Node {
         "Element",
         styles,
         COLOR_SYSTEM_EXT,
-        COLOR_TEXT_LIGHT,
     );
     make_node(
         &ce.id,
@@ -1315,11 +1327,12 @@ fn render_svg(
     let mut svg = String::new();
 
     svg.push_str(&format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="Arial, sans-serif">"##,
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="{FONT_FAMILY}">"##,
     ));
     svg.push('\n');
 
-    // Defs: arrowhead markers (default + delta colours).
+    // Defs: arrowhead markers (default + delta colours), sized in user space
+    // so they do not scale with the stroke width, and the element drop shadow.
     svg.push_str("  <defs>\n");
     for (id, color) in [
         ("arrow", COLOR_ARROW),
@@ -1327,10 +1340,14 @@ fn render_svg(
         ("arrow-removed", COLOR_DELTA_REMOVED),
     ] {
         svg.push_str(&format!(
-            r##"    <marker id="{id}" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="{color}"/></marker>
+            r##"    <marker id="{id}" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="9" refX="10" refY="4.5" orient="auto"><path d="M 0 0 L 11 4.5 L 0 9 L 2.5 4.5 Z" fill="{color}"/></marker>
 "##,
         ));
     }
+    svg.push_str(&format!(
+        r##"    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="{COLOR_SHADOW}" flood-opacity="0.16"/></filter>
+"##,
+    ));
     svg.push_str("  </defs>\n");
 
     // Background
@@ -1340,9 +1357,8 @@ fn render_svg(
 
     // Title
     svg.push_str(&format!(
-        r##"  <text x="{}" y="30" font-size="{FS_TITLE}" font-weight="bold" fill="{COLOR_TITLE}" text-anchor="middle">{}</text>
+        r##"  <text x="{MARGIN}" y="34" font-size="{FS_TITLE}" font-weight="600" fill="{COLOR_TITLE}">{}</text>
 "##,
-        width / 2,
         xml_escape(title)
     ));
 
@@ -1354,15 +1370,15 @@ fn render_svg(
     // System boundary (if any)
     if let Some(b) = boundary {
         svg.push_str(&format!(
-            r##"    <rect x="{}" y="{}" width="{}" height="{}" fill="{COLOR_BOUNDARY_FILL}" stroke="{COLOR_BOUNDARY_STROKE}" stroke-width="1" stroke-dasharray="6,4" rx="6"/>
+            r##"    <rect x="{}" y="{}" width="{}" height="{}" fill="{COLOR_BOUNDARY_FILL}" fill-opacity="0.7" stroke="{COLOR_BOUNDARY_STROKE}" stroke-width="1" stroke-dasharray="6,4" rx="10"/>
 "##,
             b.x, b.y, b.w, b.h
         ));
         svg.push_str(&format!(
-            r##"    <text x="{}" y="{}" font-size="11" fill="#888888" font-style="italic">{}</text>
+            r##"    <text x="{}" y="{}" font-size="12" font-weight="600" fill="{COLOR_BOUNDARY_TEXT}">{}</text>
 "##,
-            b.x + 10,
-            b.y + 16,
+            b.x + 12,
+            b.y + 18,
             xml_escape(&b.label)
         ));
     }
@@ -1403,6 +1419,7 @@ fn render_svg(
         };
 
         let stroke = edge.color.as_deref().unwrap_or(COLOR_ARROW);
+        let text_color = edge.color.as_deref().unwrap_or(COLOR_EDGE_TEXT);
         let marker = marker_for(stroke);
         let dash_attr = edge
             .dash
@@ -1414,7 +1431,7 @@ fn render_svg(
             let x0 = (src.x + src.w) as f64;
             let cy = src.cy() as f64;
             svg.push_str(&format!(
-                r##"    <path d="M {x0} {} C {} {}, {} {}, {x0} {}" fill="none" stroke="{stroke}" stroke-width="1.4"{dash_attr} marker-end="url(#{marker})"/>
+                r##"    <path d="M {x0} {} C {} {}, {} {}, {x0} {}" fill="none" stroke="{stroke}" stroke-width="1.25"{dash_attr} marker-end="url(#{marker})"/>
 "##,
                 cy - 14.0,
                 x0 + 52.0,
@@ -1443,7 +1460,7 @@ fn render_svg(
                     &placed_labels,
                     avoid,
                 );
-                draw_edge_label_lines(&mut overlay, &lines, lx, ly, stroke);
+                draw_edge_label_lines(&mut overlay, &lines, lx, ly, text_color);
                 placed_labels.push((lx - bw / 2.0, ly - bh / 2.0, bw, bh));
             }
             continue;
@@ -1480,7 +1497,7 @@ fn render_svg(
         let (x2, y2) = rect_exit_point(dst, dcx, dcy, scx, scy);
 
         svg.push_str(&format!(
-            r##"    <line x1="{x1:.1}" y1="{y1:.1}" x2="{x2:.1}" y2="{y2:.1}" stroke="{stroke}" stroke-width="1.4"{dash_attr} marker-end="url(#{marker})"/>
+            r##"    <line x1="{x1:.1}" y1="{y1:.1}" x2="{x2:.1}" y2="{y2:.1}" stroke="{stroke}" stroke-width="1.25"{dash_attr} marker-end="url(#{marker})"/>
 "##,
         ));
 
@@ -1498,13 +1515,13 @@ fn render_svg(
         ] {
             if let Some(pname) = pname {
                 overlay.push_str(&format!(
-                    r##"    <rect x="{:.1}" y="{:.1}" width="8" height="8" fill="#ffffff" stroke="{stroke}" stroke-width="1.2"/>
+                    r##"    <rect x="{:.1}" y="{:.1}" width="8" height="8" rx="2" fill="#FFFFFF" stroke="{stroke}" stroke-width="1.2"/>
 "##,
                     gx - 4.0,
                     gy - 4.0,
                 ));
-                let text_w = text_width(pname, 8.0) + 6.0;
-                let text_h = 11.0;
+                let text_w = text_width(pname, FS_PORT) + 8.0;
+                let text_h = 13.0;
                 let (lx, ly) = place_port_label(
                     gx,
                     gy,
@@ -1516,7 +1533,7 @@ fn render_svg(
                     &node_obstacles,
                     &placed_labels,
                 );
-                draw_port_label(&mut overlay, lx, ly, text_w, text_h, pname, stroke);
+                draw_port_label(&mut overlay, lx, ly, text_w, text_h, pname, text_color);
                 placed_labels.push((lx - text_w / 2.0, ly - text_h / 2.0, text_w, text_h));
             }
         }
@@ -1547,7 +1564,7 @@ fn render_svg(
                 &placed_labels,
                 avoid,
             );
-            draw_edge_label_lines(&mut overlay, &lines, lx, ly, stroke);
+            draw_edge_label_lines(&mut overlay, &lines, lx, ly, text_color);
             placed_labels.push((lx - bw / 2.0, ly - bh / 2.0, bw, bh));
         }
     }
@@ -1618,7 +1635,7 @@ fn draw_edge_label_lines(svg: &mut String, lines: &[String], lx: f64, ly: f64, c
         let baseline = first_baseline + i as f64 * line_h;
         let bw = text_width(line, FS_EDGE) + 8.0;
         svg.push_str(&format!(
-            r##"    <rect x="{:.1}" y="{:.1}" width="{:.1}" height="{line_h}" fill="{COLOR_BG}" opacity="0.88"/>
+            r##"    <rect x="{:.1}" y="{:.1}" width="{:.1}" height="{line_h}" rx="3" fill="{COLOR_BG}" opacity="0.9"/>
 "##,
             lx - bw / 2.0,
             baseline - 10.0,
@@ -1737,7 +1754,6 @@ fn place_port_label(
     } else {
         -1.0
     };
-    let (ox, oy) = (perp.0 * sign, perp.1 * sign);
 
     let is_free = |cx: f64, cy: f64| {
         let rect = (cx - text_w / 2.0, cy - text_h / 2.0, text_w, text_h);
@@ -1745,20 +1761,23 @@ fn place_port_label(
             && !placed.iter().any(|&o| rects_overlap(rect, o))
     };
 
+    // Outward side first, then the other side of the edge. `back` pulls the
+    // label back along the edge far enough to clear the element's border.
     let base_offset = 14.0;
-    let mut fallback = (
-        gx + ox * base_offset - dir_x * 6.0,
-        gy + oy * base_offset - dir_y * 6.0,
+    let back = text_h / 2.0 + 2.0;
+    let fallback = (
+        gx + perp.0 * sign * base_offset - dir_x * back,
+        gy + perp.1 * sign * base_offset - dir_y * back,
     );
-    for step in 0..5 {
-        let off = base_offset + step as f64 * (text_h + 4.0);
-        let cx = gx + ox * off - dir_x * 6.0;
-        let cy = gy + oy * off - dir_y * 6.0;
-        if step == 0 {
-            fallback = (cx, cy);
-        }
-        if is_free(cx, cy) {
-            return (cx, cy);
+    for side in [sign, -sign] {
+        let (ox, oy) = (perp.0 * side, perp.1 * side);
+        for step in 0..5 {
+            let off = base_offset + step as f64 * (text_h + 4.0);
+            let cx = gx + ox * off - dir_x * back;
+            let cy = gy + oy * off - dir_y * back;
+            if is_free(cx, cy) {
+                return (cx, cy);
+            }
         }
     }
     fallback
@@ -1767,7 +1786,7 @@ fn place_port_label(
 /// Draw a port-name label with a background halo, centred at (cx, cy).
 fn draw_port_label(svg: &mut String, cx: f64, cy: f64, w: f64, h: f64, text: &str, color: &str) {
     svg.push_str(&format!(
-        r##"    <rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="{COLOR_BG}" opacity="0.9"/>
+        r##"    <rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" rx="3" fill="{COLOR_BG}" opacity="0.9"/>
 "##,
         cx - w / 2.0,
         cy - h / 2.0,
@@ -1775,9 +1794,9 @@ fn draw_port_label(svg: &mut String, cx: f64, cy: f64, w: f64, h: f64, text: &st
         h,
     ));
     svg.push_str(&format!(
-        r##"    <text x="{cx:.1}" y="{:.1}" font-size="8" fill="{color}" text-anchor="middle">{}</text>
+        r##"    <text x="{cx:.1}" y="{:.1}" font-size="{FS_PORT}" font-weight="600" fill="{color}" text-anchor="middle">{}</text>
 "##,
-        cy + 2.8,
+        cy + 3.2,
         xml_escape(text)
     ));
 }
@@ -1830,7 +1849,7 @@ fn el_rect(
     dash: &str,
 ) {
     svg.push_str(&format!(
-        "    <rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{}\" ry=\"{}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"1.5\"{dash}/>\n",
+        "    <rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{}\" ry=\"{}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"{STROKE_W}\"{dash}/>\n",
         n(x), n(y), n(w), n(h), n(rx), n(rx)
     ));
 }
@@ -1847,20 +1866,20 @@ fn el_ellipse(
     dash: &str,
 ) {
     svg.push_str(&format!(
-        "    <ellipse cx=\"{}\" cy=\"{}\" rx=\"{}\" ry=\"{}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"1.5\"{dash}/>\n",
+        "    <ellipse cx=\"{}\" cy=\"{}\" rx=\"{}\" ry=\"{}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"{STROKE_W}\"{dash}/>\n",
         n(cx), n(cy), n(rx), n(ry)
     ));
 }
 
 fn el_polygon(svg: &mut String, points: &str, fill: &str, stroke: &str, dash: &str) {
     svg.push_str(&format!(
-        "    <polygon points=\"{points}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"1.5\"{dash}/>\n"
+        "    <polygon points=\"{points}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"{STROKE_W}\"{dash}/>\n"
     ));
 }
 
 fn el_path(svg: &mut String, d: &str, fill: &str, stroke: &str, dash: &str) {
     svg.push_str(&format!(
-        "    <path d=\"{d}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"1.5\"{dash}/>\n"
+        "    <path d=\"{d}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"{STROKE_W}\"{dash}/>\n"
     ));
 }
 
@@ -1882,11 +1901,11 @@ fn draw_shape(svg: &mut String, node: &Node, dash: &str) -> TextRegion {
 
     match node.shape {
         NodeShape::Box => {
-            el_rect(svg, x, y, w, h, 4.0, fill, stroke, dash);
+            el_rect(svg, x, y, w, h, 8.0, fill, stroke, dash);
             TextRegion::full(node)
         }
         NodeShape::RoundedBox => {
-            el_rect(svg, x, y, w, h, 14.0, fill, stroke, dash);
+            el_rect(svg, x, y, w, h, 20.0, fill, stroke, dash);
             TextRegion::full(node)
         }
         NodeShape::Circle | NodeShape::Ellipse => {
@@ -1941,6 +1960,17 @@ fn draw_shape(svg: &mut String, node: &Node, dash: &str) -> TextRegion {
                 "M {x:.1},{top:.1} a {rx:.1},{c:.1} 0,0,0 {w:.1} 0 a {rx:.1},{c:.1} 0,0,0 -{w:.1} 0 l 0,{body:.1} a {rx:.1},{c:.1} 0,0,0 {w:.1} 0 l 0,-{body:.1}"
             );
             el_path(svg, &d, fill, stroke, dash);
+            // Lighter lid so the cylinder reads as a solid, not a flat outline.
+            el_ellipse(
+                svg,
+                x + rx,
+                top,
+                rx,
+                c,
+                &lighten(fill, 0.18),
+                stroke,
+                dash,
+            );
             TextRegion {
                 top: (y + 2.0 * c).round() as i32,
                 height: (h - 3.0 * c).round() as i32,
@@ -1957,6 +1987,18 @@ fn draw_shape(svg: &mut String, node: &Node, dash: &str) -> TextRegion {
                 "M {left:.1},{y:.1} a {c:.1},{ry:.1} 0,0,1 0 {h:.1} a {c:.1},{ry:.1} 0,0,1 0 -{h:.1} l {body:.1},0 a {c:.1},{ry:.1} 0,0,1 0 {h:.1} l -{body:.1},0"
             );
             el_path(svg, &d, fill, stroke, dash);
+            // Lighter left-hand end (the face the path draws as a full
+            // ellipse), mirroring the cylinder lid.
+            el_ellipse(
+                svg,
+                left,
+                y + ry,
+                c,
+                ry,
+                &lighten(fill, 0.18),
+                stroke,
+                dash,
+            );
             TextRegion {
                 top: node.y,
                 height: node.h,
@@ -1967,7 +2009,7 @@ fn draw_shape(svg: &mut String, node: &Node, dash: &str) -> TextRegion {
             // Head circle first so the body box overlaps its lower half — the
             // classic C4 person glyph, protruding above the box top edge.
             svg.push_str(&format!(
-                r##"    <circle cx="{}" cy="{}" r="{}" fill="{fill}" stroke="{stroke}" stroke-width="1.5"{dash}/>
+                r##"    <circle cx="{}" cy="{}" r="{}" fill="{fill}" stroke="{stroke}" stroke-width="{STROKE_W}"{dash}/>
 "##,
                 cx,
                 node.y - PERSON_HEAD_OVERLAP,
@@ -2171,14 +2213,16 @@ fn render_node(svg: &mut String, node: &Node) {
         .map(|d| format!(r#" stroke-dasharray="{}""#, d))
         .unwrap_or_default();
 
+    svg.push_str("    <g filter=\"url(#shadow)\">\n");
     let region = draw_shape(svg, node, &dash_attr);
+    svg.push_str("    </g>\n");
 
     // Text block, vertically centred inside the shape's text region.
     let cx = region.cx;
     let mut cursor = region.top + (region.height - node.content_h) / 2;
     for line in &node.name_lines {
         svg.push_str(&format!(
-            r##"    <text x="{cx}" y="{}" font-size="{FS_NAME}" font-weight="bold" fill="{}" text-anchor="middle">{}</text>
+            r##"    <text x="{cx}" y="{}" font-size="{FS_NAME}" font-weight="600" fill="{}" text-anchor="middle">{}</text>
 "##,
             cursor + 13,
             node.text_color,
@@ -2188,7 +2232,7 @@ fn render_node(svg: &mut String, node: &Node) {
     }
     for line in &node.meta_lines {
         svg.push_str(&format!(
-            r##"    <text x="{cx}" y="{}" font-size="{FS_META}" font-style="italic" fill="{}" opacity="0.85" text-anchor="middle">{}</text>
+            r##"    <text x="{cx}" y="{}" font-size="{FS_META}" fill="{}" opacity="0.72" text-anchor="middle">{}</text>
 "##,
             cursor + 10,
             node.text_color,
@@ -2200,7 +2244,7 @@ fn render_node(svg: &mut String, node: &Node) {
         cursor += 6;
         for line in &node.desc_lines {
             svg.push_str(&format!(
-                r##"    <text x="{cx}" y="{}" font-size="{FS_DESC}" fill="{}" opacity="0.9" text-anchor="middle">{}</text>
+                r##"    <text x="{cx}" y="{}" font-size="{FS_DESC}" fill="{}" opacity="0.92" text-anchor="middle">{}</text>
 "##,
                 cursor + 10,
                 node.text_color,
@@ -2246,7 +2290,7 @@ fn rect_exit_point(node: &Node, px: f64, py: f64, tx: f64, ty: f64) -> (f64, f64
 // ── Utility ───────────────────────────────────────────────────────────────────
 
 /// Factor by which each RGB channel is scaled when computing a darker stroke colour.
-const DARKEN_FACTOR: f64 = 0.7;
+const DARKEN_FACTOR: f64 = 0.8;
 
 /// Produce a slightly darker hex colour for strokes.
 fn darken(hex: &str) -> String {
@@ -2258,19 +2302,60 @@ fn darken(hex: &str) -> String {
 
 /// Parse a 6-digit hex colour and reduce each channel by `DARKEN_FACTOR`.
 fn try_darken_hex(hex: &str) -> Option<String> {
-    let h = hex.trim_start_matches('#');
-    if h.len() != 6 {
-        return None;
-    }
-    let r = u8::from_str_radix(&h[0..2], 16).ok()?;
-    let g = u8::from_str_radix(&h[2..4], 16).ok()?;
-    let b = u8::from_str_radix(&h[4..6], 16).ok()?;
+    let (r, g, b) = parse_hex(hex)?;
     Some(format!(
         "#{:02X}{:02X}{:02X}",
         (r as f64 * DARKEN_FACTOR) as u8,
         (g as f64 * DARKEN_FACTOR) as u8,
         (b as f64 * DARKEN_FACTOR) as u8,
     ))
+}
+
+fn parse_hex(hex: &str) -> Option<(u8, u8, u8)> {
+    let h = hex.trim_start_matches('#');
+    if h.len() != 6 {
+        return None;
+    }
+    Some((
+        u8::from_str_radix(&h[0..2], 16).ok()?,
+        u8::from_str_radix(&h[2..4], 16).ok()?,
+        u8::from_str_radix(&h[4..6], 16).ok()?,
+    ))
+}
+
+/// Mix a 6-digit hex colour towards white by `t` (0 = unchanged, 1 = white);
+/// non-hex colours are returned as-is.
+fn lighten(hex: &str, t: f64) -> String {
+    match parse_hex(hex) {
+        Some((r, g, b)) => {
+            let m = |c: u8| (c as f64 + (255.0 - c as f64) * t).round() as u8;
+            format!("#{:02X}{:02X}{:02X}", m(r), m(g), m(b))
+        }
+        None => hex.to_string(),
+    }
+}
+
+/// Light or dark text, whichever reads better on `fill` (WCAG relative
+/// luminance); light when the fill is not a hex colour.
+fn contrast_text(fill: &str) -> &'static str {
+    let Some((r, g, b)) = parse_hex(fill) else {
+        return COLOR_TEXT_LIGHT;
+    };
+    let lin = |c: u8| {
+        let c = c as f64 / 255.0;
+        if c <= 0.03928 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let l = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    // Contrast against white vs. against the dark text colour (L ≈ 0.017).
+    if (1.05 / (l + 0.05)) >= ((l + 0.05) / 0.067) {
+        COLOR_TEXT_LIGHT
+    } else {
+        COLOR_TEXT_DARK
+    }
 }
 
 /// Extract the workspace-level element styles, if any.
@@ -2289,16 +2374,16 @@ struct ResolvedNodeStyle {
 
 /// Compute the effective colours for a node by walking its comma-separated tag
 /// list and applying any matching `ElementStyle` entries in order (first tag =
-/// lowest priority, last tag = highest priority).
+/// lowest priority, last tag = highest priority). Without an explicit `color`
+/// the text is whichever of light/dark contrasts with the resolved fill.
 fn resolve_node_style(
     tags: Option<&str>,
     default_type_tag: &str,
     styles: Option<&Styles>,
     default_fill: &str,
-    default_text: &str,
 ) -> ResolvedNodeStyle {
     let mut fill = default_fill.to_string();
-    let mut text_color = default_text.to_string();
+    let mut text_color: Option<String> = None;
     let mut stroke: Option<String> = None;
     let mut shape: Option<String> = None;
 
@@ -2319,7 +2404,7 @@ fn resolve_node_style(
                             fill = bg.clone();
                         }
                         if let Some(color) = &style.color {
-                            text_color = color.clone();
+                            text_color = Some(color.clone());
                         }
                         if let Some(s) = &style.stroke {
                             stroke = Some(s.clone());
@@ -2334,6 +2419,7 @@ fn resolve_node_style(
     }
 
     let stroke = stroke.unwrap_or_else(|| darken(&fill));
+    let text_color = text_color.unwrap_or_else(|| contrast_text(&fill).to_string());
     ResolvedNodeStyle {
         fill,
         stroke,
@@ -2789,9 +2875,9 @@ mod tests {
 
     #[test]
     fn darken_hex_colour() {
-        // 0xFF * 0.7 = 0xB2
+        // 0xFF * 0.8 = 0xCC
         let darkened = darken("#FFFFFF");
-        assert_eq!(darkened, "#B2B2B2");
+        assert_eq!(darkened, "#CCCCCC");
 
         // Unknown format falls back to a safe dark colour.
         let fallback = darken("invalid");
@@ -3045,7 +3131,7 @@ mod tests {
             "cylinder must draw a path"
         );
         assert!(
-            svg_for("Hexagon").matches("<polygon").count() >= 2,
+            svg_for("Hexagon").contains("<polygon"),
             "hexagon must draw a polygon"
         );
         assert!(

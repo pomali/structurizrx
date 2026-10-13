@@ -47,7 +47,7 @@ pub fn svg_to_rgba(svg_content: &str) -> Result<(u32, u32, Vec<u8>), String> {
 /// Fonts for text rendering. `usvg::Options::default()` carries an *empty*
 /// font database, which silently drops every `<text>` node, so native builds
 /// load the system fonts once per process. The exporters ask for
-/// `Arial, sans-serif`; `sans-serif` is pointed at the first common sans face
+/// `'Helvetica Neue', Helvetica, Arial, sans-serif`; `sans-serif` is pointed at the first common sans face
 /// actually installed, so Linux boxes without Arial still get labels.
 /// wasm32 has no filesystem to load fonts from and keeps the empty database.
 #[cfg(not(target_arch = "wasm32"))]

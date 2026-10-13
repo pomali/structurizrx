@@ -4,7 +4,7 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
     const font = { name: structurizr.ui.DEFAULT_FONT_NAME };
     const gridSize = 5;
     const nameFontSizeDifferenceRatio = 1.4;
-    const metadataFontSizeDifferenceRatio = 0.7;
+    const metadataFontSizeDifferenceRatio = 0.8;
 
     const darkenPercentage = -10;
 
@@ -38,8 +38,9 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
     var descriptionEnabled = true;
 
     var darkMode = false;
-    var canvasColor = '#ffffff';
-    const canvasColorDarkMode = '#111111';
+    const canvasColorLightMode = '#f5f7fa';
+    const canvasColorDarkMode = '#0d1117';
+    var canvasColor = canvasColorLightMode;
 
     var diagramTitle;
     var diagramDescription;
@@ -595,7 +596,7 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
                 } else if (elementStyle.shape === 'Robot') {
                     box = createRobot(view, element, elementStyle, positionX, positionY);
                 } else if (elementStyle.shape === 'RoundedBox') {
-                    box = createBox(view, element, elementStyle, positionX, positionY, 20);
+                    box = createBox(view, element, elementStyle, positionX, positionY, 40);
                 } else if (elementStyle.shape === 'Folder') {
                     box = createFolder(view, element, elementStyle, positionX, positionY);
                 } else if (elementStyle.shape === 'Circle') {
@@ -623,9 +624,10 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
                 } else if (elementStyle.shape === 'Component') {
                     box = createComponent(view, element, elementStyle, positionX, positionY);
                 } else {
-                    box = createBox(view, element, elementStyle, positionX, positionY, 1);
+                    box = createBox(view, element, elementStyle, positionX, positionY, 16);
                 }
 
+                applyElementShadow(box);
                 cells.push(box);
                 cellsByElementId[element.id] = box;
 
@@ -1772,7 +1774,7 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
         if (darkMode === true) {
             canvasColor = canvasColorDarkMode;
         } else {
-            canvasColor = '#ffffff';
+            canvasColor = canvasColorLightMode;
         }
 
         paper.drawBackground( { color: canvasColor });
@@ -1996,6 +1998,7 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
         cell.attributes.attrs['.structurizrMetaData']['fill'] = color;
         cell.attributes.attrs['.structurizrMetaData']['dominant-baseline'] = 'hanging';
         cell.attributes.attrs['.structurizrMetaData']['font-size'] = (configuration.fontSize*metadataFontSizeDifferenceRatio) + 'px';
+        cell.attributes.attrs['.structurizrMetaData']['fill-opacity'] = 0.75;
         cell.attributes.attrs['.structurizrMetaData']['ref-y'] = undefined;
         cell.attributes.attrs['.structurizrMetaData']['y'] = metadataY;
         cell.attributes.attrs['.structurizrMetaData']['lineHeight'] = lineHeight;
@@ -2049,6 +2052,18 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
         cell._computedStyle.borderStyle = configuration.border;
         cell._computedStyle.stroke = stroke;
         cell._computedStyle.opacity = configuration.opacity;
+    }
+
+    // Soft drop shadow under an element's glyph (not its text), as in the
+    // native SVG renderer. Set as an SVG filter attribute rather than CSS so
+    // it survives exportCurrentDiagramToSVG, which strips classes.
+    function applyElementShadow(cell) {
+        cell.attr('.structurizrHighlightableElement/filter', {
+            name: 'dropShadow',
+            args: darkMode ?
+                { dx: 0, dy: 4, blur: 6, color: '#000000', opacity: 0.45 } :
+                { dx: 0, dy: 4, blur: 6, color: '#0f172a', opacity: 0.14 }
+        });
     }
 
     function createBox(view, element, configuration, x, y, cornerRadius) {
@@ -3573,6 +3588,14 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
 
             var fill = structurizr.util.shadeColor(configuration.color, 100 - configuration.opacity, darkMode);
 
+            // The default line colour is deliberately faint; its labels use
+            // the darker text colour so they stay readable.
+            const modeDefaults = darkMode ? structurizr.ui.DARK_MODE_DEFAULTS : structurizr.ui.LIGHT_MODE_DEFAULTS;
+            var labelFill = fill;
+            if (configuration.color === modeDefaults.relationshipColor) {
+                labelFill = structurizr.util.shadeColor(modeDefaults.color, 100 - configuration.opacity, darkMode);
+            }
+
             var routing = configuration.routing;
             if (relationshipInView.routing !== undefined) {
                 routing = relationshipInView.routing;
@@ -3611,12 +3634,14 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
                     attrs: {
                         rect: {
                             fill: canvasColor,
+                            rx: 6,
+                            ry: 6,
                             'pointer-events': 'none',
                             class: 'structurizrDescription'
                         },
                         text: {
                             text: description,
-                            fill: fill,
+                            fill: labelFill,
                             'font-family': font.name,
                             'font-weight': 'normal',
                             'font-size': configuration.fontSize + 'px',
@@ -3638,11 +3663,14 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
                         rect: {
                             'class': 'structurizrMetaData',
                             fill: canvasColor,
+                            rx: 6,
+                            ry: 6,
                             'pointer-events': 'none'
                         },
                         text: {
                             text: technology,
-                            fill: fill,
+                            fill: labelFill,
+                            'fill-opacity': 0.8,
                             'font-family': font.name,
                             'font-weight': 'normal',
                             'font-size': (configuration.fontSize * metadataFontSizeDifferenceRatio) + 'px',
@@ -3711,6 +3739,7 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
 
             link._computedStyle = {};
             link._computedStyle.color = fill;
+            link._computedStyle.labelColor = labelFill;
             link._computedStyle.lineStyle = configuration.style;
 
             if (relationshipInView.order) {
@@ -3969,7 +3998,7 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
             fill = structurizr.util.shadeColor(fill, 100-elementStyle.opacity, darkMode);
         }
 
-        const cornerRadius = (elementStyle.shape === 'Box' ? 0 : 20);
+        const cornerRadius = (elementStyle.shape === 'Box' ? 16 : 32);
 
         var heightOfIcon = (elementStyle.fontSize * nameFontSizeDifferenceRatio);
         if (metadata !== undefined) {
@@ -3997,7 +4026,7 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
                 '.structurizrName': {
                     text: nameText,
                     'font-family': font.name,
-                    'font-weight': 'bold',
+                    'font-weight': '600',
                     'font-size': (elementStyle.fontSize * nameFontSizeDifferenceRatio) + 'px',
                     fill: textColor
                 },
@@ -4095,7 +4124,7 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
                 '.structurizrName': {
                     text: structurizr.util.removeNewlineCharacters(element.name),
                     'font-family': font.name,
-                    'font-weight': 'bold',
+                    'font-weight': '600',
                     'font-size': (configuration.fontSize * nameFontSizeDifferenceRatio) + 'px',
                     'fill': textColor
                 },
@@ -5990,15 +6019,21 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
     function changeColourOfLine(link, color) {
         link.attr('line/stroke', color);
 
+        // back at its own colour, the label returns to its (darker) label colour
+        var textColor = color;
+        if (link._computedStyle && color === link._computedStyle.color && link._computedStyle.labelColor) {
+            textColor = link._computedStyle.labelColor;
+        }
+
         link.label(0, {
             attrs: {
-                text: { fill: color }
+                text: { fill: textColor }
             }
         });
         if (link.labels().length === 3) {
             link.label(1, {
                 attrs: {
-                    text: { fill: color }
+                    text: { fill: textColor }
                 }
             });
         }
@@ -7240,7 +7275,7 @@ structurizr.shapes.Box = joint.dia.Element.define(
                 'pointer-events': 'visiblePainted'
             },
             '.structurizrName': {
-                'font-weight': 'bold',
+                'font-weight': '600',
                 ref: 'rect',
                 'ref-x': 0.5,
                 'ref-y': 0.15,
@@ -7445,7 +7480,7 @@ structurizr.shapes.Person = joint.dia.Element.extend({
                 'pointer-events': 'visiblePainted'
             },
             '.structurizrName': {
-                'font-weight': 'bold',
+                'font-weight': '600',
                 ref: '.structurizrPersonBody',
                 'ref-x': 0.5,
                 'ref-y': 0.25,
@@ -7495,7 +7530,7 @@ structurizr.shapes.Robot = joint.dia.Element.extend({
                 'pointer-events': 'visiblePainted'
             },
             '.structurizrName': {
-                'font-weight': 'bold',
+                'font-weight': '600',
                 ref: '.structurizrRobotBody',
                 'ref-x': 0.5,
                 'ref-y': 0.25,
@@ -7541,7 +7576,7 @@ structurizr.shapes.Cylinder = joint.dia.Element.extend({
                 'pointer-events': 'visiblePainted'
             },
             '.structurizrName': {
-                'font-weight': 'bold',
+                'font-weight': '600',
                 ref: 'rect',
                 'ref-x': 0.5,
                 'ref-y': 0.25,
@@ -7587,7 +7622,7 @@ structurizr.shapes.Pipe = joint.dia.Element.extend({
                 'pointer-events': 'visiblePainted'
             },
             '.structurizrName': {
-                'font-weight': 'bold',
+                'font-weight': '600',
                 ref: '.structurizrPipeFace',
                 'ref-x': 0.5,
                 'ref-y': 0.25,
@@ -7639,7 +7674,7 @@ structurizr.shapes.Folder = joint.dia.Element.extend({
 
             },
             '.structurizrName': {
-                'font-weight': 'bold',
+                'font-weight': '600',
                 ref: '.structurizrFolderBody',
                 'ref-x': 0.5,
                 'ref-y': 0.15,
@@ -7696,7 +7731,7 @@ structurizr.shapes.Component = joint.dia.Element.extend({
 
             },
             '.structurizrName': {
-                'font-weight': 'bold',
+                'font-weight': '600',
                 ref: '.structurizrComponent',
                 'ref-x': 0.5,
                 'ref-y': 0.15,
@@ -7740,7 +7775,7 @@ structurizr.shapes.Ellipse = joint.dia.Element.extend({
                 'pointer-events': 'visiblePainted'
             },
             '.structurizrName': {
-                'font-weight': 'bold',
+                'font-weight': '600',
                 ref: 'ellipse',
                 'ref-x': 0.5,
                 'ref-y': 0.15,
@@ -7784,7 +7819,7 @@ structurizr.shapes.Hexagon = joint.dia.Element.extend({
                 'pointer-events': 'visiblePainted'
             },
             '.structurizrName': {
-                'font-weight': 'bold',
+                'font-weight': '600',
                 ref: 'polygon',
                 'ref-x': 0.5,
                 'ref-y': 0.15,
@@ -7828,7 +7863,7 @@ structurizr.shapes.Diamond = joint.dia.Element.extend({
                 'pointer-events': 'visiblePainted'
             },
             '.structurizrName': {
-                'font-weight': 'bold',
+                'font-weight': '600',
                 ref: 'polygon',
                 'ref-x': 0.5,
                 'ref-y': 0.15,
@@ -7882,7 +7917,7 @@ structurizr.shapes.WebBrowser = joint.dia.Element.extend({
                 'pointer-events': 'visiblePainted'
             },
             '.structurizrName': {
-                'font-weight': 'bold',
+                'font-weight': '600',
                 ref: '.structurizrWebBrowserPanel',
                 'ref-x': 0.5,
                 'ref-y': 0.15,
@@ -7932,7 +7967,7 @@ structurizr.shapes.Window = joint.dia.Element.extend({
                 'pointer-events': 'visiblePainted'
             },
             '.structurizrName': {
-                'font-weight': 'bold',
+                'font-weight': '600',
                 ref: '.structurizrWindowPanel',
                 'ref-x': 0.5,
                 'ref-y': 0.15,
@@ -7984,7 +8019,7 @@ structurizr.shapes.Terminal = joint.dia.Element.extend({
             '.structurizrTerminalPrompt': {
                 'text': '>_',
                 'font-family': 'Courier New, Arial',
-                'font-weight': 'bold',
+                'font-weight': '600',
                 'font-size': 50,
                 ref: 'rect',
                 'x': 50,
@@ -7993,7 +8028,7 @@ structurizr.shapes.Terminal = joint.dia.Element.extend({
                 'pointer-events': 'visible'
             },
             '.structurizrName': {
-                'font-weight': 'bold',
+                'font-weight': '600',
                 ref: '.structurizrTerminalPanel',
                 'ref-x': 0.5,
                 'ref-y': 0.15,
@@ -8041,7 +8076,7 @@ structurizr.shapes.Shell = joint.dia.Element.extend({
             '.structurizrShellPrompt': {
                 'text': '>_',
                 'font-family': 'Courier New, Arial',
-                'font-weight': 'bold',
+                'font-weight': '600',
                 'font-size': 50,
                 ref: 'rect',
                 'x': 50,
@@ -8050,7 +8085,7 @@ structurizr.shapes.Shell = joint.dia.Element.extend({
                 'pointer-events': 'visible'
             },
             '.structurizrName': {
-                'font-weight': 'bold',
+                'font-weight': '600',
                 ref: 'rect',
                 'ref-x': 0.5,
                 'ref-y': 0.15,
@@ -8097,7 +8132,7 @@ structurizr.shapes.MobileDevice = joint.dia.Element.extend({
                 'pointer-events': 'visiblePainted'
             },
             '.structurizrName': {
-                'font-weight': 'bold',
+                'font-weight': '600',
                 ref: 'rect',
                 'ref-x': 0.5,
                 'ref-y': 0.15,

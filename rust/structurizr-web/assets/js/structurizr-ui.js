@@ -1,4 +1,4 @@
-structurizr.ui.DEFAULT_FONT_NAME = 'Tahoma, Verdana, Helvetica, Arial';
+structurizr.ui.DEFAULT_FONT_NAME = 'Helvetica Neue, Helvetica, Arial, sans-serif';
 
 structurizr.ui.RENDERING_MODE_COOKIE_NAME = 'structurizr.renderingMode';
 structurizr.ui.RENDERING_MODE_SYSTEM = '';
@@ -12,15 +12,81 @@ structurizr.ui.DEFAULT_AUTOLAYOUT_EDGE_SEPARATION = 50;
 structurizr.ui.DEFAULT_AUTOLAYOUT_VERTICES = true;
 
 
+// Palette shared with the native SVG renderer (structurizr-renderer/src/svg):
+// slate neutrals so lines and text recede behind the elements.
 structurizr.ui.LIGHT_MODE_DEFAULTS = {
     background: '#ffffff',
-    color: '#444444',
+    color: '#2D3748',
+    relationshipColor: '#8792A2',
     strokeWidth: 2
 };
 structurizr.ui.DARK_MODE_DEFAULTS = {
-    background: '#111111',
-    color: '#cccccc',
+    background: '#161B22',
+    color: '#CBD5E1',
+    relationshipColor: '#7D8899',
     strokeWidth: 2
+};
+
+// Relationship kinds drawn dashed when no style says otherwise, matching the
+// native renderer's `edge_dash`.
+structurizr.ui.DASHED_RELATIONSHIP_KINDS = ['async', 'publish', 'subscribe', 'dataflow'];
+
+// Built-in base styles, applied before any theme or workspace style (both of
+// which override them): boundaries render as a quiet dashed frame, as in the
+// native SVG renderer, instead of in the colour of the element they enclose.
+structurizr.ui.BUILTIN_ELEMENT_STYLES = [
+    { tag: 'Boundary', colorScheme: 'Light', background: '#ffffff', stroke: '#aeb8c6', color: '#4a5568', border: 'Dashed' },
+    { tag: 'Boundary', colorScheme: 'Dark', background: '#161b22', stroke: '#4a5568', color: '#a0aec0', border: 'Dashed' }
+];
+
+// The built-in C4 palette, shared with the native SVG renderer
+// (structurizr-renderer/src/svg). Used when a workspace defines no styles, and
+// in place of the workspace's colours when the viewer is told to ignore them.
+structurizr.ui.DEFAULT_ELEMENT_STYLES = [
+    { tag: 'Element', background: '#7b8797', color: '#ffffff', shape: 'Box' },
+    { tag: 'Person', background: '#0e3a66', color: '#ffffff', shape: 'Person' },
+    { tag: 'Software System', background: '#1b5faa', color: '#ffffff' },
+    { tag: 'Container', background: '#3b80ce', color: '#ffffff' },
+    { tag: 'Component', background: '#a9cdf3', color: '#0f2440' },
+    { tag: 'Deployment Node', background: '#ffffff', color: '#0f2440' },
+    { tag: 'Infrastructure Node', background: '#7b8797', color: '#ffffff' }
+];
+
+// "Ignore DSL colours": a per-viewer preference (localStorage), so every page
+// that renders diagrams — workspace, diagram, print — honours it.
+structurizr.ui.IGNORE_DSL_COLOURS_KEY = 'structurizr.ignoreDslColours';
+structurizr.ui.COLOUR_STYLE_ATTRIBUTES = ['background', 'color', 'stroke'];
+
+structurizr.ui.isIgnoringDslColours = function() {
+    try {
+        return window.localStorage.getItem(structurizr.ui.IGNORE_DSL_COLOURS_KEY) === 'true';
+    } catch (e) {
+        return false;
+    }
+};
+
+structurizr.ui.setIgnoringDslColours = function(bool) {
+    try {
+        if (bool === true) {
+            window.localStorage.setItem(structurizr.ui.IGNORE_DSL_COLOURS_KEY, 'true');
+        } else {
+            window.localStorage.removeItem(structurizr.ui.IGNORE_DSL_COLOURS_KEY);
+        }
+    } catch (e) {
+        // storage unavailable (private window, blocked site data): not remembered
+    }
+};
+
+// Copies of `styles` without their colour attributes; shapes, icons, sizes,
+// borders etc. are kept.
+structurizr.ui.withoutColours = function(styles) {
+    return styles.map(function(style) {
+        const copy = Object.assign({}, style);
+        structurizr.ui.COLOUR_STYLE_ATTRIBUTES.forEach(function(attribute) {
+            delete copy[attribute];
+        });
+        return copy;
+    });
 };
 
 structurizr.ui.themes = [];
@@ -244,15 +310,23 @@ structurizr.ui.findElementStyle = function(element, darkMode) {
     var defaultSizeInUse = true;
 
     var elementStylesMap = {};
-    var elementStyles = [];
+    // copies: merging below writes later definitions into the first one seen for a tag
+    var elementStyles = structurizr.ui.BUILTIN_ELEMENT_STYLES.map(function(s) { return Object.assign({}, s); });
 
-    // use the styles defined in the theme as a starting point
+    // then the styles defined in the themes and the workspace
+    var definedStyles = [];
     structurizr.ui.themes.forEach(function(theme) {
-        elementStyles = elementStyles.concat(theme.elements);
+        definedStyles = definedStyles.concat(theme.elements);
     });
+    definedStyles = definedStyles.concat(structurizr.workspace.views.configuration.styles.elements);
 
-    // then the styles defined in the workspace
-    elementStyles = elementStyles.concat(structurizr.workspace.views.configuration.styles.elements);
+    if (structurizr.ui.isIgnoringDslColours()) {
+        elementStyles = elementStyles
+            .concat(structurizr.ui.DEFAULT_ELEMENT_STYLES.map(function(s) { return Object.assign({}, s); }))
+            .concat(structurizr.ui.withoutColours(definedStyles));
+    } else {
+        elementStyles = elementStyles.concat(definedStyles);
+    }
 
     elementStyles.forEach(function(elementStyleDefinition) {
         const colorScheme = darkMode ? 'Dark' : 'Light';
@@ -450,7 +524,9 @@ structurizr.ui.findRelationshipStyle = function(relationship, darkMode) {
     }
 
     const defaults = darkMode ? structurizr.ui.DARK_MODE_DEFAULTS : structurizr.ui.LIGHT_MODE_DEFAULTS;
-    const defaultRelationshipStyle = new structurizr.ui.RelationshipStyle(2, defaults.color, true, 'Direct', undefined, 24, 200, 50, 100, true, true);
+    const uncertain = structurizr.workspace.getAllTagsForRelationship(relationship).some(function(tag) { return tag.trim() === 'Uncertain'; });
+    const dashedByDefault = uncertain || structurizr.ui.DASHED_RELATIONSHIP_KINDS.indexOf(relationship.kind) > -1;
+    const defaultRelationshipStyle = new structurizr.ui.RelationshipStyle(2, defaults.relationshipColor, dashedByDefault, 'Direct', undefined, 24, 200, 50, 100, true, true);
 
     var defaultStyle = defaultRelationshipStyle;
 
@@ -464,6 +540,10 @@ structurizr.ui.findRelationshipStyle = function(relationship, darkMode) {
 
     // then the styles defined in the workspace
     relationshipStyles = relationshipStyles.concat(structurizr.workspace.views.configuration.styles.relationships);
+
+    if (structurizr.ui.isIgnoringDslColours()) {
+        relationshipStyles = structurizr.ui.withoutColours(relationshipStyles);
+    }
 
     relationshipStyles.forEach(function(relationshipStyleDefinition) {
         const colorScheme = darkMode ? 'Dark' : 'Light';

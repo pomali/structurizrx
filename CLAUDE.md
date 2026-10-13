@@ -127,6 +127,8 @@ Axum HTTP server serving a workspace browser at `http://localhost:<port>`. Key r
 
 `AppState` holds a per-workspace `DerivedCache` for artefacts that cost a full index pass to build (`AppState::cached`). The watcher drops the whole cache via `invalidate_derived()` immediately after swapping in freshly parsed workspaces — if you add a derived artefact, add it to `DerivedCache` rather than computing it per request.
 
+The viewer's diagram look mirrors the native `SvgExporter`: the C4 palette (`#applyDefaultStylesIfMissing` in `structurizr-workspace.js`), slate neutrals and relationship defaults (`LIGHT_MODE_DEFAULTS`/`DARK_MODE_DEFAULTS`, `DASHED_RELATIONSHIP_KINDS`, `BUILTIN_ELEMENT_STYLES` in `structurizr-ui.js`) match the `COLOR_*` constants and `edge_dash` in `structurizr-renderer/src/svg/mod.rs`. Change both together. The palette lives in `structurizr.ui.DEFAULT_ELEMENT_STYLES`; the workspace page's "Ignore DSL colours" checkbox (a `localStorage` preference read in `findElementStyle`/`findRelationshipStyle`, so the diagram and print pages honour it too) swaps it in for the workspace's and themes' `background`/`color`/`stroke`, keeping their shapes, icons and borders. Element shadows are an SVG `filter` attribute (`applyElementShadow`), not CSS, because `exportCurrentDiagramToSVG` strips classes.
+
 HTML templates live in `structurizr-web/src/templates/`. Static assets (CSS, JS, icons, WASM output) are embedded at compile time via `rust-embed` from `structurizr-web/assets/`. The WASM output files land in `assets/wasm/` and are produced by the `build.rs` script.
 
 ### `structurizr-lsp`
