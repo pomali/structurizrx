@@ -3778,7 +3778,12 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
     }
 
     function setRouting(link, routing) {
-        if (routing === undefined || routing === 'Direct') {
+        if (routing === undefined) {
+            // No routing set by a style or the view: curve through the
+            // auto-layout waypoints, leaving each box perpendicular to its edge.
+            link.unset('router');
+            link.connector('curve', { sourceDirection: 'auto', targetDirection: 'auto' });
+        } else if (routing === 'Direct') {
             link.unset('router');
             link.connector('rounded');
         } else if (routing === 'Orthogonal') {

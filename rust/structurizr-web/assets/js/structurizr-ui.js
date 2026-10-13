@@ -526,7 +526,7 @@ structurizr.ui.findRelationshipStyle = function(relationship, darkMode) {
     const defaults = darkMode ? structurizr.ui.DARK_MODE_DEFAULTS : structurizr.ui.LIGHT_MODE_DEFAULTS;
     const uncertain = structurizr.workspace.getAllTagsForRelationship(relationship).some(function(tag) { return tag.trim() === 'Uncertain'; });
     const dashedByDefault = uncertain || structurizr.ui.DASHED_RELATIONSHIP_KINDS.indexOf(relationship.kind) > -1;
-    const defaultRelationshipStyle = new structurizr.ui.RelationshipStyle(2, defaults.relationshipColor, dashedByDefault, 'Direct', undefined, 24, 200, 50, 100, true, true);
+    const defaultRelationshipStyle = new structurizr.ui.RelationshipStyle(2, defaults.relationshipColor, dashedByDefault, undefined, undefined, 24, 200, 50, 100, true, true);
 
     var defaultStyle = defaultRelationshipStyle;
 
