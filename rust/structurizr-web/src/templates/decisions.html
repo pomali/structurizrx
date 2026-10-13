@@ -18,26 +18,12 @@
         .status-badge-Deprecated  { background-color: #dc3545 !important; }
         .status-badge-Rejected    { background-color: #dc3545 !important; }
     </style>
+    <link rel="stylesheet" href="/static/css/structurizr-app.css"/>
+    <script src="/static/js/structurizr-app.js"></script>
 </head>
 <body>
-<nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom mb-4">
-    <div class="container-fluid">
-        <a class="navbar-brand fw-semibold" href="/">
-            <img src="/static/img/structurizr-logo.png" alt="Structurizr" height="28" class="me-2"/>
-            Structurizr
-        </a>
-        <ol class="breadcrumb mb-0 ms-2">
-            <li class="breadcrumb-item"><a href="/">Workspaces</a></li>
-            <li class="breadcrumb-item"><a href="/workspace/{{WORKSPACE_SLUG_ATTR}}">{{WORKSPACE_NAME}}</a></li>
-            <li class="breadcrumb-item active">Decisions</li>
-        </ol>
-        <div class="ms-auto">
-            <button id="themeToggle" class="btn btn-sm btn-outline-secondary" title="Toggle dark mode">
-                <i class="bi bi-circle-half"></i>
-            </button>
-        </div>
-    </div>
-</nav>
+{{APP_HEADER}}
+<div class="mb-4"></div>
 
 <div class="container">
     <div class="d-flex align-items-center mb-3">
@@ -51,7 +37,7 @@
 
     <div class="table-responsive" id="decisions-table-wrap">
         <table class="table table-hover align-middle" id="decisions-table" style="display:none">
-            <thead class="table-light">
+            <thead>
                 <tr>
                     <th style="width:5rem">ID</th>
                     <th style="width:8rem">Date</th>
@@ -76,19 +62,6 @@
 (function() {
     var WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
 
-    // ---- theme ----
-    const THEME_KEY = 'structurizrx-theme';
-    function applyTheme(t) {
-        document.documentElement.setAttribute('data-bs-theme', t);
-        localStorage.setItem(THEME_KEY, t);
-    }
-    var saved = localStorage.getItem(THEME_KEY) ||
-        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    applyTheme(saved);
-    document.getElementById('themeToggle').addEventListener('click', function() {
-        var cur = document.documentElement.getAttribute('data-bs-theme');
-        applyTheme(cur === 'dark' ? 'light' : 'dark');
-    });
 
     // ---- status badge colour ----
     function statusClass(status) {

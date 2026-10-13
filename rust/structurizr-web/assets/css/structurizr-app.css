@@ -1,0 +1,128 @@
+/*
+ * The app bar every page shares (src/chrome.rs renders it). Page-specific
+ * controls belong in a toolbar row beneath it, styled by .sx-toolbar.
+ */
+
+.sx-appbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    height: 48px;
+    padding: 0 0.75rem;
+    flex-shrink: 0;
+    background: var(--bs-tertiary-bg);
+    border-bottom: 1px solid var(--bs-border-color);
+    font-size: 0.875rem;
+}
+
+.sx-brand {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.sx-workspace {
+    font-weight: 600;
+    color: var(--bs-body-color);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 22rem;
+    min-width: 3rem;
+}
+a.sx-workspace:hover { text-decoration: underline; }
+
+.sx-tabs {
+    display: flex;
+    align-self: stretch;
+    gap: 0.125rem;
+    margin-left: 0.5rem;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.sx-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0 0.7rem;
+    color: var(--bs-secondary-color);
+    text-decoration: none;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+}
+.sx-tab:hover { color: var(--bs-body-color); }
+.sx-tab.active {
+    color: var(--bs-body-color);
+    font-weight: 600;
+    border-bottom-color: var(--bs-primary);
+}
+
+.sx-appbar-end {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+/* "More" is a <details>, not a Bootstrap dropdown: the vendored Bootstrap
+   bundle has no Popper. */
+.sx-more { position: relative; }
+.sx-more > summary { list-style: none; }
+.sx-more > summary::-webkit-details-marker { display: none; }
+.sx-more-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 1100;
+    min-width: 12rem;
+    padding: 0.25rem;
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.375rem;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+.sx-more-menu a {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: 0.25rem;
+    color: var(--bs-body-color);
+    text-decoration: none;
+    white-space: nowrap;
+}
+.sx-more-menu a:hover { background: var(--bs-tertiary-bg); }
+.sx-more-menu i { color: var(--bs-secondary-color); }
+
+/* A page's own controls, one row beneath the app bar. */
+.sx-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    min-height: 44px;
+    padding: 0.35rem 0.75rem;
+    flex-shrink: 0;
+    background: var(--bs-body-bg);
+    border-bottom: 1px solid var(--bs-border-color);
+    font-size: 0.875rem;
+}
+
+/* Narrow windows: tabs keep their icons, lose their words. */
+@media (max-width: 1100px) {
+    .sx-tab span { display: none; }
+    .sx-tab { padding: 0 0.6rem; }
+    .sx-workspace { max-width: 12rem; }
+}
+@media (max-width: 520px) {
+    .sx-workspace { display: none; }
+}
+
+@media print {
+    .sx-appbar, .sx-toolbar { display: none !important; }
+}

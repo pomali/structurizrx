@@ -18,6 +18,7 @@
 //! ```
 
 pub mod assets;
+pub mod chrome;
 pub mod git;
 pub mod locate;
 pub mod markdown;

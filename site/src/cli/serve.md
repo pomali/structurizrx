@@ -17,6 +17,26 @@ Like `render`, `serve` materializes generated (`auto`) views before
 rendering. Editing and saving a watched file reloads the browser via a
 WebSocket automatically — no manual refresh.
 
+Serving a single file opens that workspace directly; serving a directory
+opens the list of workspaces in it.
+
+## Finding your way
+
+Every page has the same bar along the top: the workspace's name, then a tab
+for each way of looking at it.
+
+| Tab | What it shows |
+|---|---|
+| **Diagrams** | The workspace's views, listed in the sidebar — your own views first, in C4 order, then generated ones |
+| **Graph** | The whole workspace as one force-directed graph |
+| **Clusters** | Communities, cycles and coupling, compared with the structure the model declares |
+| **Review** | The model element by element, with hygiene findings |
+| **Compare** | What changed in the model between two git versions |
+| **Decisions** | The workspace's ADRs (only when it has some) |
+
+The **⋯** menu holds *Print all views*, the canvas demo and this
+documentation; **◐** switches between light and dark on every page at once.
+
 ## Routes
 
 | Route | What it is |
@@ -24,11 +44,13 @@ WebSocket automatically — no manual refresh.
 | `GET /` | Workspace list |
 | `GET /workspace/{name}` | Workspace overview |
 | `GET /workspace/{name}/diagram/{key}` | A single diagram |
-| `GET /workspace/{name}/graph` | Interactive relationship graph |
+| `GET /workspace/{name}/graph` | Universe graph — the whole workspace as one force-directed graph |
+| `GET /workspace/{name}/clusters` | Cluster analysis |
+| `GET /workspace/{name}/review` | Element-by-element review |
+| `GET /workspace/{name}/diff` | Compare two git versions of the workspace |
 | `GET /workspace/{name}/decisions` | ADR list (from `!adrs`) |
 | `GET /workspace/{name}/decisions/{id}` | A single ADR |
-| `GET /workspace/{name}/graph` | Universe graph — the whole workspace as one force-directed graph |
-| `GET /workspace/{name}/diff` | Compare two git versions of the workspace |
+| `GET /workspace/{name}/print` | Every view as one printable document |
 | `GET /workspace/{name}/canvas` | In-browser WASM rendering demo |
 | `GET /docs/` | This documentation site |
 | `GET /llms.txt` | The DSL cheat sheet, as plain text |
@@ -104,14 +126,15 @@ the hubs of a model are visible before you read a single label.
 
 ## Diagram display
 
-The workspace page's toolbar has three display settings. Each is remembered
-by your browser, and the single-diagram and print pages follow them too.
+The workspace page's toolbar has two display settings, and the app bar a
+third. Each is remembered by your browser, and the single-diagram and print
+pages follow them too.
 
 | Setting | Effect |
 |---|---|
 | **Layout** | How views with `autoLayout` are arranged. *ELK, right-angle lines* (the default) and *ELK, curved lines* use the [Eclipse Layout Kernel](https://eclipse.dev/elk/), which routes relationships around boxes and keeps groups and boundaries together; *dagre* is the layout upstream Structurizr uses. The view's direction and separations apply to all three. Views with stored positions are never re-arranged. |
 | **Ignore DSL colours** | Draws with the built-in palette instead of the colours the workspace's styles and themes set. Shapes, icons, sizes and borders still come from the workspace. |
-| **Dark mode** (◐) | Switches the page and diagrams to a dark background. |
+| **Dark mode** (◐, in the app bar) | Switches every page, and the diagrams, to a dark background. |
 
 With the built-in palette, whether because the workspace defines no styles
 or because *Ignore DSL colours* is on, software systems other than the one a
@@ -131,7 +154,7 @@ description, workspace name and date. Diagrams viewed in dark mode are
 printed with a light background.
 
 This prints one view. To print every view as a paginated document, use
-*Print document* in the sidebar (`GET /workspace/{name}/print`).
+*Print all views* in the app bar's **⋯** menu (`GET /workspace/{name}/print`).
 
 The paper size is set via CSS (`@page { size: ... }`); in browsers that
 don't support it, pick the paper size in the print dialog instead — the

@@ -64,6 +64,10 @@ pub fn export_viewer(workspace: &Workspace, output: &Path) -> Result<()> {
 
 fn viewer_page(workspace: &Workspace) -> String {
     include_str!("templates/workspace.html")
+        .replace(
+            "{{APP_HEADER}}",
+            &crate::chrome::static_app_header(&workspace.name),
+        )
         .replace("{{WORKSPACE_NAME}}", &html_escape(&workspace.name))
         .replace("{{WORKSPACE_PATH}}", ".")
         .replace("{{GRAPH_LINK}}", "")

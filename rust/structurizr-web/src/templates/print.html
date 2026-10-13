@@ -5,16 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title>Print – {{WORKSPACE_NAME}}</title>
     <link rel="icon" type="image/png" href="/static/img/favicon.png"/>
+    <link rel="stylesheet" href="/static/css/bootstrap-5.3.7.min.css"/>
+    <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
     <link rel="stylesheet" href="/static/css/structurizr.css"/>
     <link rel="stylesheet" href="/static/css/structurizr-print.css"/>
     <!-- Injected by structurizr-print.js: @page size and the named page rules
          used for per-view orientation. @page cannot read CSS variables. -->
     <style id="print-page-rules"></style>
+    <link rel="stylesheet" href="/static/css/structurizr-app.css"/>
+    <script src="/static/js/structurizr-app.js"></script>
 </head>
 <body class="print-body" data-workspace="{{WORKSPACE_SLUG_ATTR}}">
 
-<div id="print-controls">
-    <a href="/workspace/{{WORKSPACE_SLUG_ATTR}}" title="Back to the workspace">&larr; {{WORKSPACE_NAME}}</a>
+{{APP_HEADER}}
+
+<!-- A paper preview: light whatever the theme, like the paper it ends up on. -->
+<div id="print-controls" data-bs-theme="light">
 
     <div class="control-group">
         <label for="opt-paper">Paper</label>
@@ -59,7 +65,7 @@
      moved out of the viewport rather than hidden. -->
 <div id="print-stage"></div>
 
-<div id="print-doc"></div>
+<div id="print-doc" data-bs-theme="light"></div>
 
 <script src="/static/js/jquery-3.7.1.min.js"></script>
 <script src="/static/js/jointjs-Core-4.1.3.js"></script>

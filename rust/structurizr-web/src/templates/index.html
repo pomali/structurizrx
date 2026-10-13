@@ -15,22 +15,12 @@
         .badge-count { font-size: .75rem; }
         #reload-banner { display: none; position: fixed; bottom: 1rem; right: 1rem; z-index: 9999; }
     </style>
+    <link rel="stylesheet" href="/static/css/structurizr-app.css"/>
+    <script src="/static/js/structurizr-app.js"></script>
 </head>
 <body>
-<nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom mb-4">
-    <div class="container-fluid">
-        <a class="navbar-brand fw-semibold" href="/">
-            <img src="/static/img/structurizr-logo.png" alt="Structurizr" height="28" class="me-2"/>
-            Structurizr
-        </a>
-        <div class="ms-auto d-flex align-items-center gap-2">
-            <a href="/docs/" class="btn btn-sm btn-outline-secondary">Docs</a>
-            <button id="themeToggle" class="btn btn-sm btn-outline-secondary" title="Toggle dark mode">
-                <i class="bi bi-circle-half"></i>
-            </button>
-        </div>
-    </div>
-</nav>
+{{APP_HEADER}}
+<div class="mb-4"></div>
 
 <div class="container">
     <div id="workspaces" class="row g-3"></div>
@@ -50,19 +40,6 @@
 <script src="/static/js/bootstrap-5.3.7.min.js"></script>
 <script>
 (function() {
-    // ---- theme ----
-    const THEME_KEY = 'structurizrx-theme';
-    function applyTheme(t) {
-        document.documentElement.setAttribute('data-bs-theme', t);
-        localStorage.setItem(THEME_KEY, t);
-    }
-    const saved = localStorage.getItem(THEME_KEY) ||
-        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    applyTheme(saved);
-    document.getElementById('themeToggle').addEventListener('click', () => {
-        const cur = document.documentElement.getAttribute('data-bs-theme');
-        applyTheme(cur === 'dark' ? 'light' : 'dark');
-    });
 
     // ---- render cards ----
     function renderWorkspaces(list) {

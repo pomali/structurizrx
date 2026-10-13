@@ -41,8 +41,7 @@ body.diff-body {
 #diff-revisions select {
     flex: 1 1 0;
     min-width: 0;
-    font-family: var(--bs-font-monospace, monospace);
-    font-size: 0.78rem;
+    font-size: 0.8125rem;
 }
 
 /* ---- summary ---- */

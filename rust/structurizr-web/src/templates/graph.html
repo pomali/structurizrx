@@ -7,6 +7,8 @@
     <link rel="icon" type="image/png" href="/static/img/favicon.png"/>
     <link rel="stylesheet" href="/static/css/bootstrap-5.3.7.min.css"/>
     <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-app.css"/>
+    <script src="/static/js/structurizr-app.js"></script>
     <style>
         html, body { height: 100%; margin: 0; overflow: hidden; }
         #app { display: flex; flex-direction: column; height: 100vh; }
@@ -66,27 +68,16 @@
 </head>
 <body>
 <div id="app">
-    <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom py-1 px-3 flex-shrink-0">
-        <a class="navbar-brand fw-semibold me-2" href="/">
-            <img src="/static/img/structurizr-logo.png" alt="Structurizr" height="24"/>
-        </a>
-        <ol class="breadcrumb mb-0 ms-1">
-            <li class="breadcrumb-item"><a href="/">Workspaces</a></li>
-            <li class="breadcrumb-item"><a href="/workspace/{{WORKSPACE_SLUG_ATTR}}">{{WORKSPACE_NAME}}</a></li>
-            <li class="breadcrumb-item active">Graph</li>
-        </ol>
-        <div class="ms-auto d-flex align-items-center gap-2">
-            <span id="stats" class="text-secondary me-1"></span>
-            <div class="btn-group btn-group-sm">
-                <button class="btn btn-outline-secondary" id="btnZoomOut" title="Zoom out"><i class="bi bi-zoom-out"></i></button>
-                <button class="btn btn-outline-secondary" id="btnFit" title="Zoom to fit (f)"><i class="bi bi-arrows-angle-contract"></i></button>
-                <button class="btn btn-outline-secondary" id="btnZoomIn" title="Zoom in"><i class="bi bi-zoom-in"></i></button>
-            </div>
-            <button class="btn btn-sm btn-outline-secondary" id="themeToggle" title="Toggle dark mode">
-                <i class="bi bi-circle-half"></i>
-            </button>
+    {{APP_HEADER}}
+
+    <div class="sx-toolbar">
+        <span id="stats" class="text-secondary me-auto"></span>
+        <div class="btn-group btn-group-sm">
+            <button class="btn btn-outline-secondary" id="btnZoomOut" title="Zoom out" aria-label="Zoom out"><i class="bi bi-zoom-out"></i></button>
+            <button class="btn btn-outline-secondary" id="btnFit" title="Zoom to fit (f)" aria-label="Zoom to fit"><i class="bi bi-arrows-angle-contract"></i></button>
+            <button class="btn btn-outline-secondary" id="btnZoomIn" title="Zoom in" aria-label="Zoom in"><i class="bi bi-zoom-in"></i></button>
         </div>
-    </nav>
+    </div>
 
     <div id="stage">
         <canvas id="graph-canvas"></canvas>
@@ -180,17 +171,9 @@
 (function () {
     var WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
 
-    // ---- theme ----
-    var THEME_KEY = 'structurizrx-theme';
-    function applyTheme(t) {
-        document.documentElement.setAttribute('data-bs-theme', t);
-        localStorage.setItem(THEME_KEY, t);
+    // ---- theme (the app bar's toggle, structurizr-app.js) ----
+    document.addEventListener('structurizr:themechange', function () {
         if (window.graph) window.graph.refreshTheme();
-    }
-    applyTheme(localStorage.getItem(THEME_KEY) ||
-        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-    document.getElementById('themeToggle').addEventListener('click', function () {
-        applyTheme(document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark');
     });
 
     // ---- node kinds, in the order they are offered as filters ----

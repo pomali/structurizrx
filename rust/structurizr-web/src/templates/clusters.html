@@ -8,13 +8,14 @@
     <link rel="stylesheet" href="/static/css/bootstrap-5.3.7.min.css"/>
     <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
     <link rel="stylesheet" href="/static/css/structurizr-clusters.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-app.css"/>
+    <script src="/static/js/structurizr-app.js"></script>
 </head>
 <body class="clusters-body" data-workspace="{{WORKSPACE_SLUG_ATTR}}">
 
-<header id="clusters-header">
-    <a href="/workspace/{{WORKSPACE_SLUG_ATTR}}" title="Back to the workspace">&larr; {{WORKSPACE_NAME}}</a>
-    <strong>Clusters</strong>
+{{APP_HEADER}}
 
+<header id="clusters-header" class="sx-toolbar">
     <span class="control">
         <label for="opt-level">Level</label>
         <select id="opt-level" class="form-select form-select-sm">

@@ -12,6 +12,7 @@ use axum::{
 use structurizr_renderer::{exporter::DiagramExporter, mermaid::MermaidExporter, svg::SvgExporter};
 
 use crate::assets::{Assets, DocsAssets};
+use crate::chrome::{app_header, Tab, WorkspaceHeader};
 use crate::markdown::render_markdown;
 use crate::state::{AppState, BroadcastMsg, WorkspaceSummary};
 
@@ -115,16 +116,46 @@ async fn llms_txt_handler() -> ([(axum::http::HeaderName, &'static str); 1], &'s
     )
 }
 
-async fn index_handler() -> Html<&'static str> {
-    Html(INDEX_HTML)
+async fn index_handler() -> Html<String> {
+    Html(INDEX_HTML.replace("{{APP_HEADER}}", &app_header(None, Tab::None)))
 }
 
-async fn workspace_handler(Path(name): Path<String>) -> Html<String> {
-    Html(
-        WORKSPACE_HTML
-            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
+/// The shared app bar for a page about workspace `name`. An unknown name
+/// still gets a bar (with the slug as its title) so the page can report the
+/// missing workspace itself.
+fn workspace_header(state: &AppState, name: &str, active: Tab) -> String {
+    let workspaces = state.workspaces.lock().unwrap();
+    let entry = workspaces.iter().find(|e| e.name == name);
+    let title = entry.map_or(name, |e| e.display_name.as_str());
+    let has_decisions = entry.is_some_and(|e| {
+        e.workspace
+            .documentation
+            .as_ref()
+            .and_then(|d| d.decisions.as_ref())
+            .is_some_and(|d| !d.is_empty())
+    });
+    app_header(
+        Some(&WorkspaceHeader {
+            slug: name,
+            title,
+            has_decisions,
+        }),
+        active,
     )
+}
+
+/// Fill a workspace page template: the app bar plus the name placeholders
+/// every template uses.
+fn workspace_page(template: &str, state: &AppState, name: &str, active: Tab) -> String {
+    template
+        .replace("{{APP_HEADER}}", &workspace_header(state, name, active))
+        .replace("{{WORKSPACE_NAME}}", &html_escape(name))
+        .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(name))
+        .replace("{{WORKSPACE_SLUG}}", &js_escape(name))
+}
+
+async fn workspace_handler(State(state): State<AppState>, Path(name): Path<String>) -> Html<String> {
+    Html(workspace_page(WORKSPACE_HTML, &state, &name, Tab::Diagrams))
 }
 
 async fn diagram_handler(Path((name, key)): Path<(String, String)>) -> Html<String> {
@@ -136,82 +167,47 @@ async fn diagram_handler(Path((name, key)): Path<(String, String)>) -> Html<Stri
     )
 }
 
-async fn decisions_handler(Path(name): Path<String>) -> Html<String> {
-    Html(
-        DECISIONS_HTML
-            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
-    )
+async fn decisions_handler(State(state): State<AppState>, Path(name): Path<String>) -> Html<String> {
+    Html(workspace_page(DECISIONS_HTML, &state, &name, Tab::Decisions))
 }
 
-async fn decision_handler(Path((name, id)): Path<(String, String)>) -> Html<String> {
+async fn decision_handler(
+    State(state): State<AppState>,
+    Path((name, id)): Path<(String, String)>,
+) -> Html<String> {
     Html(
-        DECISION_HTML
-            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name))
+        workspace_page(DECISION_HTML, &state, &name, Tab::Decisions)
             .replace("{{DECISION_ID}}", &js_escape(&id)),
     )
 }
 
-async fn canvas_handler(Path(name): Path<String>) -> Html<String> {
-    Html(
-        CANVAS_HTML
-            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
-    )
+async fn canvas_handler(State(state): State<AppState>, Path(name): Path<String>) -> Html<String> {
+    Html(workspace_page(CANVAS_HTML, &state, &name, Tab::None))
 }
 
-async fn graph_handler(Path(name): Path<String>) -> Html<String> {
-    Html(
-        GRAPH_HTML
-            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
-    )
+async fn graph_handler(State(state): State<AppState>, Path(name): Path<String>) -> Html<String> {
+    Html(workspace_page(GRAPH_HTML, &state, &name, Tab::Graph))
 }
 
 /// The print document page. Every view is rendered client-side by the JointJS
 /// diagram and serialised there, so this handler only serves the shell.
-async fn print_handler(Path(name): Path<String>) -> Html<String> {
-    Html(
-        PRINT_HTML
-            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
-    )
+async fn print_handler(State(state): State<AppState>, Path(name): Path<String>) -> Html<String> {
+    Html(workspace_page(PRINT_HTML, &state, &name, Tab::None))
 }
 
 /// The element walkthrough / review page.
-async fn review_handler(Path(name): Path<String>) -> Html<String> {
-    Html(
-        REVIEW_HTML
-            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
-    )
+async fn review_handler(State(state): State<AppState>, Path(name): Path<String>) -> Html<String> {
+    Html(workspace_page(REVIEW_HTML, &state, &name, Tab::Review))
 }
 
 /// The version-comparison page.
-async fn diff_handler(Path(name): Path<String>) -> Html<String> {
-    Html(
-        DIFF_HTML
-            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
-    )
+async fn diff_handler(State(state): State<AppState>, Path(name): Path<String>) -> Html<String> {
+    Html(workspace_page(DIFF_HTML, &state, &name, Tab::Compare))
 }
 
 /// The cluster analysis page.
-async fn clusters_handler(Path(name): Path<String>) -> Html<String> {
-    Html(
-        CLUSTERS_HTML
-            .replace("{{WORKSPACE_NAME}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG_ATTR}}", &html_escape(&name))
-            .replace("{{WORKSPACE_SLUG}}", &js_escape(&name)),
-    )
+async fn clusters_handler(State(state): State<AppState>, Path(name): Path<String>) -> Html<String> {
+    Html(workspace_page(CLUSTERS_HTML, &state, &name, Tab::Clusters))
 }
 
 // ---- JSON API ----

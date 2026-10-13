@@ -18,22 +18,16 @@
             box-shadow: 0 2px 6px rgba(0,0,0,.08);
         }
     </style>
+    <link rel="stylesheet" href="/static/css/structurizr-app.css"/>
+    <script src="/static/js/structurizr-app.js"></script>
 </head>
 <body>
 
 <!-- Top bar -->
-<nav class="navbar navbar-expand-sm bg-body-tertiary border-bottom px-3 py-1">
-    <a class="navbar-brand fw-semibold text-decoration-none me-3" href="/">
-        <img src="/static/img/structurizr-logo.png" alt="" height="22" class="me-1"/>
-    </a>
-    <a class="btn btn-sm btn-outline-secondary me-2"
-       href="/workspace/{{WORKSPACE_SLUG_ATTR}}">
-        <i class="bi bi-arrow-left"></i> {{WORKSPACE_NAME}}
-    </a>
-    <span class="navbar-text">
-        Canvas demo &mdash; <code>render_to_canvas</code>
-    </span>
-</nav>
+{{APP_HEADER}}
+<div class="sx-toolbar">
+    Canvas demo &mdash; <code>render_to_canvas</code>
+</div>
 
 <div id="canvas-wrap">
     <p id="status" class="text-secondary small mb-3">Loading…</p>

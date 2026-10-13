@@ -8,13 +8,14 @@
     <link rel="stylesheet" href="/static/css/bootstrap-5.3.7.min.css"/>
     <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
     <link rel="stylesheet" href="/static/css/structurizr-review.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-app.css"/>
+    <script src="/static/js/structurizr-app.js"></script>
 </head>
 <body class="review-body" data-workspace="{{WORKSPACE_SLUG_ATTR}}">
 
-<header id="review-header">
-    <a href="/workspace/{{WORKSPACE_SLUG_ATTR}}" title="Back to the workspace">&larr; {{WORKSPACE_NAME}}</a>
-    <strong>Review</strong>
+{{APP_HEADER}}
 
+<header id="review-header" class="sx-toolbar">
     <div id="review-progress">
         <div class="progress" role="progressbar" aria-label="Review progress">
             <div id="progress-bar" class="progress-bar bg-success" style="width: 0%"></div>

@@ -10,10 +10,19 @@
     <link rel="stylesheet" href="/static/css/structurizr.css"/>
     <link rel="stylesheet" href="/static/css/structurizr-static.css"/>
     <link rel="stylesheet" href="/static/css/structurizr-print-view.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-app.css"/>
+    <script src="/static/js/structurizr-app.js"></script>
     <style>
         html, body { height: 100%; margin: 0; overflow: hidden; }
         #app { display: flex; height: 100vh; flex-direction: column; }
-        #topbar { flex-shrink: 0; }
+        #view-heading {
+            display: flex; align-items: center; gap: .5rem;
+            min-width: 0; margin-right: auto;
+        }
+        #view-title {
+            font-weight: 600; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis;
+        }
         #content { display: flex; flex: 1; overflow: hidden; }
         #sidebar {
             width: 280px; min-width: 200px; max-width: 400px;
@@ -108,18 +117,19 @@
 </head>
 <body>
 <div id="app">
-    <!-- Top bar -->
-    <nav id="topbar" class="navbar navbar-expand-sm bg-body-tertiary border-bottom px-3 py-1">
-        <button id="sidebar-toggle-btn" class="btn btn-sm btn-outline-secondary me-2" title="Toggle sidebar">
-            <i class="bi bi-layout-sidebar"></i>
-        </button>
-        <a class="navbar-brand fw-semibold me-2 text-decoration-none" href="/">
-            <img src="/static/img/structurizr-logo.png" alt="" height="22" class="me-1"/>
-        </a>
-        <span class="navbar-text fw-semibold me-auto text-truncate" id="ws-title">{{WORKSPACE_NAME}}</span>
+    {{APP_HEADER}}
 
-        <div class="d-flex align-items-center gap-2 ms-2 flex-shrink-0">
+    <!-- This page's toolbar: what is on screen, and what to do with it -->
+    <div id="topbar" class="sx-toolbar">
+        <div id="view-heading">
+            <button id="sidebar-toggle-btn" class="btn btn-sm btn-outline-secondary" title="Toggle sidebar" aria-label="Toggle sidebar">
+                <i class="bi bi-layout-sidebar"></i>
+            </button>
             <span class="badge bg-secondary d-none" id="view-type-badge"></span>
+            <span id="view-title"></span>
+        </div>
+
+        <div class="d-flex align-items-center gap-2 flex-shrink-0">
 
             <!-- Animation controls, shown only for dynamic/animated views -->
             <div class="btn-group btn-group-sm d-none" id="animationControls" role="group">
@@ -164,14 +174,11 @@
                 <input class="form-check-input" type="checkbox" id="ignoreDslColours">
                 <label class="form-check-label" for="ignoreDslColours">Ignore DSL colours</label>
             </div>
-            <button class="btn btn-sm btn-outline-secondary" id="themeToggle" title="Toggle dark mode">
-                <i class="bi bi-circle-half"></i>
-            </button>
             <button class="btn btn-sm btn-outline-secondary" id="btnHelp" title="Keyboard shortcuts (?)">
                 <i class="bi bi-question-lg"></i>
             </button>
         </div>
-    </nav>
+    </div>
 
     <!-- Main content -->
     <div id="content">
@@ -462,16 +469,16 @@
         layoutEngine.blur();
     });
 
-    document.getElementById('themeToggle').addEventListener('click', function() {
-        var next = structurizr.ui.isDarkMode()
-            ? structurizr.ui.RENDERING_MODE_LIGHT
-            : structurizr.ui.RENDERING_MODE_DARK;
-        structurizr.ui.setRenderingMode(next);
+    // The app bar's toggle (structurizr-app.js) writes the cookie
+    // structurizr.ui reads; redraw to match.
+    document.addEventListener('structurizr:themechange', function() {
+        structurizr.ui.changeRenderingMode();
         updateDiagramDarkMode();
     });
 
     // --- Print this view (A4/A3) ---
-    // One diagram on one page; the sidebar's "Print document" prints every view.
+    // One diagram on one page; "Print all views" in the app bar's More menu
+    // prints every view.
     structurizrPrint.init({
         getDiagram: function() { return diagramReady ? diagram : undefined; },
         getCaption: printCaption,
@@ -525,7 +532,7 @@
         return {
             title: structurizr.ui.getTitleForView(view),
             description: view.description || '',
-            metadata: document.getElementById('ws-title').textContent.trim() +
+            metadata: structurizr.workspace.name +
                       ' · ' + new Date().toLocaleDateString()
         };
     }
@@ -714,72 +721,6 @@
         var list = document.getElementById('view-list');
         list.innerHTML = '';
         sidebarViewOrder = [];
-
-        if (!STATIC_EXPORT) {
-            // Canvas demo link
-            var canvasHdr = document.createElement('div');
-            canvasHdr.className = 'view-group-header';
-            canvasHdr.textContent = 'Tools';
-            list.appendChild(canvasHdr);
-
-            var graphLink = document.createElement('a');
-            graphLink.className = 'view-item';
-            graphLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/graph';
-            graphLink.innerHTML = '<i class="bi bi-diagram-3 me-1"></i>Universe graph';
-            graphLink.title = 'Force-directed graph of every element, relationship, view and decision';
-            list.appendChild(graphLink);
-
-            var clustersLink = document.createElement('a');
-            clustersLink.className = 'view-item';
-            clustersLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/clusters';
-            clustersLink.innerHTML = '<i class="bi bi-grid-3x3 me-1"></i>Cluster analysis';
-            clustersLink.title = 'Communities, cycles, coupling and how they compare with the declared structure';
-            list.appendChild(clustersLink);
-
-            var reviewLink = document.createElement('a');
-            reviewLink.className = 'view-item';
-            reviewLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/review';
-            reviewLink.innerHTML = '<i class="bi bi-list-check me-1"></i>Review elements';
-            reviewLink.title = 'Walk the model element by element, with hygiene findings';
-            list.appendChild(reviewLink);
-
-            var diffLink = document.createElement('a');
-            diffLink.className = 'view-item';
-            diffLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/diff';
-            diffLink.innerHTML = '<i class="bi bi-clock-history me-1"></i>Compare versions';
-            diffLink.title = 'What changed in the model between two git revisions';
-            list.appendChild(diffLink);
-
-            var printLink = document.createElement('a');
-            printLink.className = 'view-item';
-            printLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/print';
-            printLink.innerHTML = '<i class="bi bi-printer me-1"></i>Print document';
-            printLink.title = 'Every view as a paginated document, ready to print';
-            list.appendChild(printLink);
-
-            var canvasLink = document.createElement('a');
-            canvasLink.className = 'view-item';
-            canvasLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/canvas';
-            canvasLink.innerHTML = '<i class="bi bi-display me-1"></i>Canvas demo';
-            canvasLink.title = 'Render the first diagram with the WASM render_to_canvas function';
-            list.appendChild(canvasLink);
-        }
-
-        // ADR decisions link (shown only if workspace has decisions)
-        var hasDecisions = !STATIC_EXPORT && structurizr.workspace.hasDecisions &&
-                           structurizr.workspace.hasDecisions();
-        if (hasDecisions) {
-            var decisionsHdr = document.createElement('div');
-            decisionsHdr.className = 'view-group-header';
-            decisionsHdr.textContent = 'Documentation';
-            list.appendChild(decisionsHdr);
-
-            var decisionsLink = document.createElement('a');
-            decisionsLink.className = 'view-item';
-            decisionsLink.href = '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '/decisions';
-            decisionsLink.innerHTML = '<i class="bi bi-journal-text me-1"></i>Decisions';
-            list.appendChild(decisionsLink);
-        }
 
         function addViewItem(v) {
             var title = structurizr.ui.getTitleForView(v);
@@ -1066,6 +1007,9 @@
             badge.title = isAuto(view) ? 'Generated view' : '';
             badge.classList.remove('d-none');
             var title = structurizr.ui.getTitleForView(view);
+            var viewTitle = document.getElementById('view-title');
+            viewTitle.textContent = title;
+            viewTitle.title = title + (view.description ? ' — ' + view.description : '');
             setStatus(title + (view.description ? ' – ' + view.description : ''));
             svgBtn.href = '/api/workspace/' + encodeURIComponent(WORKSPACE_SLUG) +
                           '/diagram/' + encodeURIComponent(key) + '/svg';
@@ -1073,6 +1017,7 @@
             mermaidBtn.classList.toggle('d-none', STATIC_EXPORT);
         } else {
             badge.classList.add('d-none');
+            document.getElementById('view-title').textContent = '';
             svgBtn.classList.add('d-none');
             mermaidBtn.classList.add('d-none');
         }

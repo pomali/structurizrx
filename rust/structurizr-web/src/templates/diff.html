@@ -8,13 +8,14 @@
     <link rel="stylesheet" href="/static/css/bootstrap-5.3.7.min.css"/>
     <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
     <link rel="stylesheet" href="/static/css/structurizr-diff.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-app.css"/>
+    <script src="/static/js/structurizr-app.js"></script>
 </head>
 <body class="diff-body" data-workspace="{{WORKSPACE_SLUG_ATTR}}">
 
-<header id="diff-header">
-    <a href="/workspace/{{WORKSPACE_SLUG_ATTR}}" title="Back to the workspace">&larr; {{WORKSPACE_NAME}}</a>
-    <strong>Compare versions</strong>
+{{APP_HEADER}}
 
+<header id="diff-header" class="sx-toolbar">
     <div id="diff-revisions">
         <select id="rev-from" class="form-select form-select-sm" aria-label="Earlier version"></select>
         <button id="swap-revisions" type="button" class="btn btn-sm btn-outline-secondary"
