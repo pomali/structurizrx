@@ -33,9 +33,94 @@
                 options
             );
             reflowUnconnectedElements(cells, isCluster);
+            if (options && options.setLinkVertices) {
+                routeThroughChannels(cells, isCluster, options.rankDir || 'TB');
+            }
             return result;
         };
     })();
+
+    // dagre hands back an edge's waypoints without its end points, and the
+    // last waypoint can sit level with the source rather than the target. The
+    // final leg then runs diagonally to the target across every box stacked
+    // in between. Instead, leave the source straight into the gap after its
+    // rank, travel along that gap, and enter the target straight from the gap
+    // before its rank, so the legs that change level stay between the columns.
+    var CHANNEL_INSET = 24;     // how far into the gap from the column edge
+    var LEVEL_TOLERANCE = 4;    // waypoints this close in level count as level
+
+    // Coordinates with u along the rank direction and v across it.
+    var AXES = {
+        TB: { toUV: function(p) { return { u: p.y, v: p.x }; },  fromUV: function(u, v) { return { x: v, y: u }; } },
+        BT: { toUV: function(p) { return { u: -p.y, v: p.x }; }, fromUV: function(u, v) { return { x: v, y: -u }; } },
+        LR: { toUV: function(p) { return { u: p.x, v: p.y }; },  fromUV: function(u, v) { return { x: u, y: v }; } },
+        RL: { toUV: function(p) { return { u: -p.x, v: p.y }; }, fromUV: function(u, v) { return { x: -u, y: v }; } }
+    };
+
+    function routeThroughChannels(cells, isCluster, rankDir) {
+        var axes = AXES[rankDir] || AXES.TB;
+        var byId = {};
+        var boxes = [];
+        cells.forEach(function(cell) {
+            if (!cell.isElement() || isCluster[cell.id]) return;
+            var b = cell.getBBox();
+            var a = axes.toUV({ x: b.x, y: b.y });
+            var c = axes.toUV({ x: b.x + b.width, y: b.y + b.height });
+            var box = {
+                u0: Math.min(a.u, c.u), u1: Math.max(a.u, c.u),
+                v0: Math.min(a.v, c.v), v1: Math.max(a.v, c.v)
+            };
+            box.cu = (box.u0 + box.u1) / 2;
+            box.cv = (box.v0 + box.v1) / 2;
+            byId[cell.id] = box;
+            boxes.push(box);
+        });
+
+        // dagre centres every node of a rank on the same line, so a rank's
+        // column runs from its widest node's near edge to its far edge.
+        function column(box) {
+            var u0 = box.u0, u1 = box.u1;
+            boxes.forEach(function(other) {
+                if (Math.abs(other.cu - box.cu) < 2) {
+                    u0 = Math.min(u0, other.u0);
+                    u1 = Math.max(u1, other.u1);
+                }
+            });
+            return { u0: u0, u1: u1 };
+        }
+
+        cells.forEach(function(link) {
+            if (!link.isLink()) return;
+            var source = byId[(link.get('source') || {}).id];
+            var target = byId[(link.get('target') || {}).id];
+            if (!source || !target || source === target) return;
+
+            // Only edges running with the rank direction; dagre reverses the
+            // others internally and their waypoints are already its detour.
+            var exitU = column(source).u1 + CHANNEL_INSET;
+            var entryU = column(target).u0 - CHANNEL_INSET;
+            if (entryU <= exitU) return;
+
+            var points = (link.get('vertices') || []).map(axes.toUV);
+            var route = [];
+
+            var first = points.length ? points[0] : { u: entryU, v: target.cv };
+            route.push({ u: exitU, v: source.cv });
+            if (Math.abs(first.v - source.cv) > LEVEL_TOLERANCE) {
+                route.push({ u: exitU, v: first.v });
+            }
+            points.forEach(function(p) {
+                if (p.u > exitU && p.u < entryU) route.push(p);
+            });
+            var last = route[route.length - 1];
+            if (Math.abs(last.v - target.cv) > LEVEL_TOLERANCE) {
+                route.push({ u: entryU, v: last.v });
+            }
+            route.push({ u: entryU, v: target.cv });
+
+            link.set('vertices', route.map(function(p) { return axes.fromUV(p.u, p.v); }));
+        });
+    }
 
     // dagre only has edges to work with, so a view whose elements are mostly
     // unrelated (a catalogue of containers, say) comes out as one long single
