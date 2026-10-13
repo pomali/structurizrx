@@ -170,14 +170,26 @@
             }
 
             if (edge.labels && edge.labels[0] && edge.labels[0].x !== undefined) {
+                // ELK may put a label beside its edge rather than on it (two
+                // edges in one channel get their labels on opposite sides),
+                // so place it at the nearest point along the edge and shift
+                // it by how far ELK's label centre is from that point.
                 var l = edge.labels[0];
-                var ratio = ratioAlong([section.startPoint].concat(bends, [section.endPoint]),
-                    { x: l.x + l.width / 2, y: l.y + l.height / 2 });
-                var labels = link.get('labels') || [];
-                labels.forEach(function(label) {
-                    if (label.position) label.position.distance = ratio;
+                var centre = { x: l.x + l.width / 2, y: l.y + l.height / 2 };
+                var along = closestAlong([section.startPoint].concat(bends, [section.endPoint]), centre);
+                var dx = centre.x - along.point.x;
+                var dy = centre.y - along.point.y;
+                var labels = (link.get('labels') || []).map(function(label) {
+                    if (!label.position) return label;
+                    var position = Object.assign({}, label.position, { distance: along.ratio });
+                    position.offset = shift(label.position.calculatedOffset || label.position.offset, dx, dy);
+                    if (label.position.calculatedOffset) {
+                        // applyAutomaticLayout() resets the offset to this
+                        position.calculatedOffset = position.offset;
+                    }
+                    return Object.assign({}, label, { position: position });
                 });
-                link.set('labels', labels.slice());
+                link.set('labels', labels);
             }
         });
     }
@@ -200,16 +212,22 @@
         }));
     }
 
-    // How far along a polyline (0..1) its closest point to `p` lies.
-    function ratioAlong(points, p) {
-        var total = 0, best = Infinity, bestAt = 0.5;
+    function shift(offset, dx, dy) {
+        var o = (offset && typeof offset === 'object') ? offset : { x: 0, y: offset || 0 };
+        return { x: (o.x || 0) + dx, y: (o.y || 0) + dy };
+    }
+
+    // The point of a polyline closest to `p`, and how far along it (0..1)
+    // that point lies.
+    function closestAlong(points, p) {
+        var total = 0, best = Infinity, bestAt = 0.5, bestPoint = points[0];
         var lengths = [];
         for (var i = 0; i + 1 < points.length; i++) {
             var a = points[i], b = points[i + 1];
             lengths.push(Math.hypot(b.x - a.x, b.y - a.y));
             total += lengths[i];
         }
-        if (total === 0) return 0.5;
+        if (total === 0) return { ratio: 0.5, point: points[0] };
         var walked = 0;
         for (var j = 0; j + 1 < points.length; j++) {
             var s = points[j], e = points[j + 1], len = lengths[j];
@@ -220,10 +238,11 @@
             if (dist < best) {
                 best = dist;
                 bestAt = (walked + t * len) / total;
+                bestPoint = q;
             }
             walked += len;
         }
-        return Math.max(0.02, Math.min(0.98, bestAt));
+        return { ratio: Math.max(0.02, Math.min(0.98, bestAt)), point: bestPoint };
     }
 
     window.structurizr = window.structurizr || {};
