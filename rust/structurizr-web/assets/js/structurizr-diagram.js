@@ -568,7 +568,7 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
                     continue;
                 }
 
-                var elementStyle = structurizr.ui.findElementStyle(element, darkMode);
+                var elementStyle = structurizr.ui.findElementStyle(element, darkMode, { external: isExternalSoftwareSystem(element, view) });
                 registerElementStyle(elementStyle);
 
                 var box;
@@ -3528,6 +3528,23 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
         }
     }
 
+    // The element itself if it is drawn, else its nearest drawn ancestor in
+    // the static model (component -> container -> software system).
+    function drawnAncestorId(elementId) {
+        var element = structurizr.workspace.findElementById(elementId);
+        while (element) {
+            if (mapOfIdToBox[element.id]) {
+                return element.id;
+            }
+            if (element.type !== structurizr.constants.COMPONENT_ELEMENT_TYPE &&
+                element.type !== structurizr.constants.CONTAINER_ELEMENT_TYPE) {
+                return undefined;
+            }
+            element = element.parentId !== undefined ? structurizr.workspace.findElementById(element.parentId) : undefined;
+        }
+        return undefined;
+    }
+
     function createArrow(relationshipInView) {
         var internalPadding = 10;
         var relationship = structurizr.workspace.findRelationshipById(relationshipInView.id);
@@ -3536,7 +3553,13 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
             return;
         }
 
-        if (mapOfIdToBox[relationship.sourceId] && mapOfIdToBox[relationship.destinationId]) {
+        // A view can list a relationship between descendants of what it
+        // shows (an implied relationship: Customer -> Web App on a context
+        // view showing the Shop system); draw it between those ancestors.
+        var sourceId = drawnAncestorId(relationship.sourceId);
+        var destinationId = drawnAncestorId(relationship.destinationId);
+
+        if (sourceId && destinationId && sourceId !== destinationId) {
             var configuration;
 
             if (currentView.type === "Dynamic" && relationshipInView.response !== undefined && relationshipInView.response === true) {
@@ -3615,11 +3638,11 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
             var destinationBox;
 
             if (relationshipInView.response !== undefined && relationshipInView.response === true) {
-                destinationBox = mapOfIdToBox[relationship.sourceId];
-                sourceBox = mapOfIdToBox[relationship.destinationId];
+                destinationBox = mapOfIdToBox[sourceId];
+                sourceBox = mapOfIdToBox[destinationId];
             } else {
-                sourceBox = mapOfIdToBox[relationship.sourceId];
-                destinationBox = mapOfIdToBox[relationship.destinationId];
+                sourceBox = mapOfIdToBox[sourceId];
+                destinationBox = mapOfIdToBox[destinationId];
             }
 
             var labels = [];
@@ -3775,6 +3798,28 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
         } else {
             console.log("Not rendering relationship " + relationship.id + ' (' + structurizr.workspace.findElementById(relationship.sourceId).name + ' -> ' + structurizr.workspace.findElementById(relationship.destinationId).name + ') because the source and destination elements are not on the diagram.');
         }
+    }
+
+    // The software system a view is about, if any: its scope, or the owner
+    // of the container a component or dynamic view is scoped to.
+    function scopeSoftwareSystemId(view) {
+        var scopeId = view.softwareSystemId;
+        if (scopeId === undefined) {
+            scopeId = view.containerId !== undefined ? view.containerId : view.elementId;
+        }
+        var scope = scopeId !== undefined ? structurizr.workspace.findElementById(scopeId) : undefined;
+        if (scope && scope.type === structurizr.constants.CONTAINER_ELEMENT_TYPE) {
+            return scope.parentId;
+        }
+        return scope && scope.type === structurizr.constants.SOFTWARE_SYSTEM_ELEMENT_TYPE ? scope.id : undefined;
+    }
+
+    function isExternalSoftwareSystem(element, view) {
+        if (element.type !== structurizr.constants.SOFTWARE_SYSTEM_ELEMENT_TYPE) {
+            return false;
+        }
+        var scopeId = scopeSoftwareSystemId(view);
+        return scopeId !== undefined && scopeId !== element.id;
     }
 
     function setRouting(link, routing) {

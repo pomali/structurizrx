@@ -49,8 +49,15 @@ structurizr.ui.DEFAULT_ELEMENT_STYLES = [
     { tag: 'Container', background: '#3b80ce', color: '#ffffff' },
     { tag: 'Component', background: '#a9cdf3', color: '#0f2440' },
     { tag: 'Deployment Node', background: '#ffffff', color: '#0f2440' },
-    { tag: 'Infrastructure Node', background: '#7b8797', color: '#ffffff' }
+    { tag: 'Infrastructure Node', background: '#7b8797', color: '#ffffff' },
+    // software systems other than the one a view is about (COLOR_SYSTEM_EXT)
+    { tag: 'External Software System', background: '#7b8797', color: '#ffffff' }
 ];
+
+// Applied (see findElementStyle's `options.external`) just after an
+// element's 'Software System' tag, so only the built-in palette styles it and
+// any tag the workspace styles still wins.
+structurizr.ui.EXTERNAL_SOFTWARE_SYSTEM_TAG = 'External Software System';
 
 // "Ignore DSL colours": a per-viewer preference (localStorage), so every page
 // that renders diagrams — workspace, diagram, print — honours it.
@@ -338,7 +345,7 @@ structurizr.ui.getRelationshipStylesForPerspective = function(perspective, darkM
     return relationshipStylesForPerspective;
 }
 
-structurizr.ui.findElementStyle = function(element, darkMode) {
+structurizr.ui.findElementStyle = function(element, darkMode, options) {
     if (darkMode === undefined) {
         darkMode = false;
     }
@@ -421,7 +428,12 @@ structurizr.ui.findElementStyle = function(element, darkMode) {
             break;
     }
 
-    const tags = structurizr.workspace.getAllTagsForElement(element);
+    var tags = structurizr.workspace.getAllTagsForElement(element);
+    if (options && options.external) {
+        const typeTag = tags.findIndex(function(tag) { return tag.trim() === 'Software System'; });
+        tags = tags.slice();
+        tags.splice(typeTag + 1, 0, structurizr.ui.EXTERNAL_SOFTWARE_SYSTEM_TAG);
+    }
     for (var i = 0; i < tags.length; i++) {
         var tag = tags[i].trim();
         var elementStyle = elementStylesMap[tag];
@@ -457,8 +469,10 @@ structurizr.ui.findElementStyle = function(element, darkMode) {
 
     if (style.background !== undefined) {
         if (style.stroke === undefined) {
-            // the background has been defined, so default the stroke to a darker version if necessary
-            style.stroke = structurizr.util.shadeColor(style.background, -10);
+            // the background has been defined, so default the stroke to a
+            // darker version, or a lighter one in dark mode, where a darker
+            // outline vanishes into the canvas along with a dark fill
+            style.stroke = structurizr.util.shadeColor(style.background, darkMode ? 35 : -10);
         }
     }
 

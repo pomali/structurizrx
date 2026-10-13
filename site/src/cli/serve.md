@@ -102,6 +102,21 @@ layout live.
 Nodes are coloured by kind and sized by how many connections they have, so
 the hubs of a model are visible before you read a single label.
 
+## Diagram display
+
+The workspace page's toolbar has three display settings. Each is remembered
+by your browser, and the single-diagram and print pages follow them too.
+
+| Setting | Effect |
+|---|---|
+| **Layout** | How views with `autoLayout` are arranged. *ELK, right-angle lines* (the default) and *ELK, curved lines* use the [Eclipse Layout Kernel](https://eclipse.dev/elk/), which routes relationships around boxes and keeps groups and boundaries together; *dagre* is the layout upstream Structurizr uses. The view's direction and separations apply to all three. Views with stored positions are never re-arranged. |
+| **Ignore DSL colours** | Draws with the built-in palette instead of the colours the workspace's styles and themes set. Shapes, icons, sizes and borders still come from the workspace. |
+| **Dark mode** (◐) | Switches the page and diagrams to a dark background. |
+
+With the built-in palette, whether because the workspace defines no styles
+or because *Ignore DSL colours* is on, software systems other than the one a
+view is about are drawn grey, as in `render`'s SVG output.
+
 ## Printing a diagram
 
 The printer button in the diagram viewer's toolbar (or `p`) opens a *Print
