@@ -15,6 +15,11 @@
     (function patchDirectedGraphLayout() {
         var layout = joint.layout.DirectedGraph.layout;
         joint.layout.DirectedGraph.layout = function(graphOrCells, options) {
+            var engine = structurizr.ui.getLayoutEngine();
+            if (engine !== structurizr.ui.LAYOUT_ENGINE_DAGRE && structurizr.elkLayout) {
+                return structurizr.elkLayout.layout(graphOrCells, options || {}, engine);
+            }
+
             var cells = graphOrCells.getCells ? graphOrCells.getCells() : graphOrCells;
             var isCluster = {};
             cells.forEach(function(cell) {

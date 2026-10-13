@@ -77,6 +77,43 @@ structurizr.ui.setIgnoringDslColours = function(bool) {
     }
 };
 
+// Which engine auto-layout uses: dagre (the upstream default) or ELK's
+// layered algorithm with orthogonal or spline edges
+// (structurizr-elk-layout.js). A per-viewer preference, like the colours.
+structurizr.ui.LAYOUT_ENGINE_KEY = 'structurizr.layoutEngine';
+structurizr.ui.LAYOUT_ENGINE_DAGRE = 'dagre';
+structurizr.ui.LAYOUT_ENGINE_ELK_ORTHOGONAL = 'elk-orthogonal';
+structurizr.ui.LAYOUT_ENGINE_ELK_SPLINES = 'elk-splines';
+structurizr.ui.LAYOUT_ENGINES = [
+    structurizr.ui.LAYOUT_ENGINE_DAGRE,
+    structurizr.ui.LAYOUT_ENGINE_ELK_ORTHOGONAL,
+    structurizr.ui.LAYOUT_ENGINE_ELK_SPLINES
+];
+
+structurizr.ui.getLayoutEngine = function() {
+    try {
+        const engine = window.localStorage.getItem(structurizr.ui.LAYOUT_ENGINE_KEY);
+        if (structurizr.ui.LAYOUT_ENGINES.indexOf(engine) > -1) {
+            return engine;
+        }
+    } catch (e) {
+        // storage unavailable: fall through to the default
+    }
+    return structurizr.ui.LAYOUT_ENGINE_DAGRE;
+};
+
+structurizr.ui.setLayoutEngine = function(engine) {
+    try {
+        if (engine === structurizr.ui.LAYOUT_ENGINE_DAGRE) {
+            window.localStorage.removeItem(structurizr.ui.LAYOUT_ENGINE_KEY);
+        } else {
+            window.localStorage.setItem(structurizr.ui.LAYOUT_ENGINE_KEY, engine);
+        }
+    } catch (e) {
+        // storage unavailable (private window, blocked site data): not remembered
+    }
+};
+
 // Copies of `styles` without their colour attributes; shapes, icons, sizes,
 // borders etc. are kept.
 structurizr.ui.withoutColours = function(styles) {
