@@ -86,18 +86,51 @@ a.sx-workspace:hover { text-decoration: underline; }
     border-radius: 0.375rem;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
-.sx-more-menu a {
+/* Menu entries: links, buttons, and labelled radios/checkboxes. */
+.sx-more-menu a, .sx-more-menu button, .sx-more-menu label {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    width: 100%;
     padding: 0.35rem 0.6rem;
+    border: 0;
     border-radius: 0.25rem;
+    background: none;
     color: var(--bs-body-color);
+    font: inherit;
+    text-align: left;
     text-decoration: none;
     white-space: nowrap;
+    cursor: pointer;
 }
-.sx-more-menu a:hover { background: var(--bs-tertiary-bg); }
-.sx-more-menu i { color: var(--bs-secondary-color); }
+.sx-more-menu a:hover, .sx-more-menu button:hover, .sx-more-menu label:hover {
+    background: var(--bs-tertiary-bg);
+}
+.sx-more-menu i { color: var(--bs-secondary-color); width: 1rem; text-align: center; }
+.sx-more-menu input { margin: 0; }
+.sx-more-menu kbd {
+    margin-left: auto;
+    padding-left: 1.5rem;
+    background: none;
+    border: 0;
+    color: var(--bs-secondary-color);
+    font-family: var(--bs-font-sans-serif);
+    font-size: 0.75rem;
+}
+.sx-menu-sep { height: 1px; margin: 0.25rem 0.35rem; background: var(--bs-border-color); }
+.sx-menu-label {
+    padding: 0.35rem 0.6rem 0.15rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
+}
+/* The dark-mode entry is a checkbox item: a tick when on. */
+#themeToggle .sx-check { margin-left: auto; visibility: hidden; color: var(--bs-body-color); }
+#themeToggle[aria-checked="true"] .sx-check { visibility: visible; }
+/* A menu that opens to the right of its button rather than to the left. */
+.sx-more-menu.sx-menu-start { left: 0; right: auto; }
 
 /* A page's own controls, one row beneath the app bar. */
 .sx-toolbar {

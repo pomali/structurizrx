@@ -26,7 +26,10 @@
     }
 
     function apply() {
-        document.documentElement.setAttribute('data-bs-theme', isDarkMode() ? 'dark' : 'light');
+        var dark = isDarkMode();
+        document.documentElement.setAttribute('data-bs-theme', dark ? 'dark' : 'light');
+        var item = document.getElementById('themeToggle');
+        if (item) item.setAttribute('aria-checked', String(dark));
     }
 
     function announce() {
@@ -58,16 +61,22 @@
     }
 
     function init() {
+        // The dark-mode entry in the "More" menu.
         var toggle = document.getElementById('themeToggle');
         if (toggle) {
+            apply();
             toggle.addEventListener('click', function () {
                 setDarkMode(!isDarkMode());
-                toggle.blur();
             });
         }
 
-        // Close the "More" menu on a click elsewhere or Escape.
+        // Menus (<details class="sx-more">) close on a click elsewhere, on
+        // Escape, and once an action in them has run — but not when a radio
+        // or checkbox in them is ticked, so settings can be changed together.
         document.querySelectorAll('.sx-more').forEach(function (menu) {
+            menu.querySelectorAll('.sx-more-menu a, .sx-more-menu button').forEach(function (action) {
+                action.addEventListener('click', function () { menu.open = false; });
+            });
             document.addEventListener('click', function (event) {
                 if (menu.open && !menu.contains(event.target)) menu.open = false;
             });

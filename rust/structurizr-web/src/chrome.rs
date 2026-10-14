@@ -45,7 +45,16 @@ const BRAND: &str =
 /// the platform's shortcut.
 const FIND_BUTTON: &str = r#"<button type="button" class="sx-find" title="Find a view, element, decision or command" aria-label="Find"><i class="bi bi-search"></i><span class="sx-find-text">Find…</span><kbd class="sx-find-key">⌘K</kbd></button>"#;
 
-const THEME_TOGGLE: &str = r#"<button type="button" id="themeToggle" class="btn btn-sm btn-outline-secondary" title="Toggle dark mode" aria-label="Toggle dark mode"><i class="bi bi-circle-half"></i></button>"#;
+/// The last entry of every "More" menu; `structurizr-app.js` keeps
+/// `aria-checked` in step with the theme.
+const THEME_ITEM: &str = r#"<div class="sx-menu-sep"></div><button type="button" id="themeToggle" role="menuitemcheckbox" aria-checked="false"><i class="bi bi-moon"></i>Dark mode<i class="bi bi-check-lg sx-check"></i></button>"#;
+
+/// The "More" (⋯) menu: `items` (menu entries as HTML) then the theme.
+fn more_menu(items: &str) -> String {
+    format!(
+        r#"<details class="sx-more"><summary class="btn btn-sm btn-outline-secondary" title="More" aria-label="More"><i class="bi bi-three-dots"></i></summary><div class="sx-more-menu" role="menu">{items}{THEME_ITEM}</div></details>"#
+    )
+}
 
 /// The app bar for a page served by `structurizrx serve`. `None` is the
 /// workspace index, which has no workspace and so no tabs.
@@ -87,15 +96,16 @@ pub fn app_header(workspace: Option<&WorkspaceHeader>, active: Tab) -> String {
 
         html.push_str(r#"<div class="sx-appbar-end">"#);
         html.push_str(FIND_BUTTON);
-        html.push_str(&format!(
-            r#"<details class="sx-more"><summary class="btn btn-sm btn-outline-secondary" title="More" aria-label="More"><i class="bi bi-three-dots"></i></summary><div class="sx-more-menu"><a href="{base}/print"><i class="bi bi-printer"></i>Print all views</a><a href="{base}/canvas"><i class="bi bi-display"></i>Canvas demo</a><a href="/docs/"><i class="bi bi-book"></i>Documentation</a></div></details>"#
-        ));
+        html.push_str(&more_menu(&format!(
+            r#"<a href="{base}/print"><i class="bi bi-printer"></i>Print all views</a><a href="{base}/canvas"><i class="bi bi-display"></i>Canvas demo</a><a href="/docs/"><i class="bi bi-book"></i>Documentation</a>"#
+        )));
     } else {
         html.push_str(r#"<div class="sx-appbar-end">"#);
-        html.push_str(r#"<a class="btn btn-sm btn-outline-secondary" href="/docs/">Docs</a>"#);
+        html.push_str(&more_menu(
+            r#"<a href="/docs/"><i class="bi bi-book"></i>Documentation</a>"#,
+        ));
     }
 
-    html.push_str(THEME_TOGGLE);
     html.push_str("</div></header>");
     html
 }
@@ -104,8 +114,11 @@ pub fn app_header(workspace: Option<&WorkspaceHeader>, active: Tab) -> String {
 /// index to go back to and none of the server-backed tabs.
 pub fn static_app_header(title: &str) -> String {
     format!(
-        r#"<header class="sx-appbar" data-catalog="catalog.json"><span class="sx-brand">{BRAND}</span><span class="sx-workspace">{}</span><div class="sx-appbar-end">{FIND_BUTTON}{THEME_TOGGLE}</div></header>"#,
-        escape(title)
+        r#"<header class="sx-appbar" data-catalog="catalog.json"><span class="sx-brand">{BRAND}</span><span class="sx-workspace">{}</span><div class="sx-appbar-end">{FIND_BUTTON}{}</div></header>"#,
+        escape(title),
+        // The menu still has its separator before the theme; with nothing
+        // above it, that would be a stray line.
+        more_menu("").replace(r#"<div class="sx-menu-sep"></div>"#, "")
     )
 }
 

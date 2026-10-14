@@ -27,7 +27,7 @@ for each way of looking at it.
 
 | Tab | What it shows |
 |---|---|
-| **Diagrams** | The workspace's views, listed in the sidebar — your own views first, in C4 order, then generated ones. The toolbar's first button (or <kbd>[</kbd>) hides the list; on a narrow window it opens over the diagram instead |
+| **Diagrams** | The workspace's views, listed in the sidebar — your own views first, in C4 order, then generated ones. The button at the diagram's top left (or <kbd>[</kbd>) hides the list; on a narrow window it opens over the diagram instead |
 | **Graph** | The whole workspace as one force-directed graph |
 | **Clusters** | Communities, cycles and coupling, compared with the structure the model declares |
 | **Review** | The model element by element, with hygiene findings |
@@ -39,8 +39,13 @@ the diagrams page) searches views, elements, decisions and commands from any
 page. Picking an element shows it where you are — selected on the diagram,
 the graph or in review — or, if the current page can't, opens the view that
 shows it best with it selected. The **⋯** menu holds *Print all views*, the
-canvas demo and this documentation; **◐** switches between light and dark on
-every page at once.
+canvas demo, this documentation and *Dark mode*, which applies to every page
+at once.
+
+On the diagrams page the view's name floats at the diagram's top left; click
+it for that view's actions (open as SVG, copy as Mermaid, print, full screen)
+and the display settings below. Zoom sits at the bottom left, and a dynamic
+view's step buttons at the bottom centre.
 
 ## Routes
 
@@ -147,15 +152,15 @@ the hubs of a model are visible before you read a single label.
 
 ## Diagram display
 
-The workspace page's toolbar has two display settings, and the app bar a
-third. Each is remembered by your browser, and the single-diagram and print
-pages follow them too.
+Two display settings are in the view-name menu on the diagrams page, and a
+third in the **⋯** menu. Each is remembered by your browser, and the
+single-diagram and print pages follow them too.
 
 | Setting | Effect |
 |---|---|
 | **Layout** | How views with `autoLayout` are arranged. *ELK, right-angle lines* (the default) and *ELK, curved lines* use the [Eclipse Layout Kernel](https://eclipse.dev/elk/), which routes relationships around boxes and keeps groups and boundaries together; *dagre* is the layout upstream Structurizr uses. The view's direction and separations apply to all three. Views with stored positions are never re-arranged. |
 | **Ignore DSL colours** | Draws with the built-in palette instead of the colours the workspace's styles and themes set. Shapes, icons, sizes and borders still come from the workspace. |
-| **Dark mode** (◐, in the app bar) | Switches every page, and the diagrams, to a dark background. |
+| **Dark mode** (in the **⋯** menu) | Switches every page, and the diagrams, to a dark background. |
 
 With the built-in palette, whether because the workspace defines no styles
 or because *Ignore DSL colours* is on, software systems other than the one a
@@ -163,7 +168,7 @@ view is about are drawn grey, as in `render`'s SVG output.
 
 ## Printing a diagram
 
-The printer button in the diagram viewer's toolbar (or `p`) opens a *Print
+*Print this view* in the view-name menu (or `p`) opens a *Print
 this view* dialog: choose A4 or A3, and landscape, portrait or the
 orientation that matches the diagram's shape. A plain `Ctrl`/`⌘`+`P` works
 too, using the last paper size and the matching orientation.
