@@ -49,6 +49,7 @@
         #view-heading::-webkit-details-marker { display: none; }
         #view-heading:hover, #view-menu[open] #view-heading { background: var(--bs-tertiary-bg); }
         #view-heading .bi-chevron-down { font-size: .7rem; color: var(--bs-secondary-color); }
+        #view-type-badge { color: var(--bs-secondary-color); }
         #view-title {
             font-weight: 600; white-space: nowrap;
             overflow: hidden; text-overflow: ellipsis; max-width: 40vw;
@@ -181,7 +182,7 @@
                 </button>
                 <details id="view-menu" class="sx-more">
                     <summary id="view-heading" title="This view's options">
-                        <span class="badge bg-secondary d-none" id="view-type-badge"></span>
+                        <i class="bi d-none" id="view-type-badge" role="img"></i>
                         <span id="view-title"></span>
                         <i class="bi bi-chevron-down"></i>
                     </summary>
@@ -393,6 +394,17 @@
 
     // What kind of view this is, in words: the generator for a generated
     // view (they are all landscape-shaped underneath), else the C4 type.
+    var VIEW_TYPE_ICONS = {
+        SystemLandscape: 'bi-globe2', SystemContext: 'bi-bullseye', Container: 'bi-boxes',
+        Component: 'bi-puzzle', Dynamic: 'bi-play-circle', Deployment: 'bi-hdd-network',
+        Filtered: 'bi-funnel', Image: 'bi-image', Custom: 'bi-easel'
+    };
+
+    function viewKindIcon(view) {
+        if (isAuto(view)) return 'bi-stars';
+        return VIEW_TYPE_ICONS[view.type] || 'bi-easel';
+    }
+
     function viewKindLabel(view) {
         if (isAuto(view)) return GENERATOR_LABELS[view.key.split('-')[1]] || 'Generated';
         return VIEW_TYPE_LABELS[view.type] || view.type || '';
@@ -1127,9 +1139,12 @@
         var svgBtn = document.getElementById('btnDownloadSvg');
         var mermaidBtn = document.getElementById('btnCopyMermaid');
         if (view) {
-            badge.textContent = viewKindLabel(view);
-            badge.title = isAuto(view) ? 'Generated view' : '';
-            badge.classList.remove('d-none');
+            // An icon, not a word: the sidebar's group headers already name
+            // the type; the label is in the tooltip for anyone who wants it.
+            var kind = viewKindLabel(view) + (isAuto(view) ? ' (generated)' : ' view');
+            badge.className = 'bi ' + viewKindIcon(view);
+            badge.title = kind;
+            badge.setAttribute('aria-label', kind);
             var title = structurizr.ui.getTitleForView(view);
             var viewTitle = document.getElementById('view-title');
             viewTitle.textContent = title;
