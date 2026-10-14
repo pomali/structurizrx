@@ -76,11 +76,15 @@ needs knowing that focus views or the graph exist.
   titles the sidebar uses, decisions). `export-viewer` writes the same thing
   as `catalog.json`, so the palette works in a static export too.
 
-### 2.4 Collapsible sidebar
+### 2.4 Collapsible sidebar (done)
 
-The 280px sidebar never collapses above 600px. Collapse to a toggle under
-~1000px, remember the choice, and keep the view list searchable (⌘K covers
-the search part).
+The view list has a toggle (button, or `[`). On a wide window it collapses in
+place and the choice is remembered per browser; below 1000px it starts
+closed and opens as a drawer over the diagram, closed again by picking a
+view, Esc or a click on the diagram. Searching views is ⌘K's job.
+
+Not covered: the review page's 24rem element list and the graph's controls
+panel stay as they are on narrow windows.
 
 ### 2.5 View names (carried over from phase 1)
 

@@ -69,7 +69,6 @@
             stroke-dasharray: none !important;
         }
         #outline-empty { font-size: .8125rem; padding: .2rem .75rem .5rem; }
-        #sidebar-toggle-btn { display: none; }
         #diagram-area { flex: 1; overflow: hidden; position: relative; background: var(--bs-body-bg); }
         #diagram { width: 100%; height: 100%; }
         /* The viewport is drag-scrollable, so show the grab affordance. The
@@ -110,10 +109,18 @@
             background: var(--bs-body-bg);
             flex-shrink: 0;
         }
-        @media (max-width: 600px) {
-            #sidebar { display: none; }
-            #sidebar.open { display: flex; position: fixed; left: 0; top: 0; bottom: 0; z-index: 1000; }
-            #sidebar-toggle-btn { display: inline-block; }
+        /* The view list collapses: in place on a wide window (remembered), as
+           a drawer over the diagram on a narrow one, where it starts closed. */
+        #content { position: relative; }
+        body.sidebar-collapsed #sidebar { display: none; }
+        @media (max-width: 999.98px) {
+            #sidebar {
+                display: none;
+                position: absolute; top: 0; bottom: 0; left: 0; z-index: 30;
+                max-width: calc(100% - 3rem);
+                box-shadow: 0 8px 28px rgba(0, 0, 0, .22);
+            }
+            body.sidebar-open #sidebar { display: flex; }
         }
     </style>
 </head>
@@ -124,7 +131,7 @@
     <!-- This page's toolbar: what is on screen, and what to do with it -->
     <div id="topbar" class="sx-toolbar">
         <div id="view-heading">
-            <button id="sidebar-toggle-btn" class="btn btn-sm btn-outline-secondary" title="Toggle sidebar" aria-label="Toggle sidebar">
+            <button id="sidebar-toggle-btn" class="btn btn-sm btn-outline-secondary" title="Hide the view list ([)" aria-label="Toggle the view list" aria-controls="sidebar" aria-expanded="true">
                 <i class="bi bi-layout-sidebar"></i>
             </button>
             <span class="badge bg-secondary d-none" id="view-type-badge"></span>
@@ -268,6 +275,7 @@
                     <li>Click an element or relationship to select it; <kbd>shift</kbd>-click adds to the selection, and <kbd>Esc</kbd> or a click on the background clears it. The page URL always links to the selection — <code>structurizrx locate</code> finds it in the DSL — and the status bar links each selected item to its declaration in VS Code.</li>
                     <li><kbd>+</kbd> <kbd>-</kbd> zoom in/out, <kbd>c</kbd> fit content, <kbd>w</kbd> fit width, <kbd>h</kbd> fit height</li>
                     <li><kbd>←</kbd> <kbd>→</kbd> previous/next view · <kbd>space</kbd> or <kbd>⌘K</kbd> find a view, element, decision or command</li>
+                    <li><kbd>[</kbd> show or hide the view list</li>
                     <li><kbd>d</kbd> toggle descriptions · <kbd>m</kbd> toggle metadata · <kbd>t</kbd> toggle tooltips</li>
                     <li><kbd>,</kbd> <kbd>.</kbd> step through animation · <kbd>i</kbd> diagram key</li>
                     <li><kbd>f</kbd> full screen · <kbd>p</kbd> print this view · <kbd>?</kbd> this help</li>
@@ -587,10 +595,67 @@
         };
     }
 
-    // --- Sidebar toggle (mobile) ---
+    // --- View list (sidebar): collapsible ---
+    // Wide windows collapse it in place and remember that per browser; narrow
+    // ones (where it would take a third of the screen) start with it closed
+    // and open it as a drawer over the diagram, so the diagram keeps its size.
+    var SIDEBAR_KEY = 'structurizr.sidebar';
+    var narrowWindow = window.matchMedia('(max-width: 999.98px)');
+    var drawerOpen = false;
+
+    function sidebarCollapsedPreference() {
+        try { return window.localStorage.getItem(SIDEBAR_KEY) === 'collapsed'; } catch (e) { return false; }
+    }
+
+    function sidebarShown() {
+        return narrowWindow.matches ? drawerOpen : !sidebarCollapsedPreference();
+    }
+
+    function applySidebar() {
+        var narrow = narrowWindow.matches;
+        document.body.classList.toggle('sidebar-open', narrow && drawerOpen);
+        document.body.classList.toggle('sidebar-collapsed', !narrow && sidebarCollapsedPreference());
+        var button = document.getElementById('sidebar-toggle-btn');
+        var shown = sidebarShown();
+        button.setAttribute('aria-expanded', String(shown));
+        button.title = (shown ? 'Hide' : 'Show') + ' the view list ([)';
+        button.classList.toggle('active', shown);
+    }
+
+    function toggleSidebar() {
+        if (narrowWindow.matches) {
+            drawerOpen = !drawerOpen;
+            applySidebar();
+            return;
+        }
+        try {
+            if (sidebarCollapsedPreference()) window.localStorage.removeItem(SIDEBAR_KEY);
+            else window.localStorage.setItem(SIDEBAR_KEY, 'collapsed');
+        } catch (e) { /* storage unavailable: the toggle just won't be remembered */ }
+        applySidebar();
+        // The diagram area changed width: refit, as a window resize does
+        // (the diagram's margins are only laid out by a fit).
+        if (diagramReady) fitDiagram();
+    }
+
+    function closeDrawer() {
+        if (drawerOpen) {
+            drawerOpen = false;
+            applySidebar();
+        }
+    }
+
     document.getElementById('sidebar-toggle-btn').addEventListener('click', function() {
-        document.getElementById('sidebar').classList.toggle('open');
+        toggleSidebar();
+        this.blur();
     });
+    // A click on the diagram puts the drawer away.
+    document.getElementById('diagram-area').addEventListener('mousedown', closeDrawer);
+    narrowWindow.addEventListener('change', function() {
+        drawerOpen = false;
+        applySidebar();
+    });
+    applySidebar();
 
     // ===== INITIAL LOAD =====
     // The hash is `#<view>[&sel=<references>]`. The selection it names is
@@ -785,7 +850,7 @@
             a.addEventListener('click', function(e) {
                 e.preventDefault();
                 if (diagramReady) activateView(v.key);
-                document.getElementById('sidebar').classList.remove('open');
+                closeDrawer();
             });
             list.appendChild(a);
         }
@@ -1134,6 +1199,11 @@
         // them once it has decided the canvas has nowhere left to scroll.
         diagram.onkeydown(function(e) {
             var LEFT = 37, UP = 38, RIGHT = 39, DOWN = 40, PAGE_UP = 33, PAGE_DOWN = 34, ESCAPE = 27;
+            if (e.which === ESCAPE && drawerOpen) {
+                closeDrawer();
+                e.preventDefault();
+                return;
+            }
             if (e.which === ESCAPE && selection.items.length === 0 && inspector.isOpen()) {
                 inspector.hide();
                 e.preventDefault();
@@ -1171,7 +1241,8 @@
                 112: showPrintDialog,                            // p
                 63: showHelp,                                    // ?
                 44: function() { stepAnimation(-1); },           // ,
-                46: function() { stepAnimation(1); }             // .
+                46: function() { stepAnimation(1); },            // .
+                91: toggleSidebar                                // [
             };
             var handler = handlers[e.which];
             if (handler) {

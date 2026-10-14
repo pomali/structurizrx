@@ -27,7 +27,7 @@ for each way of looking at it.
 
 | Tab | What it shows |
 |---|---|
-| **Diagrams** | The workspace's views, listed in the sidebar — your own views first, in C4 order, then generated ones |
+| **Diagrams** | The workspace's views, listed in the sidebar — your own views first, in C4 order, then generated ones. The toolbar's first button (or <kbd>[</kbd>) hides the list; on a narrow window it opens over the diagram instead |
 | **Graph** | The whole workspace as one force-directed graph |
 | **Clusters** | Communities, cycles and coupling, compared with the structure the model declares |
 | **Review** | The model element by element, with hygiene findings |
