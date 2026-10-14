@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/static/css/structurizr.css"/>
     <link rel="stylesheet" href="/static/css/structurizr-static.css"/>
     <link rel="stylesheet" href="/static/css/structurizr-print-view.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-inspector.css"/>
     <link rel="stylesheet" href="/static/css/structurizr-app.css"/>
     <script src="/static/js/structurizr-app.js"></script>
     <style>
@@ -353,6 +354,7 @@
 <script src="/static/js/structurizr-navigation.js"></script>
 <script src="/static/js/structurizr-quick-navigation.js"></script>
 <script src="/static/js/structurizr-selection.js"></script>
+<script src="/static/js/structurizr-inspector.js"></script>
 <script src="/static/js/structurizr-print-view.js"></script>
 
 <script>
@@ -401,6 +403,7 @@
     // selected item that opens its declaration in VS Code.
     var selectionRequest = 0;
     function showSelection(references) {
+        updateInspector();
         var request = ++selectionRequest;
         if (references.length === 0) {
             setStatus('Selection cleared');
@@ -423,6 +426,67 @@
                 status.appendChild(link);
             });
         });
+    }
+
+    // ===== INSPECTOR =====
+    // One element selected on the diagram opens it in the inspector (shared
+    // with the graph, clusters and review pages, structurizr-inspector.js).
+    // The panel follows the element rather than the diagram: following a
+    // neighbour or a view keeps it open, even where the diagram cannot show
+    // the element; clearing the selection closes it.
+    var inspector = null;
+
+    function initInspector() {
+        inspector = new StructurizrInspector.Panel(document.getElementById('diagram-area'), {
+            slug: STATIC_EXPORT ? null : WORKSPACE_SLUG,
+            page: 'diagrams',
+            // Deployment elements, and everything in a static export, have no
+            // review data; the workspace JSON has enough.
+            fallback: function(id) {
+                return StructurizrInspector.fromWorkspace(structurizr.workspace, id,
+                    selection.index().elementReference(id));
+            },
+            onElement: function(id) {
+                inspectElement(id);
+            },
+            viewLink: function(view, element) {
+                return {
+                    href: '#' + view.key,
+                    onClick: function(e) {
+                        e.preventDefault();
+                        // Open the view with the element selected on it.
+                        pendingSelection = element.reference ? [element.reference] : null;
+                        activateView(view.key);
+                    }
+                };
+            },
+            onClose: function() {
+                if (selection && selection.items.length) {
+                    selection.clear();
+                    updateHash(currentViewKey);
+                    showSelection([]);
+                }
+            }
+        });
+    }
+
+    /** Show `id` in the inspector, and select it on the diagram if drawn. */
+    function inspectElement(id) {
+        var reference = selection.index().elementReference(id);
+        selection.restore([reference]);
+        updateHash(currentViewKey);
+        inspector.show(id);
+    }
+
+    function updateInspector() {
+        if (!inspector) return;
+        var items = selection ? selection.items : [];
+        if (items.length === 1 && items[0].type === 'element') {
+            inspector.show(items[0].id);
+        } else if (items.length === 0) {
+            inspector.hide();
+        }
+        // Several items, or a relationship: keep what is shown.
     }
 
     // --- Diagram-area overlay message (for errors / empty state) ---
@@ -1072,6 +1136,7 @@
         // selection, a click on the background clears it). The selection is
         // kept in the URL as references, so the address bar always links to
         // exactly what is selected — structurizrx locate resolves such a link.
+        initInspector();
         selection = new StructurizrSelection.DiagramSelection(diagram, {
             onChange: function(references) {
                 pendingSelection = null;
@@ -1084,6 +1149,11 @@
         // them once it has decided the canvas has nowhere left to scroll.
         diagram.onkeydown(function(e) {
             var LEFT = 37, UP = 38, RIGHT = 39, DOWN = 40, PAGE_UP = 33, PAGE_DOWN = 34, ESCAPE = 27;
+            if (e.which === ESCAPE && selection.items.length === 0 && inspector.isOpen()) {
+                inspector.hide();
+                e.preventDefault();
+                return;
+            }
             if (e.which === ESCAPE && selection.items.length > 0) {
                 selection.clear();
                 updateHash(currentViewKey);

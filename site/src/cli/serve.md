@@ -78,6 +78,21 @@ selected item to its declaration, opening it in VS Code.
 structurizrx locate shop.dsl 'http://localhost:3000/workspace/shop#containers&sel=Shop%2FAPI'
 ```
 
+## Element details
+
+Selecting one element opens its details in a panel beside the diagram:
+its kind, technology and parent, its description, any review findings, what
+it uses and what uses it, what it contains, and the views it appears in.
+The same panel appears wherever you meet an element — a node in the graph, a
+name on the clusters page, the review walkthrough — so an element always
+reads the same way.
+
+Following a link in the panel moves to that element (and selects it on the
+diagram if it is drawn there); an *Appears in* entry opens that view with the
+element selected. *Open in editor* jumps to its declaration in VS Code, and
+*Copy reference* copies its path for `locate`, `query` or an agent.
+<kbd>Esc</kbd> closes the panel.
+
 ## JSON API
 
 The same server exposes a JSON API mirroring the CLI, useful for agents

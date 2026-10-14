@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/static/css/bootstrap-5.3.7.min.css"/>
     <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
     <link rel="stylesheet" href="/static/css/structurizr-app.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-inspector.css"/>
     <script src="/static/js/structurizr-app.js"></script>
     <style>
         html, body { height: 100%; margin: 0; overflow: hidden; }
@@ -39,7 +40,7 @@
             backdrop-filter: blur(6px);
         }
         #controls { top: .75rem; left: .75rem; width: 270px; max-height: calc(100% - 1.5rem); overflow-y: auto; }
-        #details   { top: .75rem; right: .75rem; width: 300px; max-height: calc(100% - 1.5rem); overflow-y: auto; display: none; }
+        #details   { top: .75rem; right: .75rem; width: 360px; max-width: calc(100% - 1.5rem); max-height: calc(100% - 1.5rem); overflow-y: auto; display: none; }
         #legend    { bottom: .75rem; right: .75rem; padding: .5rem .65rem; max-width: 340px; }
         .panel-section { padding: .6rem .75rem; border-bottom: 1px solid var(--bs-border-color); }
         .panel-section:last-child { border-bottom: 0; }
@@ -167,6 +168,7 @@
 <script src="/static/js/bootstrap-5.3.7.min.js"></script>
 <script src="/static/js/structurizr-universe-graph.js"></script>
 <script src="/static/js/structurizr-selection.js"></script>
+<script src="/static/js/structurizr-inspector.js"></script>
 <script>
 (function () {
     var WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
@@ -215,6 +217,12 @@
     var canvas = document.getElementById('graph-canvas');
     var tip = document.getElementById('tip');
     var details = document.getElementById('details');
+
+    // The legend repeats the Nodes key, and would sit under the details
+    // panel: hide it while the panel is open.
+    new MutationObserver(function () {
+        document.getElementById('legend').hidden = details.style.display === 'block';
+    }).observe(details, { attributes: true, attributeFilter: ['style'] });
 
     var graph = new UniverseGraph(canvas, {
         onSelect: pick,
@@ -344,6 +352,8 @@
     var editorRequest = 0;
     function showEditorLink(item) {
         var request = ++editorRequest;
+        // The inspector has its own.
+        if (item && item.type === 'node' && isModelElement(graph.byId[item.id])) return;
         var reference = item && referenceFor(item);
         if (!reference) return;
         StructurizrSelection.locate(WORKSPACE_SLUG, [reference]).then(function (located) {
@@ -386,9 +396,53 @@
     }
 
     // ---- details panel ----
+    // Model elements get the element inspector every page shares
+    // (structurizr-inspector.js); views, decisions, deployment elements and
+    // relationships keep the graph's own summary.
+    var MODEL_KINDS = ['person', 'softwareSystem', 'container', 'component', 'custom'];
+    var detailsRequest = 0;
+
+    function isModelElement(node) {
+        return node && !node.source && MODEL_KINDS.indexOf(node.kind) !== -1;
+    }
+
     function showDetails(node) {
+        var request = ++detailsRequest;
         if (!node) { details.style.display = 'none'; return; }
         if (node.source) { showLinkDetails(node); return; }
+        if (isModelElement(node)) {
+            StructurizrInspector.load(WORKSPACE_SLUG).then(function (data) {
+                if (request !== detailsRequest) return;
+                var element = data.byId[node.refId];
+                if (!element) { showNodeDetails(node); return; }
+                details.replaceChildren(StructurizrInspector.render(
+                    StructurizrInspector.enrich(element, data.byId), {
+                        slug: WORKSPACE_SLUG,
+                        page: 'graph',
+                        known: function (id) { return !!data.byId[id]; },
+                        onElement: function (id) {
+                            var other = graph.byId['e:' + id];
+                            if (other) setSelection([{ type: 'node', id: other.id }]);
+                        },
+                        viewLink: function (v) {
+                            return { href: '/workspace/' + encodeURIComponent(WORKSPACE_SLUG) + '#' + encodeURIComponent(v.key) };
+                        },
+                        actions: [{
+                            icon: 'bi-bullseye', label: 'Focus', title: 'Show only its neighbourhood',
+                            onClick: function () { focusOn(node); }
+                        }],
+                        onClose: function () { setSelection([]); }
+                    }));
+                details.firstChild.style.padding = '.9rem 1rem 1.1rem';
+                details.style.display = 'block';
+                details.scrollTop = 0;
+            });
+            return;
+        }
+        showNodeDetails(node);
+    }
+
+    function showNodeDetails(node) {
         var rows = [];
         function row(label, value) {
             if (value === undefined || value === null || value === '') return;

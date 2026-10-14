@@ -23,6 +23,26 @@
         return document.getElementById(id);
     }
 
+    /* Clicking an element's name opens it in the inspector every page shares
+       (structurizr-inspector.js). */
+    var inspector = new StructurizrInspector.Panel(document.body, { slug: slug, page: 'clusters' });
+
+    function elementLink(node) {
+        var link = document.createElement('a');
+        link.href = '#';
+        link.className = 'element-link';
+        link.textContent = node.name;
+        link.addEventListener('click', function (event) {
+            event.preventDefault();
+            inspector.show(node.id);
+        });
+        return link;
+    }
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && inspector.isOpen()) inspector.hide();
+    });
+
     function options() {
         return {
             level: el('opt-level').value,
@@ -124,7 +144,7 @@
             community.memberIds.forEach(function (id) {
                 var node = byId[id];
                 var li = document.createElement('li');
-                li.textContent = node.name;
+                li.appendChild(elementLink(node));
                 /* Informational, not an error: most communities mix declared
                    groups, and only the conformance findings above are worth
                    acting on. Styling every mixed member as a warning made a
@@ -271,7 +291,7 @@
 
             var label = document.createElement('th');
             label.className = 'row-label';
-            label.textContent = row.name;
+            label.appendChild(elementLink(row));
             label.title = row.name + (row.declared ? ' — declared "' + row.declared + '"' : '');
             tr.appendChild(label);
 
@@ -363,7 +383,11 @@
             COLUMNS.forEach(function (column) {
                 var td = document.createElement('td');
                 var value = node[column.key];
-                td.textContent = column.format ? column.format(value) : (value === null || value === undefined ? '—' : value);
+                if (column.key === 'name') {
+                    td.appendChild(elementLink(node));
+                } else {
+                    td.textContent = column.format ? column.format(value) : (value === null || value === undefined ? '—' : value);
+                }
                 if (column.numeric) { td.className = 'numeric'; }
                 if (column.key === 'community') {
                     td.style.color = colorFor(node.community);

@@ -118,74 +118,19 @@ body.review-body {
     min-width: 0;
 }
 
-#review-detail h1 {
-    font-size: 1.4rem;
-    margin: 0 0 0.15rem;
-}
-
-.detail-subtitle {
-    color: var(--bs-secondary-color, #6c757d);
-    margin-bottom: 0.85rem;
-}
-
-.detail-section {
-    margin-top: 1.25rem;
-}
-
-.detail-section > h2 {
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--bs-secondary-color, #6c757d);
-    margin-bottom: 0.4rem;
-}
-
 .detail-empty {
     color: var(--bs-secondary-color, #6c757d);
     font-style: italic;
 }
 
-.detail-table {
-    width: 100%;
-    border-collapse: collapse;
+/* The detail pane is the shared element inspector (structurizr-inspector.css),
+   given a reading width and a larger title on this full-height pane. */
+#review-detail .sx-insp {
+    max-width: 52rem;
+    font-size: 0.9rem;
 }
-
-.detail-table td {
-    padding: 0.25rem 0.5rem 0.25rem 0;
-    border-bottom: 1px solid var(--bs-border-color, #f1f3f5);
-    vertical-align: top;
-}
-
-.detail-table .col-direction {
-    width: 1.5rem;
-    color: var(--bs-secondary-color, #6c757d);
-}
-
-.detail-table .col-meta {
-    color: var(--bs-secondary-color, #6c757d);
-    font-size: 0.8rem;
-}
-
-.finding {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    padding: 0.3rem 0.5rem;
-    border-left: 3px solid var(--bs-warning, #ffc107);
-    background: var(--bs-warning-bg-subtle, #fff3cd);
-    margin-bottom: 0.25rem;
-}
-
-.finding.blocking {
-    border-left-color: var(--bs-danger, #dc3545);
-    background: var(--bs-danger-bg-subtle, #f8d7da);
-}
-
-.finding code {
-    font-size: 0.75rem;
-    color: inherit;
-    opacity: 0.75;
-}
+#review-detail .sx-insp-name { font-size: 1.4rem; }
+.review-controls { margin-top: 0.6rem; }
 
 kbd {
     font-size: 0.75rem;
@@ -193,4 +138,6 @@ kbd {
     border: 1px solid var(--bs-border-color, #dee2e6);
     border-bottom-width: 2px;
     border-radius: 3px;
+    background: var(--bs-tertiary-bg);
+    color: var(--bs-body-color);
 }

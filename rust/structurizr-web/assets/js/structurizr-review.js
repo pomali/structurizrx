@@ -190,16 +190,6 @@
             state.filtered.length + ' of ' + plural(state.elements.length, 'element');
     }
 
-    function section(title, node) {
-        var wrapper = document.createElement('section');
-        wrapper.className = 'detail-section';
-        var heading = document.createElement('h2');
-        heading.textContent = title;
-        wrapper.appendChild(heading);
-        wrapper.appendChild(node);
-        return wrapper;
-    }
-
     function empty(text) {
         var p = document.createElement('p');
         p.className = 'detail-empty';
@@ -207,45 +197,10 @@
         return p;
     }
 
-    function relationshipTable(rows, arrow) {
-        if (!rows.length) {
-            return empty('None.');
-        }
-        var table = document.createElement('table');
-        table.className = 'detail-table';
-        rows.forEach(function (r) {
-            var tr = document.createElement('tr');
-
-            var direction = document.createElement('td');
-            direction.className = 'col-direction';
-            direction.textContent = arrow;
-            tr.appendChild(direction);
-
-            var other = document.createElement('td');
-            var link = document.createElement('a');
-            link.href = '#';
-            link.textContent = r.otherName;
-            link.addEventListener('click', function (evt) {
-                evt.preventDefault();
-                jumpTo(r.otherId);
-            });
-            other.appendChild(link);
-            tr.appendChild(other);
-
-            var meta = document.createElement('td');
-            meta.className = 'col-meta';
-            var bits = [];
-            if (r.description) { bits.push(r.description); }
-            if (r.technology) { bits.push('[' + r.technology + ']'); }
-            if (r.kind) { bits.push(r.kind); }
-            meta.textContent = bits.length ? bits.join(' ') : '— no description —';
-            tr.appendChild(meta);
-
-            table.appendChild(tr);
-        });
-        return table;
-    }
-
+    /* The detail pane is the element inspector every page shares
+       (structurizr-inspector.js), with this page's review controls under the
+       title. Following a relationship, parent or child moves the review to
+       that element. */
     function renderDetail() {
         var detail = el('review-detail');
         detail.innerHTML = '';
@@ -256,91 +211,24 @@
             return;
         }
 
-        var title = document.createElement('h1');
-        title.textContent = element.name;
-        detail.appendChild(title);
-
-        var subtitle = document.createElement('div');
-        subtitle.className = 'detail-subtitle';
-        var bits = [kindLabel(element.kind)];
-        if (element.technology) { bits.push(element.technology); }
-        if (element.parentName) { bits.push('in ' + element.parentName); }
-        if (element.group) { bits.push('group: ' + element.group); }
-        var d = degree(element);
-        bits.push(plural(d, 'relationship'));
-        subtitle.textContent = bits.join(' · ');
-        detail.appendChild(subtitle);
+        var byId = {};
+        state.elements.forEach(function (e) { byId[e.id] = e; });
 
         var controls = document.createElement('div');
-        controls.className = 'btn-group btn-group-sm';
+        controls.className = 'btn-group btn-group-sm review-controls';
         controls.appendChild(toggleButton('reviewed', element));
         controls.appendChild(toggleButton('flagged', element));
-        detail.appendChild(controls);
 
-        detail.appendChild(section('Description',
-            element.description ? text(element.description) : empty('No description.')));
-
-        if (element.tags.length) {
-            detail.appendChild(section('Tags', text(element.tags.join(', '))));
-        }
-
-        var findings = document.createElement('div');
-        if (element.findings.length) {
-            element.findings.forEach(function (f) {
-                var row = document.createElement('div');
-                row.className = 'finding' + (f.blocking ? ' blocking' : '');
-                var code = document.createElement('code');
-                code.textContent = f.code;
-                row.appendChild(code);
-                var message = document.createElement('span');
-                message.textContent = f.message;
-                row.appendChild(message);
-                findings.appendChild(row);
-            });
-        } else {
-            findings.appendChild(empty('Nothing flagged.'));
-        }
-        detail.appendChild(section('Findings', findings));
-
-        detail.appendChild(section('Incoming', relationshipTable(element.incoming, '←')));
-        detail.appendChild(section('Outgoing', relationshipTable(element.outgoing, '→')));
-
-        var views = document.createElement('div');
-        if (element.views.length) {
-            element.views.forEach(function (v) {
-                var link = document.createElement('a');
-                link.className = 'd-block';
-                link.href = '/workspace/' + encodeURIComponent(slug) + '#' + encodeURIComponent(v.key);
-                link.textContent = v.name + ' (' + v.kind + ')';
-                views.appendChild(link);
-            });
-        } else {
-            views.appendChild(empty('This element is not shown by any view.'));
-        }
-        detail.appendChild(section('Appears in', views));
-
-        if (element.children.length) {
-            var children = document.createElement('div');
-            element.children.forEach(function (id) {
-                var child = state.elements.find(function (e) { return e.id === id; });
-                var link = document.createElement('a');
-                link.className = 'd-block';
-                link.href = '#';
-                link.textContent = child ? child.name : id;
-                link.addEventListener('click', function (evt) {
-                    evt.preventDefault();
-                    jumpTo(id);
-                });
-                children.appendChild(link);
-            });
-            detail.appendChild(section('Contains', children));
-        }
-    }
-
-    function text(value) {
-        var p = document.createElement('p');
-        p.textContent = value;
-        return p;
+        detail.appendChild(StructurizrInspector.render(StructurizrInspector.enrich(element, byId), {
+            slug: slug,
+            page: 'review',
+            known: function (id) { return !!byId[id]; },
+            onElement: jumpTo,
+            viewLink: function (v) {
+                return { href: '/workspace/' + encodeURIComponent(slug) + '#' + encodeURIComponent(v.key) };
+            },
+            controls: controls
+        }));
     }
 
     function toggleButton(kind, element) {
@@ -497,6 +385,10 @@
                 return r.json();
             })
             .then(function (data) {
+                /* Canonical paths, for the inspector's "Copy reference" and
+                   "Open in editor". */
+                var index = new StructurizrSelection.ReferenceIndex(data.elements, []);
+                data.elements.forEach(function (e) { e.reference = index.elementReference(e.id); });
                 state.elements = data.elements;
                 if (initial) {
                     populateKinds();

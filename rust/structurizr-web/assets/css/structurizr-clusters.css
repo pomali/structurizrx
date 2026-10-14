@@ -242,3 +242,21 @@ table.metrics td.numeric, table.metrics th.numeric {
     background: var(--bs-danger-bg-subtle, #f8d7da);
     margin-bottom: 0.25rem;
 }
+
+/* ---- element names open the inspector ---- */
+
+a.element-link {
+    color: inherit;
+    text-decoration: none;
+}
+a.element-link:hover {
+    color: var(--bs-link-hover-color);
+    text-decoration: underline;
+}
+
+/* The page scrolls, so the inspector floats over the window, below the bars. */
+.clusters-body .sx-inspector {
+    position: fixed;
+    top: calc(48px + 3.5rem);
+    max-height: calc(100vh - 48px - 4.25rem);
+}
