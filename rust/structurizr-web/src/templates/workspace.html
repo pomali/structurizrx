@@ -192,6 +192,10 @@
                         <button type="button" id="btnPrint"><i class="bi bi-printer"></i>Print this view<kbd>p</kbd></button>
                         <button type="button" id="btnFullScreen"><i class="bi bi-fullscreen"></i>Full screen<kbd>f</kbd></button>
                         <div class="sx-menu-sep"></div>
+                        <div class="sx-menu-label">Elements</div>
+                        <label><input type="radio" name="elementLook" value="filled"/>Filled</label>
+                        <label title="A coloured border on a plain box: no large areas of colour"><input type="radio" name="elementLook" value="outline"/>Outlined</label>
+                        <div class="sx-menu-sep"></div>
                         <div class="sx-menu-label" title="Views with stored positions are never re-laid out">Layout</div>
                         <label><input type="radio" name="layoutEngine" value="elk-orthogonal"/>ELK, right-angle lines</label>
                         <label><input type="radio" name="layoutEngine" value="elk-splines"/>ELK, curved lines</label>
@@ -539,6 +543,16 @@
     });
 
     // --- Auto-layout engine (a per-viewer preference, see structurizr-ui.js) ---
+    // --- Element look: filled or outlined (a per-viewer preference) ---
+    document.querySelectorAll('input[name="elementLook"]').forEach(function(radio) {
+        radio.checked = radio.value === structurizr.ui.getElementLook();
+        radio.addEventListener('change', function() {
+            structurizr.ui.setElementLook(radio.value);
+            // setDarkMode() re-renders the view, re-resolving every style.
+            updateDiagramDarkMode();
+        });
+    });
+
     // Radio items in the view menu.
     document.querySelectorAll('input[name="layoutEngine"]').forEach(function(radio) {
         radio.checked = radio.value === structurizr.ui.getLayoutEngine();

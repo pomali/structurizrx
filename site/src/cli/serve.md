@@ -154,13 +154,14 @@ the hubs of a model are visible before you read a single label.
 
 ## Diagram display
 
-Two display settings are in the view-name menu on the diagrams page, and a
-third in the **⋯** menu. Each is remembered by your browser, and the
+Three display settings are in the view-name menu on the diagrams page, and a
+fourth in the **⋯** menu. Each is remembered by your browser, and the
 single-diagram and print pages follow them too.
 
 | Setting | Effect |
 |---|---|
 | **Layout** | How views with `autoLayout` are arranged. *ELK, right-angle lines* (the default) and *ELK, curved lines* use the [Eclipse Layout Kernel](https://eclipse.dev/elk/), which routes relationships around boxes and keeps groups and boundaries together; *dagre* is the layout upstream Structurizr uses. The view's direction and separations apply to all three. Views with stored positions are never re-arranged. |
+| **Elements: Filled / Outlined** | *Filled* draws boxes in solid colour, as C4 diagrams usually are. *Outlined* moves each element's colour to its border and leaves the box nearly plain — no large areas of colour, easier on the eye in big views. Works with the workspace's own colours too. |
 | **Ignore DSL colours** | Draws with the built-in palette instead of the colours the workspace's styles and themes set. Shapes, icons, sizes and borders still come from the workspace. |
 | **Dark mode** (in the **⋯** menu) | Switches every page, and the diagrams, to a dark background. |
 

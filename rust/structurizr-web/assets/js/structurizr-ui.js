@@ -84,6 +84,78 @@ structurizr.ui.setIgnoringDslColours = function(bool) {
     }
 };
 
+// How elements are drawn: 'filled' (C4 boxes in solid colour, the default)
+// or 'outline' (a coloured border on a near-plain box — no large areas of
+// colour). A per-viewer preference, like the colours and the layout.
+structurizr.ui.ELEMENT_LOOK_KEY = 'structurizr.elementLook';
+structurizr.ui.ELEMENT_LOOK_FILLED = 'filled';
+structurizr.ui.ELEMENT_LOOK_OUTLINE = 'outline';
+
+structurizr.ui.getElementLook = function() {
+    try {
+        if (window.localStorage.getItem(structurizr.ui.ELEMENT_LOOK_KEY) === structurizr.ui.ELEMENT_LOOK_OUTLINE) {
+            return structurizr.ui.ELEMENT_LOOK_OUTLINE;
+        }
+    } catch (e) {
+        // storage unavailable: the default
+    }
+    return structurizr.ui.ELEMENT_LOOK_FILLED;
+};
+
+structurizr.ui.setElementLook = function(look) {
+    try {
+        if (look === structurizr.ui.ELEMENT_LOOK_OUTLINE) {
+            window.localStorage.setItem(structurizr.ui.ELEMENT_LOOK_KEY, look);
+        } else {
+            window.localStorage.removeItem(structurizr.ui.ELEMENT_LOOK_KEY);
+        }
+    } catch (e) {
+        // storage unavailable (private window, blocked site data): not remembered
+    }
+};
+
+// `hex` (#rgb or #rrggbb) as [r, g, b], or undefined for anything else.
+structurizr.ui.parseHexColour = function(hex) {
+    if (typeof hex !== 'string') return undefined;
+    var m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+    if (!m) return undefined;
+    var h = m[1].length === 3 ? m[1].replace(/./g, '$&$&') : m[1];
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+};
+
+// `amount` (0–1) of colour `a` over colour `b`, as #rrggbb.
+structurizr.ui.mixColours = function(a, b, amount) {
+    var x = structurizr.ui.parseHexColour(a), y = structurizr.ui.parseHexColour(b);
+    if (!x || !y) return b;
+    return '#' + x.map(function(c, i) {
+        return ('0' + Math.round(c * amount + y[i] * (1 - amount)).toString(16)).slice(-2);
+    }).join('');
+};
+
+// Redraw a resolved element style as an outline: the element's colour moves
+// to its border (darkened when too pale to read as a line), the fill becomes
+// the canvas with a faint tint of it, and the text the canvas's text colour.
+structurizr.ui.outlineElementStyle = function(style, darkMode) {
+    const defaults = darkMode ? structurizr.ui.DARK_MODE_DEFAULTS : structurizr.ui.LIGHT_MODE_DEFAULTS;
+    var accent = style.background;
+    var rgb = structurizr.ui.parseHexColour(accent);
+    if (!rgb || accent.toLowerCase() === defaults.background.toLowerCase()) {
+        accent = style.stroke;
+        rgb = structurizr.ui.parseHexColour(accent);
+    }
+    if (!rgb) return style;
+    // Perceived lightness; a pale fill (a component, a white deployment node)
+    // would vanish as a border.
+    var lightness = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255;
+    if (!darkMode && lightness > 0.7) accent = structurizr.util.shadeColor(accent, -45);
+    if (darkMode && lightness < 0.35) accent = structurizr.util.shadeColor(accent, 45);
+    style.stroke = accent;
+    style.background = structurizr.ui.mixColours(accent, defaults.background, darkMode ? 0.14 : 0.07);
+    style.color = defaults.color;
+    style.strokeWidth = Math.max(style.strokeWidth || 0, 3);
+    return style;
+};
+
 // Which engine auto-layout uses: ELK's layered algorithm with orthogonal
 // (the default) or spline edges (structurizr-elk-layout.js), or dagre, the
 // upstream engine. A per-viewer preference, like the colours.
@@ -544,6 +616,15 @@ structurizr.ui.findElementStyle = function(element, darkMode, options) {
             style.width = height;
             style.height = width;
         }
+    }
+
+    // The outline look, for elements only: boundaries and groups are already
+    // outlines, and the diagram's title text has no box.
+    if (structurizr.ui.getElementLook() === structurizr.ui.ELEMENT_LOOK_OUTLINE &&
+        element.type !== structurizr.constants.BOUNDARY_ELEMENT_TYPE &&
+        element.type !== structurizr.constants.GROUP_ELEMENT_TYPE &&
+        element.type !== undefined) {
+        structurizr.ui.outlineElementStyle(style, darkMode);
     }
 
     if (defaultSizeInUse === true && (style.shape === 'Person' || style.shape === 'Robot')) {
