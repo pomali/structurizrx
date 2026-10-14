@@ -43,6 +43,14 @@
         if (event.key === 'Escape' && inspector.isOpen()) inspector.hide();
     });
 
+    /* Find anything (⌘K): an element picked there opens in the inspector. */
+    StructurizrPalette.configure({
+        onElement: function (element) {
+            inspector.show(element.id);
+            return true;
+        }
+    });
+
     function options() {
         return {
             level: el('opt-level').value,

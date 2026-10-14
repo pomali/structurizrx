@@ -126,3 +126,130 @@ a.sx-workspace:hover { text-decoration: underline; }
 @media print {
     .sx-appbar, .sx-toolbar { display: none !important; }
 }
+
+/* ---- Find (⌘K): the button in the bar, and the palette it opens ---- */
+
+.sx-find {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 13rem;
+    padding: 0.2rem 0.4rem 0.2rem 0.6rem;
+    color: var(--bs-secondary-color);
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.375rem;
+    font-size: 0.8125rem;
+    cursor: pointer;
+}
+.sx-find:hover { color: var(--bs-body-color); border-color: var(--bs-secondary-color); }
+.sx-find-text { margin-right: auto; }
+.sx-find-key, .sx-palette kbd {
+    font-family: var(--bs-font-sans-serif);
+    font-size: 0.7rem;
+    padding: 0.05rem 0.35rem;
+    color: var(--bs-secondary-color);
+    background: var(--bs-tertiary-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.25rem;
+}
+@media (max-width: 1100px) {
+    .sx-find { min-width: 0; }
+    .sx-find-text, .sx-find-key { display: none; }
+}
+
+.sx-palette-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 12vh 1rem 1rem;
+    background: rgba(15, 23, 42, 0.35);
+}
+.sx-palette-backdrop[hidden] { display: none; }
+
+.sx-palette {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 640px;
+    max-height: 70vh;
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.6rem;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
+    overflow: hidden;
+    font-size: 0.875rem;
+}
+
+.sx-pal-field {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+.sx-pal-field i { color: var(--bs-secondary-color); }
+.sx-pal-field input {
+    flex: 1;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 1rem;
+}
+
+.sx-pal-list {
+    list-style: none;
+    margin: 0;
+    padding: 0.35rem;
+    overflow-y: auto;
+}
+.sx-pal-group {
+    padding: 0.5rem 0.6rem 0.2rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
+}
+.sx-pal-item {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 0.375rem;
+    cursor: pointer;
+}
+.sx-pal-item > i { color: var(--bs-secondary-color); flex-shrink: 0; }
+.sx-pal-item.active { background: var(--bs-primary-bg-subtle); }
+.sx-pal-item.active > i { color: var(--bs-primary-text-emphasis); }
+.sx-pal-text {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    min-width: 0;
+}
+.sx-pal-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
+.sx-pal-label mark { padding: 0; background: none; color: inherit; font-weight: 700; }
+.sx-pal-secondary {
+    font-size: 0.78rem;
+    color: var(--bs-secondary-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.sx-pal-empty { padding: 1rem 0.6rem; color: var(--bs-secondary-color); }
+
+.sx-pal-foot {
+    display: flex;
+    gap: 1rem;
+    padding: 0.45rem 1rem;
+    border-top: 1px solid var(--bs-border-color);
+    font-size: 0.75rem;
+    color: var(--bs-secondary-color);
+}
+.sx-pal-foot kbd { margin-right: 0.15rem; }

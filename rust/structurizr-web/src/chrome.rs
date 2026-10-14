@@ -38,14 +38,26 @@ const TABS: &[(Tab, &str, &str, &str)] = &[
     (Tab::Decisions, "/decisions", "bi-journal-text", "Decisions"),
 ];
 
-const BRAND: &str = r#"<img src="/static/img/structurizr-logo.png" alt="Structurizr" height="22"/>"#;
+const BRAND: &str =
+    r#"<img src="/static/img/structurizr-logo.png" alt="Structurizr" height="22"/>"#;
+
+/// Opens the find-anything palette (`structurizr-palette.js`), which fills in
+/// the platform's shortcut.
+const FIND_BUTTON: &str = r#"<button type="button" class="sx-find" title="Find a view, element, decision or command" aria-label="Find"><i class="bi bi-search"></i><span class="sx-find-text">Find…</span><kbd class="sx-find-key">⌘K</kbd></button>"#;
 
 const THEME_TOGGLE: &str = r#"<button type="button" id="themeToggle" class="btn btn-sm btn-outline-secondary" title="Toggle dark mode" aria-label="Toggle dark mode"><i class="bi bi-circle-half"></i></button>"#;
 
 /// The app bar for a page served by `structurizrx serve`. `None` is the
 /// workspace index, which has no workspace and so no tabs.
 pub fn app_header(workspace: Option<&WorkspaceHeader>, active: Tab) -> String {
-    let mut html = String::from(r#"<header class="sx-appbar">"#);
+    // `data-workspace` is what the palette searches.
+    let mut html = match workspace {
+        Some(ws) => format!(
+            r#"<header class="sx-appbar" data-workspace="{}">"#,
+            escape(ws.slug)
+        ),
+        None => String::from(r#"<header class="sx-appbar">"#),
+    };
     html.push_str(&format!(
         r#"<a class="sx-brand" href="/" title="All workspaces">{BRAND}</a>"#
     ));
@@ -74,6 +86,7 @@ pub fn app_header(workspace: Option<&WorkspaceHeader>, active: Tab) -> String {
         html.push_str("</nav>");
 
         html.push_str(r#"<div class="sx-appbar-end">"#);
+        html.push_str(FIND_BUTTON);
         html.push_str(&format!(
             r#"<details class="sx-more"><summary class="btn btn-sm btn-outline-secondary" title="More" aria-label="More"><i class="bi bi-three-dots"></i></summary><div class="sx-more-menu"><a href="{base}/print"><i class="bi bi-printer"></i>Print all views</a><a href="{base}/canvas"><i class="bi bi-display"></i>Canvas demo</a><a href="/docs/"><i class="bi bi-book"></i>Documentation</a></div></details>"#
         ));
@@ -91,7 +104,7 @@ pub fn app_header(workspace: Option<&WorkspaceHeader>, active: Tab) -> String {
 /// index to go back to and none of the server-backed tabs.
 pub fn static_app_header(title: &str) -> String {
     format!(
-        r#"<header class="sx-appbar"><span class="sx-brand">{BRAND}</span><span class="sx-workspace">{}</span><div class="sx-appbar-end">{THEME_TOGGLE}</div></header>"#,
+        r#"<header class="sx-appbar" data-catalog="catalog.json"><span class="sx-brand">{BRAND}</span><span class="sx-workspace">{}</span><div class="sx-appbar-end">{FIND_BUTTON}{THEME_TOGGLE}</div></header>"#,
         escape(title)
     )
 }
@@ -119,7 +132,9 @@ mod tests {
     fn marks_only_the_active_tab() {
         let html = app_header(Some(&ws(false)), Tab::Review);
         assert_eq!(html.matches("aria-current=\"page\"").count(), 1);
-        assert!(html.contains(r#"class="sx-tab active" aria-current="page" href="/workspace/shop/review""#));
+        assert!(html.contains(
+            r#"class="sx-tab active" aria-current="page" href="/workspace/shop/review""#
+        ));
     }
 
     #[test]
@@ -138,6 +153,8 @@ mod tests {
     fn index_has_no_tabs() {
         let html = app_header(None, Tab::None);
         assert!(!html.contains("sx-tabs"));
+        // Nothing to search without a workspace.
+        assert!(!html.contains("sx-find") && !html.contains("data-workspace"));
         assert!(html.contains("themeToggle"));
     }
 
@@ -145,5 +162,6 @@ mod tests {
     fn static_header_links_nowhere_server_backed() {
         let html = static_app_header("Shop");
         assert!(!html.contains("href"));
+        assert!(html.contains(r#"data-catalog="catalog.json""#));
     }
 }

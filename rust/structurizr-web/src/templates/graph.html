@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/static/css/structurizr-app.css"/>
     <link rel="stylesheet" href="/static/css/structurizr-inspector.css"/>
     <script src="/static/js/structurizr-app.js"></script>
+    <script src="/static/js/structurizr-palette.js"></script>
     <style>
         html, body { height: 100%; margin: 0; overflow: hidden; }
         #app { display: flex; flex-direction: column; height: 100vh; }
@@ -401,6 +402,16 @@
     // relationships keep the graph's own summary.
     var MODEL_KINDS = ['person', 'softwareSystem', 'container', 'component', 'custom'];
     var detailsRequest = 0;
+
+    // Find anything (⌘K): an element picked there is selected here.
+    StructurizrPalette.configure({
+        onElement: function (element) {
+            var node = graph.byId['e:' + element.id];
+            if (!node) return false;
+            setSelection([{ type: 'node', id: node.id }]);
+            return true;
+        }
+    });
 
     function isModelElement(node) {
         return node && !node.source && MODEL_KINDS.indexOf(node.kind) !== -1;

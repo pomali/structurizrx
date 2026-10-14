@@ -275,6 +275,14 @@
         select(id);
     }
 
+    /* Find anything (⌘K): an element picked there is reviewed here. */
+    StructurizrPalette.configure({
+        onElement: function (element) {
+            jumpTo(element.id);
+            return true;
+        }
+    });
+
     function toggle(kind, id) {
         var set = kind === 'reviewed' ? state.reviewed : state.flagged;
         if (set.has(id)) {

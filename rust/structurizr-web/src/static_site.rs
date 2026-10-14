@@ -57,6 +57,13 @@ pub fn export_viewer(workspace: &Workspace, output: &Path) -> Result<()> {
         serde_json::to_string_pretty(workspace).context("Failed to serialize workspace")?,
     )
     .with_context(|| format!("Cannot write {}", output.join("workspace.json").display()))?;
+    // What the ⌘K palette searches; the server serves the same at
+    // /api/workspace/{name}/catalog.
+    std::fs::write(
+        output.join("catalog.json"),
+        serde_json::to_string(&crate::catalog::catalog(workspace)).context("Failed to serialize catalog")?,
+    )
+    .with_context(|| format!("Cannot write {}", output.join("catalog.json").display()))?;
     std::fs::write(output.join("index.html"), viewer_page(workspace))
         .with_context(|| format!("Cannot write {}", output.join("index.html").display()))?;
     Ok(())

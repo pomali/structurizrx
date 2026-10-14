@@ -62,6 +62,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/workspace/{name}/graph", get(api_graph_handler))
         .route("/api/workspace/{name}/review", get(api_review_handler))
+        .route("/api/workspace/{name}/catalog", get(api_catalog_handler))
         .route("/api/workspace/{name}/clusters", get(api_clusters_handler))
         .route(
             "/api/workspace/{name}/revisions",
@@ -154,7 +155,10 @@ fn workspace_page(template: &str, state: &AppState, name: &str, active: Tab) -> 
         .replace("{{WORKSPACE_SLUG}}", &js_escape(name))
 }
 
-async fn workspace_handler(State(state): State<AppState>, Path(name): Path<String>) -> Html<String> {
+async fn workspace_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Html<String> {
     Html(workspace_page(WORKSPACE_HTML, &state, &name, Tab::Diagrams))
 }
 
@@ -167,8 +171,16 @@ async fn diagram_handler(Path((name, key)): Path<(String, String)>) -> Html<Stri
     )
 }
 
-async fn decisions_handler(State(state): State<AppState>, Path(name): Path<String>) -> Html<String> {
-    Html(workspace_page(DECISIONS_HTML, &state, &name, Tab::Decisions))
+async fn decisions_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Html<String> {
+    Html(workspace_page(
+        DECISIONS_HTML,
+        &state,
+        &name,
+        Tab::Decisions,
+    ))
 }
 
 async fn decision_handler(
@@ -326,6 +338,34 @@ async fn api_decision_handler(
 ///
 /// Served from [`AppState::cached`]: the body is the same for every reader
 /// until the workspace file changes, and building it costs a full index pass.
+/// What the find-anything palette searches (`catalog.rs`).
+async fn api_catalog_handler(State(state): State<AppState>, Path(name): Path<String>) -> Response {
+    let workspace = {
+        let workspaces = state.workspaces.lock().unwrap();
+        match workspaces.iter().find(|e| e.name == name) {
+            Some(entry) => entry.workspace.clone(),
+            None => return (StatusCode::NOT_FOUND, "Workspace not found").into_response(),
+        }
+    };
+
+    let body = state.cached(
+        &name,
+        |c| c.catalog_json.clone(),
+        |c, v| c.catalog_json = Some(v),
+        || {
+            serde_json::to_string(&crate::catalog::catalog(&workspace))
+                .unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"))
+        },
+    );
+
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        body.as_str().to_owned(),
+    )
+        .into_response()
+}
+
 async fn api_review_handler(State(state): State<AppState>, Path(name): Path<String>) -> Response {
     let workspace = {
         let workspaces = state.workspaces.lock().unwrap();

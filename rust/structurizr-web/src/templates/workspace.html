@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="/static/css/structurizr-inspector.css"/>
     <link rel="stylesheet" href="/static/css/structurizr-app.css"/>
     <script src="/static/js/structurizr-app.js"></script>
+    <script src="/static/js/structurizr-palette.js"></script>
     <style>
         html, body { height: 100%; margin: 0; overflow: hidden; }
         #app { display: flex; height: 100vh; flex-direction: column; }
@@ -207,7 +208,7 @@
     <div id="status-bar">
         <span id="status-msg">Loading…</span>
         <span class="ms-2 d-none d-md-inline">
-            · click to select (<kbd>shift</kbd> adds) · double-click an element to drill in · <kbd>space</kbd> to jump to a view
+            · click to select (<kbd>shift</kbd> adds) · double-click an element to drill in · <kbd>space</kbd> or <kbd>⌘K</kbd> to find anything
             · <kbd>?</kbd> for shortcuts
         </span>
     </div>
@@ -227,20 +228,6 @@
     <div id="tooltipProperties"></div>
     <div id="tooltipUrl"></div>
     <div id="tooltipAdditionalContent"></div>
-</div>
-
-<!-- Quick navigation (space); populated by structurizr-quick-navigation.js -->
-<div class="modal fade" id="quickFindModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <input id="quickFindModalFilter" type="text" placeholder="Start typing..." class="form-control"/>
-            </div>
-            <div class="modal-body">
-                <div id="quickFindModalItems"></div>
-            </div>
-        </div>
-    </div>
 </div>
 
 <!-- Drill-down target picker; driven by structurizr-navigation.js -->
@@ -280,7 +267,7 @@
                     <li>Hover an element or relationship for details.</li>
                     <li>Click an element or relationship to select it; <kbd>shift</kbd>-click adds to the selection, and <kbd>Esc</kbd> or a click on the background clears it. The page URL always links to the selection — <code>structurizrx locate</code> finds it in the DSL — and the status bar links each selected item to its declaration in VS Code.</li>
                     <li><kbd>+</kbd> <kbd>-</kbd> zoom in/out, <kbd>c</kbd> fit content, <kbd>w</kbd> fit width, <kbd>h</kbd> fit height</li>
-                    <li><kbd>←</kbd> <kbd>→</kbd> previous/next view · <kbd>space</kbd> quick navigation</li>
+                    <li><kbd>←</kbd> <kbd>→</kbd> previous/next view · <kbd>space</kbd> or <kbd>⌘K</kbd> find a view, element, decision or command</li>
                     <li><kbd>d</kbd> toggle descriptions · <kbd>m</kbd> toggle metadata · <kbd>t</kbd> toggle tooltips</li>
                     <li><kbd>,</kbd> <kbd>.</kbd> step through animation · <kbd>i</kbd> diagram key</li>
                     <li><kbd>f</kbd> full screen · <kbd>p</kbd> print this view · <kbd>?</kbd> this help</li>
@@ -352,7 +339,6 @@
 <!-- These bind to the markup above on load, so they must come after it. -->
 <script src="/static/js/structurizr-tooltip.js"></script>
 <script src="/static/js/structurizr-navigation.js"></script>
-<script src="/static/js/structurizr-quick-navigation.js"></script>
 <script src="/static/js/structurizr-selection.js"></script>
 <script src="/static/js/structurizr-inspector.js"></script>
 <script src="/static/js/structurizr-print-view.js"></script>
@@ -857,7 +843,6 @@
             return !autoGroups.some(function(g) { return g.gens.indexOf(gen) !== -1; });
         }));
 
-        buildQuickNavigation();
     }
 
     // ===== OUTLINE (bottom of the sidebar) =====
@@ -1211,9 +1196,33 @@
             e.stopPropagation();
         }, { passive: false });
 
-        // Quick navigation (space) shares the keyboard with the diagram.
-        quickNavigation.onOpen(function() { diagram.setKeyboardShortcutsEnabled(false); });
-        quickNavigation.onClose(function() { diagram.setKeyboardShortcutsEnabled(true); });
+        // Find anything (⌘K, or space here as the old quick navigation was):
+        // views and elements open in place rather than by reloading.
+        StructurizrPalette.configure({
+            openOnSpace: true,
+            onOpen: function() { diagram.setKeyboardShortcutsEnabled(false); },
+            onClose: function() { diagram.setKeyboardShortcutsEnabled(true); },
+            onView: function(key) {
+                if (!diagramReady) return false;
+                activateView(key);
+                return true;
+            },
+            onElement: function(element) {
+                if (!diagramReady) return false;
+                var view = structurizr.workspace.findViewByKey(currentViewKey);
+                var drawn = view && (view.elements || []).some(function(e) { return e.id === element.id; });
+                if (drawn) {
+                    inspectElement(element.id);
+                } else if (element.views.length) {
+                    // The catalog lists the best view to see it in first.
+                    pendingSelection = [element.path];
+                    activateView(element.views[0]);
+                } else {
+                    inspector.show(element.id);
+                }
+                return true;
+            }
+        });
 
         // Modals likewise, so typing in them doesn't drive the diagram.
         ['helpModal', 'keyModal', 'printModal'].forEach(function(id) {
@@ -1363,19 +1372,6 @@
         } else if (options.length > 1) {
             openNavigationModal(options);
         }
-    }
-
-    // ===== QUICK NAVIGATION (space) =====
-    function buildQuickNavigation() {
-        quickNavigation.clear();
-        structurizr.workspace.getViews().forEach(function(view) {
-            var title = structurizr.util.escapeHtml(structurizr.ui.getTitleForView(view));
-            var key = structurizr.util.escapeHtml(view.key);
-            quickNavigation.addHandler(
-                title + ' <span class="viewKey">(#' + key + ')</span>',
-                function() { activateView(view.key); }
-            );
-        });
     }
 
     // Refit the diagram when the window (and so the viewport) changes size.

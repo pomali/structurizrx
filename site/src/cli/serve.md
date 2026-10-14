@@ -34,8 +34,13 @@ for each way of looking at it.
 | **Compare** | What changed in the model between two git versions |
 | **Decisions** | The workspace's ADRs (only when it has some) |
 
-The **⋯** menu holds *Print all views*, the canvas demo and this
-documentation; **◐** switches between light and dark on every page at once.
+**Find** (<kbd>⌘K</kbd>, or <kbd>Ctrl</kbd>+<kbd>K</kbd>; <kbd>space</kbd> on
+the diagrams page) searches views, elements, decisions and commands from any
+page. Picking an element shows it where you are — selected on the diagram,
+the graph or in review — or, if the current page can't, opens the view that
+shows it best with it selected. The **⋯** menu holds *Print all views*, the
+canvas demo and this documentation; **◐** switches between light and dark on
+every page at once.
 
 ## Routes
 
@@ -106,6 +111,7 @@ working against a live server:
 | `GET /api/workspace/{name}/diagram/{key}/svg` | `render --format svg`, one diagram |
 | `GET /api/workspace/{name}/diagram/{key}/mermaid` | `render --format mermaid`, one diagram |
 | `GET /api/workspace/{name}/graph` | the universe graph as `{nodes, links}` JSON |
+| `GET /api/workspace/{name}/catalog` | what Find searches: elements with paths and views, views with titles, decisions |
 | `GET /api/workspace/{name}/revisions` | the workspace file's git history |
 | `GET /api/workspace/{name}/diff?from=&to=` | the model-level comparison of two versions |
 | `GET /api/workspace/{name}/digest` | [`digest`](./digest.md) |
