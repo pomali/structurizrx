@@ -120,9 +120,16 @@ centre. Dark mode moved from the app bar into the ⋯ menu on every page.
   are there [show] [open in editor]"); metrics behind a disclosure.
 - **Diff on the diagram**: a compare mode on any view — added green, removed
   ghosted, changed outlined — the picture a reviewer puts in a PR.
-- **Readable large views**: minimap, zoom-to-selection, labels hidden below
-  a zoom threshold, and semantic zoom (zooming into a system opens its
-  container view).
+- **Readable large views (done, except semantic zoom)**: below 30% zoom the
+  relationship labels and element descriptions are hidden (back on hover or
+  selection; exports unaffected); a minimap appears once the diagram no
+  longer fits and moves the view on click or drag; `z` and the inspector's
+  *Zoom to* zoom to the selection, capped at 60% and centred clear of the
+  inspector. Not done: semantic zoom (zooming into a system opens its
+  container view) — it would change what zooming means, and double-click
+  already drills in.
+- **Outlined elements (done)**: a second look, chosen in the view menu —
+  each element's colour as its border on a near-plain box.
 
 ## Validation
 

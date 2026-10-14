@@ -100,7 +100,7 @@
 a.sx-insp-element { text-decoration: none; }
 a.sx-insp-element:hover { text-decoration: underline; }
 
-.sx-insp-plain > li { padding: 0.1rem 0; }
+.sx-insp-plain > li { padding: 0.1rem 0; overflow-wrap: anywhere; }
 .sx-insp-view-kind {
     font-size: 0.75rem;
     color: var(--bs-secondary-color);

@@ -39,6 +39,20 @@
         #view-chip { top: .75rem; left: .75rem; max-width: calc(100% - 1.5rem); }
         #zoom-controls { bottom: .75rem; left: .75rem; }
         #animationControls { bottom: .75rem; left: 50%; transform: translateX(-50%); }
+        #minimap { bottom: 3.6rem; left: .75rem; padding: .25rem; cursor: pointer; }
+        #minimap[hidden] { display: none; }
+        #minimap canvas { display: block; width: 200px; touch-action: none; }
+        /* Zoomed far out, small text is unreadable noise: relationship labels
+           and element descriptions go, until hovered or selected. Only on
+           screen — exports and print copy the SVG without these classes. */
+        #diagram.sx-far .joint-link .labels,
+        #diagram.sx-far .structurizrDescription,
+        #diagram.sx-far .structurizrMetaData { display: none; }
+        #diagram.sx-far .joint-link:hover .labels,
+        #diagram.sx-far .joint-cell:hover .structurizrDescription,
+        #diagram.sx-far .joint-cell:hover .structurizrMetaData,
+        #diagram.sx-far .joint-cell:has(.structurizrSelected) .structurizrDescription,
+        #diagram.sx-far .joint-cell:has(.structurizrSelected) .structurizrMetaData { display: inline; }
         #animationControls.d-none { display: none !important; }
         #view-menu { min-width: 0; }
         #view-heading {
@@ -208,6 +222,10 @@
                 </details>
             </div>
 
+            <div id="minimap" class="diagram-float" hidden title="Click or drag to move around the diagram">
+                <canvas id="minimap-canvas" width="200" height="130" aria-label="Overview of the whole diagram"></canvas>
+            </div>
+
             <div id="zoom-controls" class="diagram-float" role="group" aria-label="Zoom">
                 <button type="button" class="float-btn" id="btnZoomOut" title="Zoom out (-)" aria-label="Zoom out"><i class="bi bi-dash-lg"></i></button>
                 <button type="button" class="float-btn" id="btnFitView" title="Zoom to fit (c)" aria-label="Zoom to fit"><i class="bi bi-arrows-angle-contract"></i></button>
@@ -291,6 +309,7 @@
                     <li><kbd>+</kbd> <kbd>-</kbd> zoom in/out, <kbd>c</kbd> fit content, <kbd>w</kbd> fit width, <kbd>h</kbd> fit height</li>
                     <li><kbd>←</kbd> <kbd>→</kbd> previous/next view · <kbd>space</kbd> or <kbd>⌘K</kbd> find a view, element, decision or command</li>
                     <li><kbd>[</kbd> show or hide the view list</li>
+                    <li><kbd>z</kbd> zoom to the selection (or the whole diagram)</li>
                     <li><kbd>d</kbd> toggle descriptions · <kbd>m</kbd> toggle metadata · <kbd>t</kbd> toggle tooltips</li>
                     <li><kbd>,</kbd> <kbd>.</kbd> step through animation · <kbd>i</kbd> diagram key</li>
                     <li><kbd>f</kbd> full screen · <kbd>p</kbd> print this view · <kbd>?</kbd> this help</li>
@@ -424,6 +443,7 @@
     var selectionRequest = 0;
     function showSelection(references) {
         updateInspector();
+        drawMinimap();
         var request = ++selectionRequest;
         if (references.length === 0) {
             setStatus('Selection cleared');
@@ -448,6 +468,138 @@
         });
     }
 
+    // ===== READABLE LARGE VIEWS =====
+    // Three aids for a view bigger than the screen: small text thinned out
+    // when it couldn't be read anyway, a minimap once the diagram no longer
+    // fits, and zoom to the selection.
+
+    // Below this scale, 24px diagram text is under ~7 screen pixels.
+    var FAR_SCALE = 0.3;
+    var minimapBoxes = null;     // element boxes for the current view, cached
+    var minimapTransform = null; // diagram ↔ minimap mapping from the last draw
+
+    function isDrawn(elementId) {
+        var view = diagram && diagram.getCurrentView();
+        return !!(view && (view.elements || []).some(function(e) { return e.id === elementId; }));
+    }
+
+    /** Pixels the open inspector covers at the diagram's right edge. */
+    function inspectorInset() {
+        if (!inspector || !inspector.isOpen()) return 0;
+        var area = document.getElementById('diagram-area').getBoundingClientRect();
+        return area.right - inspector.node.getBoundingClientRect().left;
+    }
+
+    function zoomToSelection() {
+        var ids = selection ? selection.items
+            .filter(function(i) { return i.type === 'element'; })
+            .map(function(i) { return i.id; }) : [];
+        if (ids.length) {
+            diagram.zoomToElements(ids, undefined, inspectorInset());
+        } else {
+            fitDiagram();
+        }
+    }
+
+    function updateReadability() {
+        if (!diagram) return;
+        document.getElementById('diagram').classList.toggle('sx-far', diagram.getScale() < FAR_SCALE);
+        drawMinimap();
+    }
+
+    function contentBounds(boxes) {
+        var b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+        boxes.forEach(function(box) {
+            b.minX = Math.min(b.minX, box.x);
+            b.minY = Math.min(b.minY, box.y);
+            b.maxX = Math.max(b.maxX, box.x + box.width);
+            b.maxY = Math.max(b.maxY, box.y + box.height);
+        });
+        return b;
+    }
+
+    function drawMinimap() {
+        var minimap = document.getElementById('minimap');
+        if (!diagram || !diagram.getCurrentView()) { minimap.hidden = true; return; }
+        if (!minimapBoxes) minimapBoxes = diagram.getElementBoxes();
+        if (!minimapBoxes.length) { minimap.hidden = true; return; }
+
+        var bounds = contentBounds(minimapBoxes);
+        var visible = diagram.getVisibleArea();
+        // Only once there is somewhere to go: the whole diagram on screen
+        // needs no map.
+        var fits = visible.x <= bounds.minX && visible.y <= bounds.minY &&
+            visible.x + visible.width >= bounds.maxX && visible.y + visible.height >= bounds.maxY;
+        minimap.hidden = fits;
+        if (fits) return;
+
+        var canvas = document.getElementById('minimap-canvas');
+        var width = 200, pad = 6;
+        var contentW = bounds.maxX - bounds.minX, contentH = bounds.maxY - bounds.minY;
+        var k = (width - 2 * pad) / contentW;
+        var height = Math.max(60, Math.min(160, Math.round(contentH * k + 2 * pad)));
+        k = Math.min(k, (height - 2 * pad) / contentH);
+        var ox = (width - contentW * k) / 2 - bounds.minX * k;
+        var oy = (height - contentH * k) / 2 - bounds.minY * k;
+        minimapTransform = { k: k, ox: ox, oy: oy };
+
+        var ratio = window.devicePixelRatio || 1;
+        canvas.width = width * ratio;
+        canvas.height = height * ratio;
+        canvas.style.height = height + 'px';
+        var ctx = canvas.getContext('2d');
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+
+        var styles = getComputedStyle(document.documentElement);
+        var muted = styles.getPropertyValue('--bs-secondary-color').trim() || '#888';
+        var primary = styles.getPropertyValue('--bs-primary').trim() || '#0d6efd';
+        var selected = (selection ? selection.items : []).map(function(i) { return i.id; });
+
+        minimapBoxes.forEach(function(box) {
+            var x = box.x * k + ox, y = box.y * k + oy, w = Math.max(1, box.width * k), h = Math.max(1, box.height * k);
+            if (box.boundary) {
+                ctx.strokeStyle = muted;
+                ctx.globalAlpha = 0.5;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(x + 0.5, y + 0.5, w, h);
+            } else {
+                ctx.fillStyle = selected.indexOf(box.id) !== -1 ? primary : muted;
+                ctx.globalAlpha = selected.indexOf(box.id) !== -1 ? 1 : 0.55;
+                ctx.fillRect(x, y, w, h);
+            }
+        });
+
+        // The part on screen.
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = primary;
+        var vx = visible.x * k + ox, vy = visible.y * k + oy, vw = visible.width * k, vh = visible.height * k;
+        ctx.fillRect(vx, vy, vw, vh);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = primary;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(vx, vy, vw, vh);
+    }
+
+    // Click or drag on the minimap: centre the diagram there.
+    (function() {
+        var canvas = document.getElementById('minimap-canvas');
+        var dragging = false;
+        function moveTo(e) {
+            if (!minimapTransform) return;
+            var rect = canvas.getBoundingClientRect();
+            var t = minimapTransform;
+            diagram.centreOn((e.clientX - rect.left - t.ox) / t.k, (e.clientY - rect.top - t.oy) / t.k);
+        }
+        canvas.addEventListener('pointerdown', function(e) {
+            dragging = true;
+            canvas.setPointerCapture(e.pointerId);
+            moveTo(e);
+        });
+        canvas.addEventListener('pointermove', function(e) { if (dragging) moveTo(e); });
+        canvas.addEventListener('pointerup', function() { dragging = false; });
+    })();
+
     // ===== INSPECTOR =====
     // One element selected on the diagram opens it in the inspector (shared
     // with the graph, clusters and review pages, structurizr-inspector.js).
@@ -460,6 +612,13 @@
         inspector = new StructurizrInspector.Panel(document.getElementById('diagram-area'), {
             slug: STATIC_EXPORT ? null : WORKSPACE_SLUG,
             page: 'diagrams',
+            actions: function(element) {
+                if (!isDrawn(element.id)) return [];
+                return [{
+                    icon: 'bi-zoom-in', label: 'Zoom to', title: 'Zoom the diagram to it (z)',
+                    onClick: function() { diagram.zoomToElements([element.id], undefined, inspectorInset()); }
+                }];
+            },
             // Deployment elements, and everything in a static export, have no
             // review data; the workspace JSON has enough.
             fallback: function(id) {
@@ -839,6 +998,8 @@
         diagram.changeView(key, function() {
             fitDiagram();
             updateAnimationControls();
+            minimapBoxes = null;
+            updateReadability();
             if (pendingSelection) {
                 selection.restore(pendingSelection);
                 pendingSelection = null;
@@ -1200,6 +1361,18 @@
     // ===== INTERACTION =====
     // Wired once, from the diagram's construction callback.
     function initInteraction() {
+        // Readable large views: thin out text and redraw the minimap on every
+        // zoom, and follow scrolling on the minimap (once per frame).
+        diagram.onZoomed(updateReadability);
+        var minimapFrame = 0;
+        document.getElementById('diagram-viewport').addEventListener('scroll', function() {
+            if (minimapFrame) return;
+            minimapFrame = requestAnimationFrame(function() {
+                minimapFrame = 0;
+                drawMinimap();
+            });
+        });
+
         // Hover tooltips for elements and relationships. structurizr-diagram.js
         // asks for them without a header, on the assumption that the name and
         // description are legible on the diagram itself — which stops being
@@ -1271,6 +1444,7 @@
                 45: function() { diagram.zoomOut(); },           // -
                 99: function() { fitDiagram(); },                // c
                 119: function() { diagram.zoomFitWidth(); },     // w
+                122: zoomToSelection,                            // z
                 104: function() { diagram.zoomFitHeight(); },    // h
                 100: function() { diagram.toggleDescription(); },// d
                 109: function() { diagram.toggleMetadata(); },   // m

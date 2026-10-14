@@ -48,6 +48,17 @@ it for that view's actions (open as SVG, copy as Mermaid, print, full screen)
 and the display settings below. Zoom sits at the bottom left, and a dynamic
 view's step buttons at the bottom centre.
 
+Large views stay readable:
+
+- Zoomed far out, where it would be too small to read, the text on
+  relationships and the descriptions in boxes are hidden; hover over an
+  element or a relationship (or select it) to see them.
+- Once you zoom in past the whole diagram, a minimap appears above the zoom
+  buttons, showing where you are; click or drag on it to move.
+- <kbd>z</kbd> zooms to the selection (or back to the whole diagram), as does
+  *Zoom to* in the element panel — close enough to read, never so close that
+  one box fills the screen.
+
 ## Routes
 
 | Route | What it is |

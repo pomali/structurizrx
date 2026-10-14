@@ -4690,6 +4690,85 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
         }
 
         paper.scale(scale);
+        (zoomListeners || []).forEach(function(callback) { callback(scale); });
+    };
+
+    // ---- For readable large views (minimap, zoom to selection, label
+    // thinning — see the workspace page). Coordinates are the diagram's own,
+    // before zoom.
+
+    var zoomListeners = [];
+
+    /** `callback(scale)` after every change of zoom. */
+    this.onZoomed = function(callback) {
+        zoomListeners.push(callback);
+    };
+
+    this.getScale = function() {
+        return scale;
+    };
+
+    /** The part of the diagram the viewport shows. */
+    this.getVisibleArea = function() {
+        var rect = viewport[0].getBoundingClientRect();
+        var topLeft = paper.clientToLocalPoint(rect.left, rect.top);
+        var bottomRight = paper.clientToLocalPoint(rect.right, rect.bottom);
+        return { x: topLeft.x, y: topLeft.y, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y };
+    };
+
+    /** Every drawn element and boundary as { id, x, y, width, height, boundary }. */
+    this.getElementBoxes = function() {
+        var boxes = [];
+        graph.getElements().forEach(function(cell) {
+            var boundary = cell.attributes.type === 'structurizr.boundary';
+            if (cell.elementInView === undefined && !boundary) return;
+            var box = cell.getBBox();
+            boxes.push({
+                id: cell.elementInView ? cell.elementInView.id : undefined,
+                x: box.x, y: box.y, width: box.width, height: box.height,
+                boundary: boundary
+            });
+        });
+        return boxes;
+    };
+
+    /** Scroll so the diagram point (x, y) is in the middle of the viewport,
+     *  less `insetRight` pixels covered on its right (a panel over it). */
+    this.centreOn = function(x, y, smooth, insetRight) {
+        var rect = viewport[0].getBoundingClientRect();
+        var cx = rect.left + (rect.width - (insetRight || 0)) / 2, cy = rect.top + rect.height / 2;
+        if (smooth) {
+            this.scrollToPointSmooth(x, y, cx, cy);
+        } else {
+            this.scrollToPoint(x, y, cx, cy);
+        }
+    };
+
+    /** Zoom and scroll so that the given elements fill the viewport (less
+     *  `insetRight` pixels covered on its right), but no closer than
+     *  `maxScale` (default 0.6, where diagram text reads comfortably): one
+     *  element filling the screen is no easier to read. */
+    this.zoomToElements = function(elementIds, maxScale, insetRight) {
+        var boxes = this.getElementBoxes().filter(function(box) {
+            return elementIds.indexOf(box.id) !== -1;
+        });
+        if (!boxes.length) return;
+        var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        boxes.forEach(function(box) {
+            minX = Math.min(minX, box.x);
+            minY = Math.min(minY, box.y);
+            maxX = Math.max(maxX, box.x + box.width);
+            maxY = Math.max(maxY, box.y + box.height);
+        });
+        var margin = 120;
+        var rect = viewport[0].getBoundingClientRect();
+        var width = Math.max(rect.width - (insetRight || 0), rect.width / 3);
+        var target = Math.min(
+            width / (maxX - minX + 2 * margin),
+            rect.height / (maxY - minY + 2 * margin),
+            maxScale || 0.6);
+        this.zoomTo(Math.max(target, minZoomScale));
+        this.centreOn((minX + maxX) / 2, (minY + maxY) / 2, false, insetRight);
     };
 
     this.getPossibleViewportWidth = function() {
