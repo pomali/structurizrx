@@ -856,13 +856,34 @@ fn docs_asset_response(path: &str) -> Response {
     }
 }
 
-async fn static_handler(Path(path): Path<String>) -> Response {
+async fn static_handler(Path(path): Path<String>, headers: axum::http::HeaderMap) -> Response {
     match Assets::get(&path) {
         Some(content) => {
+            // Revalidate rather than guess: served without a validator, an
+            // asset is cached heuristically, and a browser keeps running the
+            // previous viewer's scripts after `structurizrx` is upgraded.
+            let etag = format!(
+                "\"{}\"",
+                content.metadata.sha256_hash()[..8]
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>()
+            );
+            let unchanged = headers
+                .get(header::IF_NONE_MATCH)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|v| v == etag);
+            if unchanged {
+                return (StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response();
+            }
             let mime = mime_from_path(&path);
             (
                 StatusCode::OK,
-                [(header::CONTENT_TYPE, mime)],
+                [
+                    (header::CONTENT_TYPE, mime.to_string()),
+                    (header::ETAG, etag),
+                    (header::CACHE_CONTROL, "no-cache".to_string()),
+                ],
                 content.data.as_ref().to_vec(),
             )
                 .into_response()
