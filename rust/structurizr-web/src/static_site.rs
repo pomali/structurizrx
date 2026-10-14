@@ -61,7 +61,8 @@ pub fn export_viewer(workspace: &Workspace, output: &Path) -> Result<()> {
     // /api/workspace/{name}/catalog.
     std::fs::write(
         output.join("catalog.json"),
-        serde_json::to_string(&crate::catalog::catalog(workspace)).context("Failed to serialize catalog")?,
+        serde_json::to_string(&crate::catalog::catalog(workspace))
+            .context("Failed to serialize catalog")?,
     )
     .with_context(|| format!("Cannot write {}", output.join("catalog.json").display()))?;
     std::fs::write(output.join("index.html"), viewer_page(workspace))

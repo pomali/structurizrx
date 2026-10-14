@@ -86,12 +86,25 @@ view, Esc or a click on the diagram. Searching views is ⌘K's job.
 Not covered: the review page's 24rem element list and the graph's controls
 panel stay as they are on narrow windows.
 
-### 2.5 View names (carried over from phase 1)
+### 2.5 View names (done, the light version)
 
-Dynamic views show their full description as their name, deployment views
-"Deployment View: Social Network Platform - Production", slices their
-selector expression. Shorter names need care: the title logic
-(`getTitleForView`) is shared with print and export.
+Long titles are cut short with an ellipsis in the sidebar and on the view's
+name, with the full text on hover. Views without a title get short names in
+the generated views' style — "Social Network Platform — Production", not
+"Deployment View: Social Network Platform - Production" — from
+`getDefaultViewName`, mirrored in `src/catalog.rs`.
+
+Not done, on purpose: the parser reads a view's third argument as its title,
+where upstream Structurizr reads it as the description, so upstream-style
+dynamic views still show a sentence as their name. Changing that changes
+what `parse`/`emit` mean, and is a separate decision.
+
+### 2.6 A calmer diagram page (done)
+
+The workspace page's toolbar row is gone. The view's name floats at the
+diagram's top left with a menu of that view's actions and display settings;
+zoom floats at the bottom left and a dynamic view's steps at the bottom
+centre. Dark mode moved from the app bar into the ⋯ menu on every page.
 
 ## Phase 3 — what makes it more than a viewer
 

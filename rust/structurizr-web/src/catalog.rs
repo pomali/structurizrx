@@ -146,102 +146,89 @@ fn views(ws: &Workspace, idx: &Index) -> Vec<CatalogView> {
         idx.element(id)
             .map_or_else(|| id.to_string(), |e| e.name.clone())
     };
-    let parent_id = |id: &str| idx.element(id).and_then(|e| e.parent_id.clone());
     let mut out: Vec<CatalogView> = Vec::new();
     let v = &ws.views;
 
     // The fallback titles mirror structurizr.ui.getDefaultViewName
     // (assets/js/structurizr-ui.js), so the palette and the sidebar agree.
     for view in v.system_landscape_views.iter().flatten() {
-        let enterprise = ws
-            .model
-            .enterprise
-            .as_ref()
-            .map(|e| format!(": {}", e.name));
+        let fallback = match &ws.model.enterprise {
+            Some(e) => format!("{} — landscape", e.name),
+            None => "System landscape".to_string(),
+        };
         push(
             &mut out,
             &view.key,
             &view.title,
             &view.description,
             "SystemLandscape",
-            format!("System Landscape View{}", enterprise.unwrap_or_default()),
+            fallback,
         );
     }
     for view in v.system_context_views.iter().flatten() {
+        let fallback = format!("{} — context", name_of(&view.software_system_id));
         push(
             &mut out,
             &view.key,
             &view.title,
             &view.description,
             "SystemContext",
-            format!("System Context View: {}", name_of(&view.software_system_id)),
+            fallback,
         );
     }
     for view in v.container_views.iter().flatten() {
+        let fallback = format!("{} — containers", name_of(&view.software_system_id));
         push(
             &mut out,
             &view.key,
             &view.title,
             &view.description,
             "Container",
-            format!("Container View: {}", name_of(&view.software_system_id)),
+            fallback,
         );
     }
     for view in v.component_views.iter().flatten() {
-        let container = name_of(&view.container_id);
-        let system = parent_id(&view.container_id).map(|p| name_of(&p));
+        let fallback = format!("{} — components", name_of(&view.container_id));
         push(
             &mut out,
             &view.key,
             &view.title,
             &view.description,
             "Component",
-            match system {
-                Some(system) => format!("Component View: {system} - {container}"),
-                None => format!("Component View: {container}"),
-            },
+            fallback,
         );
     }
     for view in v.dynamic_views.iter().flatten() {
-        let scope = view.element_id.as_deref().map(|id| match parent_id(id) {
-            Some(parent) => format!("{} - {}", name_of(&parent), name_of(id)),
-            None => name_of(id),
-        });
+        let fallback = view.element_id.as_deref().map_or_else(
+            || "Dynamic view".to_string(),
+            |id| format!("{} — dynamic", name_of(id)),
+        );
         push(
             &mut out,
             &view.key,
             &view.title,
             &view.description,
             "Dynamic",
-            scope.map_or_else(
-                || "Dynamic View".to_string(),
-                |s| format!("Dynamic View: {s}"),
-            ),
+            fallback,
         );
     }
     for view in v.deployment_views.iter().flatten() {
+        let fallback = match &view.software_system_id {
+            Some(id) => format!("{} — {}", name_of(id), view.environment),
+            None => format!("{} deployment", view.environment),
+        };
         push(
             &mut out,
             &view.key,
             &view.title,
             &view.description,
             "Deployment",
-            match &view.software_system_id {
-                Some(id) => format!("Deployment View: {} - {}", name_of(id), view.environment),
-                None => format!("Deployment View: {}", view.environment),
-            },
+            fallback,
         );
     }
     for view in v.image_views.iter().flatten() {
         let key = view.key.clone().unwrap_or_default();
-        push(
-            &mut out,
-            &view.key,
-            &view.title,
-            &None,
-            "Image",
-            format!("Image View: {key}"),
-        );
+        push(&mut out, &view.key, &view.title, &None, "Image", key);
     }
     for view in v.custom_views.iter().flatten() {
         push(
@@ -250,7 +237,7 @@ fn views(ws: &Workspace, idx: &Index) -> Vec<CatalogView> {
             &view.title,
             &view.description,
             "Custom",
-            "Custom View: Untitled".to_string(),
+            "Custom view".to_string(),
         );
     }
     let resolved: Vec<(String, String)> = out
@@ -366,7 +353,7 @@ mod tests {
         assert_eq!(keys, vec!["landscape", "context", "containers", "live"]);
         let title = |key: &str| c.views.iter().find(|v| v.key == key).unwrap().title.clone();
         assert_eq!(title("containers"), "Containers");
-        assert_eq!(title("context"), "System Context View: Shop");
-        assert_eq!(title("live"), "Deployment View: Shop - Live");
+        assert_eq!(title("context"), "Shop — context");
+        assert_eq!(title("live"), "Shop — Live");
     }
 }

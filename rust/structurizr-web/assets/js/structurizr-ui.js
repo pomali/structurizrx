@@ -694,56 +694,47 @@ structurizr.ui.getTitleForView = function(view) {
     return this.getDefaultViewName(view);
 };
 
+// The name of a view without a title, in the style generated views use
+// ("Shop — context"): short enough for the sidebar, which already groups views
+// by type, so the type need not lead. src/catalog.rs mirrors this for the
+// find palette — change both together.
 structurizr.ui.getDefaultViewName = function(view) {
     if (view.type === structurizr.constants.FILTERED_VIEW_TYPE) {
         view = structurizr.workspace.findViewByKey(view.baseViewKey);
     }
 
+    const nameOf = function(id) {
+        const element = structurizr.workspace.findElementById(id);
+        return element ? element.name : id;
+    };
+
     if (view.type === structurizr.constants.CUSTOM_VIEW_TYPE) {
-        return 'Custom View: ' + ((view.title && view.title.trim().length > 0) ? view.title : 'Untitled');
+        return 'Custom view';
 
     } else if (view.type === structurizr.constants.SYSTEM_LANDSCAPE_VIEW_TYPE) {
         const enterprise = structurizr.workspace.model.enterprise;
-        return 'System Landscape View' + (enterprise ? ': ' + enterprise.name : '');
+        return enterprise ? enterprise.name + ' — landscape' : 'System landscape';
 
     } else if (view.type === structurizr.constants.SYSTEM_CONTEXT_VIEW_TYPE) {
-        const softwareSystem = structurizr.workspace.findElementById(view.softwareSystemId);
-        return 'System Context View: ' + softwareSystem.name;
+        return nameOf(view.softwareSystemId) + ' — context';
 
     } else if (view.type === structurizr.constants.CONTAINER_VIEW_TYPE) {
-        const softwareSystem = structurizr.workspace.findElementById(view.softwareSystemId);
-        return 'Container View: ' + softwareSystem.name;
+        return nameOf(view.softwareSystemId) + ' — containers';
 
     } else if (view.type === structurizr.constants.COMPONENT_VIEW_TYPE) {
-        const container = structurizr.workspace.findElementById(view.containerId);
-        const softwareSystem = structurizr.workspace.findElementById(container.parentId);
-        return 'Component View: ' + softwareSystem.name + ' - ' + container.name;
+        return nameOf(view.containerId) + ' — components';
 
     } else if (view.type === structurizr.constants.DYNAMIC_VIEW_TYPE) {
-        var element = structurizr.workspace.findElementById(view.elementId);
-        if (!element) {
-            element = structurizr.workspace.findElementById(view.softwareSystemId);
-        }
-        if (element) {
-            if (element.type === structurizr.constants.SOFTWARE_SYSTEM_ELEMENT_TYPE) {
-                return 'Dynamic View: ' + element.name;
-            } else if (element.type === structurizr.constants.CONTAINER_ELEMENT_TYPE) {
-                const softwareSystem = structurizr.workspace.findElementById(element.parentId);
-                return 'Dynamic View: ' + softwareSystem.name + ' - ' + element.name;
-            }
-        } else {
-            return 'Dynamic View';
-        }
+        const scope = view.elementId || view.softwareSystemId;
+        return scope ? nameOf(scope) + ' — dynamic' : 'Dynamic view';
 
     } else if (view.type === structurizr.constants.DEPLOYMENT_VIEW_TYPE) {
-        if (view.softwareSystemId) {
-            const softwareSystem = structurizr.workspace.findElementById(view.softwareSystemId);
-            return 'Deployment View: ' + softwareSystem.name + ' - ' + view.environment;
-        } else {
-            return 'Deployment View: ' + view.environment;
-        }
+        return view.softwareSystemId
+            ? nameOf(view.softwareSystemId) + ' — ' + view.environment
+            : view.environment + ' deployment';
+
     } else if (view.type === structurizr.constants.IMAGE_VIEW_TYPE) {
-        return 'Image View: ' + view.key;
+        return view.key;
     }
 
     return '';
