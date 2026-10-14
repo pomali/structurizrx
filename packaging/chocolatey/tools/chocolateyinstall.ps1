@@ -2,9 +2,9 @@ $ErrorActionPreference = 'Stop'
 
 # $version and $checksum64 are rewritten by the release workflow on each tag.
 $packageName = 'structurizrx'
-$version     = '0.2.0'
+$version     = '0.3.0'
 $url64       = "https://github.com/pomali/structurizrx/releases/download/v$version/structurizrx-x86_64-pc-windows-msvc.zip"
-$checksum64  = '25e4e78dc46939b5f64a3658303b8d6c40beac730c1791f9cb4ea4b7daa2f507'
+$checksum64  = '8b63f38d92099097e9ff9eebc8a074058bd069f29e9ee606e509ab270e445aad'
 $toolsDir    = Split-Path -Parent $MyInvocation.MyCommand.Definition
 
 # Unzips structurizrx.exe into the tools dir; Chocolatey auto-shims the .exe onto PATH.

@@ -6,26 +6,26 @@
 class Structurizrx < Formula
   desc "Structurizr DSL toolchain - Rust implementation"
   homepage "https://github.com/pomali/structurizrx"
-  version "0.2.0"
+  version "0.3.0"
   license "Apache-2.0"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/pomali/structurizrx/releases/download/v0.2.0/structurizrx-aarch64-apple-darwin.tar.gz"
-      sha256 "312019941935480c670b0f199cecb561b778bad737e53461b3a1f0c8924149b9"
+      url "https://github.com/pomali/structurizrx/releases/download/v0.3.0/structurizrx-aarch64-apple-darwin.tar.gz"
+      sha256 "6555d5b85077281104869c532ad760ed186897cb4bfba06d7a446f26fb264ff9"
     else
-      url "https://github.com/pomali/structurizrx/releases/download/v0.2.0/structurizrx-x86_64-apple-darwin.tar.gz"
-      sha256 "e79b1b8627ad4ee4c9c9ced204cffd33514122833f71a1e3eba41402545d4658"
+      url "https://github.com/pomali/structurizrx/releases/download/v0.3.0/structurizrx-x86_64-apple-darwin.tar.gz"
+      sha256 "6dfac90d2bd5d89b25d4e69140fdae70f7be959a56c097e5914efae7d9a23ee4"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "https://github.com/pomali/structurizrx/releases/download/v0.2.0/structurizrx-aarch64-unknown-linux-gnu.tar.gz"
-      sha256 "9d049bbebf2520278eef76a03dfcc1bb03451041c014a8e6fb3e095b50ea37b3"
+      url "https://github.com/pomali/structurizrx/releases/download/v0.3.0/structurizrx-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "fc043c66b31a5d1c4fd9819683075a4c31b10ee9eea8aa25175aa3c40f454c2c"
     else
-      url "https://github.com/pomali/structurizrx/releases/download/v0.2.0/structurizrx-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 "1cf6155a3ad8bf391a41e67aff7656766cc16015ec6f4bdc4361b121b489231c"
+      url "https://github.com/pomali/structurizrx/releases/download/v0.3.0/structurizrx-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "a6d41206a42aa80e3f413a30661422cc34045336829242d6db9866c7bac4e9a3"
     end
   end
 
