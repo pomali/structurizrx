@@ -13,6 +13,10 @@ use structurizr_query::index::{build_index, Index};
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Catalog {
+    pub name: String,
+    pub description: Option<String>,
+    /// Relationships in the static model.
+    pub relationship_count: usize,
     pub elements: Vec<CatalogElement>,
     pub views: Vec<CatalogView>,
     pub decisions: Vec<CatalogDecision>,
@@ -121,6 +125,9 @@ pub fn catalog(workspace: &Workspace) -> Catalog {
         .unwrap_or_default();
 
     Catalog {
+        name: workspace.name.clone(),
+        description: workspace.description.clone(),
+        relationship_count: idx.relationships.len(),
         elements,
         views,
         decisions,

@@ -18,6 +18,7 @@ use crate::state::{AppState, BroadcastMsg, WorkspaceSummary};
 
 // ---- Embedded templates ----
 const INDEX_HTML: &str = include_str!("templates/index.html");
+const OVERVIEW_HTML: &str = include_str!("templates/overview.html");
 const WORKSPACE_HTML: &str = include_str!("templates/workspace.html");
 const DIAGRAM_HTML: &str = include_str!("templates/diagram.html");
 const DECISIONS_HTML: &str = include_str!("templates/decisions.html");
@@ -34,6 +35,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/", get(index_handler))
         .route("/workspace/{name}", get(workspace_handler))
         .route("/workspace/{name}/diagram/{key}", get(diagram_handler))
+        .route("/workspace/{name}/overview", get(overview_handler))
         .route("/workspace/{name}/decisions", get(decisions_handler))
         .route("/workspace/{name}/decisions/{id}", get(decision_handler))
         .route("/workspace/{name}/canvas", get(canvas_handler))
@@ -205,6 +207,11 @@ async fn graph_handler(State(state): State<AppState>, Path(name): Path<String>) 
 /// diagram and serialised there, so this handler only serves the shell.
 async fn print_handler(State(state): State<AppState>, Path(name): Path<String>) -> Html<String> {
     Html(workspace_page(PRINT_HTML, &state, &name, Tab::None))
+}
+
+/// The workspace home: what it is, its health, recent changes, its views.
+async fn overview_handler(State(state): State<AppState>, Path(name): Path<String>) -> Html<String> {
+    Html(workspace_page(OVERVIEW_HTML, &state, &name, Tab::Overview))
 }
 
 /// The element walkthrough / review page.

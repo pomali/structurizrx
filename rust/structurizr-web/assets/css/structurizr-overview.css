@@ -1,0 +1,214 @@
+/*
+ * The workspace home, /workspace/{name}/overview (structurizr-overview.js).
+ * One readable column: what it is, then health and changes side by side,
+ * then every view.
+ */
+
+body.ov-body {
+    margin: 0;
+    background: var(--bs-tertiary-bg);
+    font-size: 0.9rem;
+}
+
+.ov {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 1.75rem 1.25rem 4rem;
+}
+
+.ov-muted { color: var(--bs-secondary-color); }
+
+/* ---- hero ---- */
+
+.ov-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    gap: 2rem;
+    align-items: center;
+    margin-bottom: 1.75rem;
+}
+
+.ov-intro h1 {
+    font-size: 1.9rem;
+    font-weight: 650;
+    margin: 0 0 0.5rem;
+}
+
+.ov-description {
+    font-size: 1.02rem;
+    line-height: 1.5;
+    max-width: 38rem;
+    margin-bottom: 1rem;
+}
+
+.ov-counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1.25rem;
+}
+.ov-counts li {
+    padding: 0.15rem 0.6rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 999px;
+    background: var(--bs-body-bg);
+    font-size: 0.8rem;
+    color: var(--bs-secondary-color);
+}
+.ov-counts a { color: inherit; }
+
+.ov-cta { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.ov-hero-view {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+}
+.ov-hero-view .ov-thumb { height: 300px; }
+.ov-hero-caption {
+    display: block;
+    margin-top: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--bs-secondary-color);
+    text-align: center;
+}
+
+/* A diagram thumbnail: the server's SVG is drawn for paper, so it sits on
+   white whatever the theme. */
+.ov-thumb {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 150px;
+    padding: 0.5rem;
+    background: #fff;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+.ov-thumb img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+/* No preview: the view's icon on a quiet ground instead. */
+.ov-thumb.is-empty {
+    background: var(--bs-body-bg);
+    color: var(--bs-secondary-color);
+    font-size: 2rem;
+}
+a:hover > .ov-thumb, .ov-card:hover .ov-thumb {
+    border-color: var(--bs-primary);
+    box-shadow: 0 0 0 3px var(--bs-primary-bg-subtle);
+}
+
+/* ---- health and changes ---- */
+
+.ov-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.ov-panel {
+    padding: 1rem 1.1rem;
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.6rem;
+}
+.ov-panel h2, .ov-section-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
+    margin: 0 0 0.6rem;
+}
+
+.ov-list { list-style: none; margin: 0; padding: 0; }
+
+.ov-health-row > a, .ov-health-row > span {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.45rem 0.5rem;
+    border-radius: 0.35rem;
+    color: var(--bs-body-color);
+    text-decoration: none;
+}
+.ov-health-row > a:hover { background: var(--bs-tertiary-bg); }
+.ov-health-row > a > span { flex: 1; }
+.ov-health-row .ov-chevron { color: var(--bs-secondary-color); font-size: 0.75rem; }
+.ov-health-row.is-bad > a > .bi:first-child { color: var(--bs-danger); }
+.ov-health-row.is-warn > a > .bi:first-child { color: var(--bs-warning); }
+.ov-health-row.is-info > a > .bi:first-child { color: var(--bs-info); }
+.ov-health-row.is-good .bi { color: var(--bs-success); }
+
+.ov-change-body {
+    display: flex;
+    flex-direction: column;
+    padding: 0.4rem 0.5rem;
+    border-radius: 0.35rem;
+    color: var(--bs-body-color);
+    text-decoration: none;
+}
+a.ov-change-body:hover { background: var(--bs-tertiary-bg); }
+.ov-change-subject {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ov-change-meta { font-size: 0.78rem; color: var(--bs-secondary-color); }
+.ov-change-meta code { color: inherit; }
+.ov-change.is-pending .ov-change-subject { font-style: italic; }
+.ov-more { padding: 0.45rem 0.5rem 0; font-size: 0.85rem; }
+
+/* ---- views ---- */
+
+.ov-group-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 1.25rem 0 0.6rem;
+}
+.ov-generated > summary { cursor: pointer; }
+
+.ov-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.9rem;
+}
+
+.ov-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    color: var(--bs-body-color);
+    text-decoration: none;
+    min-width: 0;
+}
+.ov-card-title {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ov-card-kind {
+    font-size: 0.75rem;
+    color: var(--bs-secondary-color);
+}
+.ov-card-desc {
+    font-size: 0.8rem;
+    color: var(--bs-secondary-color);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+@media (max-width: 900px) {
+    .ov-hero, .ov-columns { grid-template-columns: minmax(0, 1fr); }
+    .ov-hero-view .ov-thumb { height: 220px; }
+}

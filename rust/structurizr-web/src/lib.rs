@@ -59,7 +59,7 @@ pub async fn serve(opts: ServeOptions) -> Result<()> {
     // Serving one file, there is nothing to choose between on the index page:
     // open the workspace itself. A directory still opens on the index.
     let landing = match workspaces.as_slice() {
-        [only] if path.is_file() => format!("/workspace/{}", only.name),
+        [only] if path.is_file() => format!("/workspace/{}/overview", only.name),
         _ => String::new(),
     };
 

@@ -17,7 +17,7 @@ Like `render`, `serve` materializes generated (`auto`) views before
 rendering. Editing and saving a watched file reloads the browser via a
 WebSocket automatically — no manual refresh.
 
-Serving a single file opens that workspace directly; serving a directory
+Serving a single file opens that workspace's overview directly; serving a directory
 opens the list of workspaces in it.
 
 ## Finding your way
@@ -27,6 +27,7 @@ for each way of looking at it.
 
 | Tab | What it shows |
 |---|---|
+| **Overview** | The workspace's home: what it is, what the model holds, its health (each problem links to the elements behind it in Review), recent changes (each links to the comparison) and every view as a thumbnail |
 | **Diagrams** | The workspace's views, listed in the sidebar — your own views first, in C4 order, then generated ones. The button at the diagram's top left (or <kbd>[</kbd>) hides the list; on a narrow window it opens over the diagram instead |
 | **Graph** | The whole workspace as one force-directed graph |
 | **Clusters** | Communities, cycles and coupling, compared with the structure the model declares |
@@ -52,7 +53,8 @@ view's step buttons at the bottom centre.
 | Route | What it is |
 |---|---|
 | `GET /` | Workspace list |
-| `GET /workspace/{name}` | Workspace overview |
+| `GET /workspace/{name}/overview` | Workspace home: description, counts, health, recent changes, views |
+| `GET /workspace/{name}` | The diagrams (`#<view>&sel=<references>` picks the view and selection) |
 | `GET /workspace/{name}/diagram/{key}` | A single diagram |
 | `GET /workspace/{name}/graph` | Universe graph — the whole workspace as one force-directed graph |
 | `GET /workspace/{name}/clusters` | Cluster analysis |

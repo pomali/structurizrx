@@ -47,6 +47,13 @@
         };
         state.reviewed = list('r');
         state.flagged = list('f');
+        /* The filter is part of the link too, so other pages can point at,
+           say, every element with no description (#only=findings&q=missing-description). */
+        el('filter-query').value = params.get('q') || '';
+        var only = params.get('only') || '';
+        if (el('filter-only').querySelector('option[value="' + only.replace(/"/g, '') + '"]')) {
+            el('filter-only').value = only;
+        }
         return params.get('e');
     }
 
@@ -62,6 +69,12 @@
         };
         idList('r', state.reviewed);
         idList('f', state.flagged);
+        if (el('filter-only').value) {
+            parts.push('only=' + encodeURIComponent(el('filter-only').value));
+        }
+        if (el('filter-query').value.trim()) {
+            parts.push('q=' + encodeURIComponent(el('filter-query').value.trim()));
+        }
         if (state.selected) {
             parts.push('e=' + encodeURIComponent(state.selected));
         }
@@ -96,7 +109,9 @@
             element.description || '',
             element.technology || '',
             element.group || '',
-            (element.tags || []).join(' ')
+            (element.tags || []).join(' '),
+            /* Finding codes, so a search for "missing-description" works. */
+            element.findings.map(function (f) { return f.code; }).join(' ')
         ].join(' ').toLowerCase();
         return haystack.indexOf(query) !== -1;
     }
@@ -410,7 +425,7 @@
     }
 
     ['filter-query', 'filter-kind', 'filter-only', 'filter-sort'].forEach(function (id) {
-        el(id).addEventListener('input', function () { applyFilters(true); });
+        el(id).addEventListener('input', function () { applyFilters(true); writeHash(); });
     });
 
     el('report-button').addEventListener('click', downloadReport);

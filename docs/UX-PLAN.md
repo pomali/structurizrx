@@ -108,10 +108,13 @@ centre. Dark mode moved from the app bar into the ⋯ menu on every page.
 
 ## Phase 3 — what makes it more than a viewer
 
-- **Workspace home**: description, landscape thumbnail, views gallery by C4
-  level, a health strip (findings, elements in no view, missing
-  descriptions, linking into Review/Clusters) and recent changes (linking
-  into Compare). Serves understand, assess and review from one screen.
+- **Workspace home (done)**: `/workspace/{name}/overview`, the Overview tab and
+  where `serve` and the index now land. Description and counts, the first
+  view large, health (each finding type links into Review pre-filtered —
+  Review keeps `only` and `q` in its hash now, and searches finding codes),
+  recent changes (each commit links to its comparison) and every view as a
+  thumbnail, generated ones folded away. Dynamic and deployment views show an
+  icon: the server's SVG renderer can't draw them yet.
 - **Findings-first Clusters**: lead with sentences and actions ("Legal
   Request Tool probably belongs in Data Platform — 4 of its 5 dependencies
   are there [show] [open in editor]"); metrics behind a disclosure.

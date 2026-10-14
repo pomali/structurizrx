@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Overview – {{WORKSPACE_NAME}}</title>
+    <link rel="icon" type="image/png" href="/static/img/favicon.png"/>
+    <link rel="stylesheet" href="/static/css/bootstrap-5.3.7.min.css"/>
+    <link rel="stylesheet" href="/static/bootstrap-icons/bootstrap-icons.min.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-app.css"/>
+    <link rel="stylesheet" href="/static/css/structurizr-overview.css"/>
+    <script src="/static/js/structurizr-app.js"></script>
+    <script src="/static/js/structurizr-palette.js"></script>
+</head>
+<body class="ov-body">
+
+{{APP_HEADER}}
+
+<main class="ov">
+    <!-- What this is: understand the system before anything else. -->
+    <section class="ov-hero">
+        <div class="ov-intro">
+            <h1 id="ov-name"></h1>
+            <p id="ov-description" class="ov-description"></p>
+            <ul id="ov-counts" class="ov-counts" aria-label="What the model holds"></ul>
+            <div class="ov-cta">
+                <a id="ov-open" class="btn btn-primary" href="/workspace/{{WORKSPACE_SLUG_ATTR}}">
+                    <i class="bi bi-diagram-2"></i> Open the diagrams
+                </a>
+            </div>
+        </div>
+        <a id="ov-hero-view" class="ov-hero-view" hidden>
+            <span class="ov-thumb"><img alt="" loading="eager"/></span>
+            <span class="ov-hero-caption"></span>
+        </a>
+    </section>
+
+    <div class="ov-columns">
+        <!-- Is the model in good shape? Each line leads to the elements behind it. -->
+        <section class="ov-panel" aria-labelledby="ov-health-title">
+            <h2 id="ov-health-title">Health</h2>
+            <ul id="ov-health" class="ov-list"><li class="ov-muted">Checking…</li></ul>
+        </section>
+
+        <!-- What changed lately, each change one click from its comparison. -->
+        <section class="ov-panel" aria-labelledby="ov-changes-title">
+            <h2 id="ov-changes-title">Recent changes</h2>
+            <ul id="ov-changes" class="ov-list"><li class="ov-muted">Reading the history…</li></ul>
+        </section>
+    </div>
+
+    <section aria-labelledby="ov-views-title">
+        <h2 id="ov-views-title" class="ov-section-title">Views</h2>
+        <div id="ov-views"></div>
+    </section>
+</main>
+
+<script>
+    window.OVERVIEW_WORKSPACE_SLUG = '{{WORKSPACE_SLUG}}';
+</script>
+<script src="/static/js/structurizr-overview.js"></script>
+</body>
+</html>

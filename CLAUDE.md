@@ -102,7 +102,8 @@ Thin `wasm-bindgen` shim over the native renderer. Exposes `render_svg`, `render
 
 ### `structurizr-web`
 Axum HTTP server serving a workspace browser at `http://localhost:<port>`. Key routes:
-- `GET /workspace/{name}` — workspace overview page
+- `GET /workspace/{name}/overview` — the workspace home (`assets/js/structurizr-overview.js` + `templates/overview.html` + `assets/css/structurizr-overview.css`): description and counts from the catalog, health from the review and clusters APIs (each line links into Review with its filter in the hash, `#only=&q=`), recent changes from `/revisions` (each links to `/diff`), every view as a thumbnail from the server's SVG endpoint (dynamic and deployment views fall back to an icon, the renderer can't draw them yet). `serve <file>` and the index open it
+- `GET /workspace/{name}` — the diagrams page
 - `GET /workspace/{name}/diagram/{key}` — SVG diagram page
 - `GET /workspace/{name}/decisions` — ADR list
 - `GET /workspace/{name}/canvas` — Canvas demo (requires WASM build)

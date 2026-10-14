@@ -9,6 +9,7 @@
 /// Which tab, if any, the page belongs to.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tab {
+    Overview,
     Diagrams,
     Graph,
     Clusters,
@@ -30,6 +31,7 @@ pub struct WorkspaceHeader<'a> {
 }
 
 const TABS: &[(Tab, &str, &str, &str)] = &[
+    (Tab::Overview, "/overview", "bi-house", "Overview"),
     (Tab::Diagrams, "", "bi-diagram-2", "Diagrams"),
     (Tab::Graph, "/graph", "bi-diagram-3", "Graph"),
     (Tab::Clusters, "/clusters", "bi-grid-3x3", "Clusters"),
@@ -74,7 +76,7 @@ pub fn app_header(workspace: Option<&WorkspaceHeader>, active: Tab) -> String {
     if let Some(ws) = workspace {
         let base = format!("/workspace/{}", escape(ws.slug));
         html.push_str(&format!(
-            r#"<a class="sx-workspace" href="{base}" title="{title}">{title}</a>"#,
+            r#"<a class="sx-workspace" href="{base}/overview" title="{title}">{title}</a>"#,
             title = escape(ws.title)
         ));
 
