@@ -121,3 +121,5 @@ locations, relationship triples in `query`, implied relationships in digest
 counts, SVG label placement). They are small, on the path every agent walks,
 and already promised by the spec. Then build the emitter, because items 2, 6
 and LSP rename all depend on it.
+
+The web viewer's usability work has its own plan: [UX-PLAN.md](UX-PLAN.md).
